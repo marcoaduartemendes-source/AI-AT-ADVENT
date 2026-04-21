@@ -1,9 +1,16 @@
 import smtplib
+import socket
 import logging
 import markdown
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
+
+# Force IPv4 — some environments don't support IPv6 sockets
+_real_getaddrinfo = socket.getaddrinfo
+def _ipv4_getaddrinfo(host, port, family=0, *args, **kwargs):
+    return _real_getaddrinfo(host, port, socket.AF_INET, *args, **kwargs)
+socket.getaddrinfo = _ipv4_getaddrinfo
 
 logger = logging.getLogger(__name__)
 
