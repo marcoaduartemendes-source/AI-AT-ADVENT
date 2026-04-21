@@ -1,0 +1,45 @@
+name: Daily AI News Digest
+
+on:
+  # 10:00 UTC = 5:00 AM EST (UTC-5, Nov–Mar)
+  # During EDT (UTC-4, Mar–Nov) this fires at 6:00 AM ET — adjust to 09:00 if preferred
+  schedule:
+    - cron: "0 10 * * *"
+
+  # Manual trigger for testing — runs immediately with a button click in GitHub UI
+  workflow_dispatch:
+    inputs:
+      hours_back:
+        description: "How many hours of news to fetch (default: 24)"
+        required: false
+        default: "24"
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and send daily digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EMAIL_FROM:        ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:          ${{ secrets.EMAIL_TO }}
+          SMTP_HOST:         ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:         ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME:     ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD:     ${{ secrets.SMTP_PASSWORD }}
+          HOURS_BACK:        ${{ github.event.inputs.hours_back || '24' }}
+        run: python -m src.main
