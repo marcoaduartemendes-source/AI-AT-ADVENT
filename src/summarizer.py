@@ -137,19 +137,37 @@ def _format_articles(articles: list[Article]) -> str:
     return "\n".join(lines)
 
 
+def _fallback_digest(articles: list[Article]) -> str:
+    """Plain digest used when the Anthropic API is unavailable."""
+    today = datetime.now().strftime("%A, %B %d, %Y")
+    lines = [f"# 🤖 Daily AI Digest — {today}", "",
+             "> *Note: AI summarization unavailable today — showing raw headlines.*", ""]
+
+    if not articles:
+        lines += ["## No new articles found in the past 24 hours.", "",
+                  "Check back tomorrow for the latest AI news."]
+        return "\n".join(lines)
+
+    by_category: dict[str, list[Article]] = {}
+    for a in articles:
+        by_category.setdefault(a.category, []).append(a)
+
+    lines += ["## 🔥 Today's AI Headlines", ""]
+    for category, arts in sorted(by_category.items()):
+        lines += [f"## {category}", ""]
+        for a in arts:
+            date_str = a.published.strftime("%b %d") if a.published else ""
+            title_link = f"[{a.title}]({a.url})" if a.url else a.title
+            lines.append(f"**{title_link}**" + (f" · *{a.source}, {date_str}*" if date_str else f" · *{a.source}*"))
+            if a.summary:
+                lines.append(f"> {a.summary[:300]}")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
 def generate_digest(articles: list[Article], api_key: str) -> str:
-    """
-    Call Claude claude-sonnet-4-6 with a cached system prompt to generate the digest.
-
-    Caching strategy:
-    - System prompt: stable across all daily runs → cached with 1h TTL.
-      At ~2500 tokens it exceeds Sonnet 4.6's 2048-token minimum for caching.
-    - User message (articles): changes every day → never cached.
-
-    On the first request of the day, cache_creation_input_tokens will be non-zero.
-    During development/testing (multiple runs within an hour), cache_read_input_tokens
-    will show the savings.
-    """
+    """Call Claude claude-sonnet-4-6 to generate the digest, with fallback if unavailable."""
     client = anthropic.Anthropic(api_key=api_key)
 
     today = datetime.now().strftime("%A, %B %d, %Y")
@@ -165,32 +183,36 @@ def generate_digest(articles: list[Article], api_key: str) -> str:
 
     logger.info("Calling Claude claude-sonnet-4-6 to generate digest...")
 
-    # Stream the response — output can be long and streaming prevents timeouts
-    with client.messages.stream(
-        model="claude-sonnet-4-6",
-        max_tokens=4096,
-        system=[
-            {
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                # 1h TTL: maximises cache reuse during development and testing.
-                # For a once-daily production job the 5-min default would always
-                # be cold; 1h keeps the cache warm within the same working session.
-                "cache_control": {"type": "ephemeral", "ttl": "1h"},
-            }
-        ],
-        messages=[{"role": "user", "content": user_content}],
-    ) as stream:
-        message = stream.get_final_message()
+    try:
+        with client.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"},
+                }
+            ],
+            messages=[{"role": "user", "content": user_content}],
+        ) as stream:
+            message = stream.get_final_message()
 
-    # Log cache usage to help monitor cost savings
-    usage = message.usage
-    logger.info(
-        "Token usage — input: %d, output: %d, cache_write: %d, cache_read: %d",
-        usage.input_tokens,
-        usage.output_tokens,
-        getattr(usage, "cache_creation_input_tokens", 0),
-        getattr(usage, "cache_read_input_tokens", 0),
-    )
+        usage = message.usage
+        logger.info(
+            "Token usage — input: %d, output: %d, cache_write: %d, cache_read: %d",
+            usage.input_tokens,
+            usage.output_tokens,
+            getattr(usage, "cache_creation_input_tokens", 0),
+            getattr(usage, "cache_read_input_tokens", 0),
+        )
+        return next(b.text for b in message.content if b.type == "text")
 
-    return next(b.text for b in message.content if b.type == "text")
+    except anthropic.BadRequestError as exc:
+        if "credit balance" in str(exc).lower():
+            logger.warning("Anthropic API: insufficient credits — sending fallback digest.")
+            return _fallback_digest(articles)
+        raise
+    except anthropic.APIError as exc:
+        logger.warning("Anthropic API error (%s) — sending fallback digest.", exc)
+        return _fallback_digest(articles)
