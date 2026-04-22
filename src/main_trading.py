@@ -226,6 +226,7 @@ def main():
         min_confidence=MIN_CONFIDENCE,
     )
     tracker = PerformanceTracker()
+    portfolio.attach_tracker(tracker)   # positions survive between hourly restarts
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 

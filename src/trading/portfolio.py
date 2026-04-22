@@ -59,6 +59,16 @@ class PortfolioManager:
         # last_trade_time[strategy][product_id] = unix timestamp
         self.last_trade_time: Dict[str, Dict[str, float]] = {}
         self.trade_history: List[TradeRecord] = []
+        self._tracker = None  # injected after construction
+
+    def attach_tracker(self, tracker) -> None:
+        """Attach a PerformanceTracker so positions survive between runs."""
+        self._tracker = tracker
+        restored = tracker.load_positions()
+        if restored:
+            self.positions = restored
+            count = sum(len(v) for v in restored.values())
+            logger.info(f"Restored {count} open position(s) from database.")
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
@@ -71,6 +81,8 @@ class PortfolioManager:
             self.positions[strategy].pop(product_id, None)
         else:
             self.positions[strategy][product_id] = pos
+        if self._tracker:
+            self._tracker.save_positions(self.positions)
 
     def _in_cooldown(self, strategy: str, product_id: str) -> bool:
         last = self.last_trade_time.get(strategy, {}).get(product_id, 0)

@@ -1,0 +1,52 @@
+name: Crypto Trading Bot
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour, on the hour (UTC)
+  workflow_dispatch:        # lets you trigger a manual run from the GitHub website
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # needed to save the database back to the repo
+
+    steps:
+      # ── 1. Get the code ──────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Python ────────────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 3. Restore database from previous run ────────────────────────────────
+      - name: Restore trading database
+        uses: actions/cache@v4
+        with:
+          path: data/trading_performance.db
+          key: trading-db-${{ github.run_number }}
+          restore-keys: trading-db-
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      # ── 4. Run one trading cycle ─────────────────────────────────────────────
+      - name: Run trading cycle
+        env:
+          COINBASE_API_KEY:    ${{ secrets.COINBASE_API_KEY }}
+          COINBASE_API_SECRET: ${{ secrets.COINBASE_API_SECRET }}
+          DRY_RUN:             ${{ vars.DRY_RUN || 'true' }}
+          MAX_TRADE_USD:       ${{ vars.MAX_TRADE_USD || '20' }}
+          MIN_CONFIDENCE:      ${{ vars.MIN_CONFIDENCE || '0.6' }}
+          TRADING_PRODUCTS:    ${{ vars.TRADING_PRODUCTS || 'BTC-USD,ETH-USD,SOL-USD' }}
+        run: python src/main_trading.py --once
+
+      # ── 5. Save database so next run remembers positions ─────────────────────
+      # (cache is already saved automatically by actions/cache above)

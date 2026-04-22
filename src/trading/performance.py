@@ -36,6 +36,17 @@ class PerformanceTracker:
     def _init_db(self):
         with self._conn() as conn:
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS open_positions (
+                    strategy       TEXT NOT NULL,
+                    product_id     TEXT NOT NULL,
+                    quantity       REAL NOT NULL,
+                    cost_basis_usd REAL NOT NULL,
+                    entry_price    REAL NOT NULL,
+                    entry_time     TEXT NOT NULL,
+                    PRIMARY KEY (strategy, product_id)
+                )
+            """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp    TEXT    NOT NULL,
@@ -87,6 +98,41 @@ class PerformanceTracker:
                     1 if record.dry_run else 0,
                 ),
             )
+
+    # ── Position persistence ─────────────────────────────────────────────────
+
+    def save_positions(self, positions: Dict):
+        """Persist open positions to SQLite so they survive between bot restarts."""
+        with self._conn() as conn:
+            conn.execute("DELETE FROM open_positions")
+            for strategy, prod_map in positions.items():
+                for product_id, pos in prod_map.items():
+                    conn.execute(
+                        """INSERT INTO open_positions
+                           (strategy, product_id, quantity, cost_basis_usd, entry_price, entry_time)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (strategy, product_id, pos.quantity,
+                         pos.cost_basis_usd, pos.entry_price,
+                         pos.entry_time.isoformat()),
+                    )
+
+    def load_positions(self) -> Dict:
+        """Reload persisted positions on startup."""
+        from datetime import datetime
+        from .portfolio import Position
+        positions: Dict = {}
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM open_positions").fetchall()
+        for r in rows:
+            positions.setdefault(r["strategy"], {})[r["product_id"]] = Position(
+                product_id=r["product_id"],
+                quantity=r["quantity"],
+                cost_basis_usd=r["cost_basis_usd"],
+                entry_price=r["entry_price"],
+                entry_time=datetime.fromisoformat(r["entry_time"]),
+                strategy=r["strategy"],
+            )
+        return positions
 
     # ── Metrics ──────────────────────────────────────────────────────────────
 
