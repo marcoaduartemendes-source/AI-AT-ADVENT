@@ -12,12 +12,14 @@ All orders are capped at $20 USD for testing. Set DRY_RUN=false in .env to
 enable live execution. All trades and P&L are tracked in SQLite.
 
 Usage:
-  python src/main_trading.py
+  python src/main_trading.py           # run forever on SCAN_INTERVAL_MINUTES
+  python src/main_trading.py --once    # run exactly one cycle and exit
 
 Required environment variables (see .env.example):
   COINBASE_API_KEY, COINBASE_API_SECRET
 """
 
+import argparse
 import json
 import logging
 import os
@@ -134,6 +136,11 @@ def run_cycle(client, strategies, portfolio: PortfolioManager, tracker: Performa
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Crypto Investment Bot")
+    parser.add_argument("--once", action="store_true",
+                        help="Run a single trading cycle and exit (for testing).")
+    args = parser.parse_args()
+
     mode = "PAPER TRADING (DRY RUN)" if DRY_RUN else "⚠  LIVE TRADING — REAL MONEY"
     logger.info("=" * 64)
     logger.info("  Crypto Investment Bot")
@@ -220,6 +227,10 @@ def main():
         open_pos = portfolio.get_open_positions()
         if open_pos:
             logger.info(f"Open positions: {json.dumps(open_pos, indent=2)}")
+
+        if args.once:
+            logger.info("Single-cycle mode (--once): exiting after one pass.")
+            break
 
         if _shutdown:
             break
