@@ -26,11 +26,14 @@ class CoinbaseClient:
     BASE_URL = "https://api.coinbase.com"
     HOST = "api.coinbase.com"
 
-    def __init__(self, api_key: str, api_secret: str):
+    def __init__(self, api_key: str = "", api_secret: str = ""):
         self.api_key = api_key.strip()
         self.session = requests.Session()
 
-        if self.api_key.startswith("organizations/"):
+        if not self.api_key:
+            # Public-only mode: no auth, only public endpoints work
+            self.auth_mode = "public"
+        elif self.api_key.startswith("organizations/"):
             self.auth_mode = "jwt"
             # python-dotenv does not unescape — convert literal "\n" → real newline
             self.private_key = api_secret.replace("\\n", "\n").strip()
@@ -118,6 +121,16 @@ class CoinbaseClient:
     def get_candles(
         self, product_id: str, granularity: str, start: int, end: int
     ) -> List[Dict]:
+        # Use public market endpoint (no auth) when running unauthenticated
+        if self.auth_mode == "public":
+            path = f"/api/v3/brokerage/market/products/{product_id}/candles"
+            resp = self.session.get(
+                f"{self.BASE_URL}{path}",
+                params={"start": start, "end": end, "granularity": granularity},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json().get("candles", [])
         path = f"/api/v3/brokerage/products/{product_id}/candles"
         data = self._get(path, {"start": start, "end": end, "granularity": granularity})
         return data.get("candles", [])

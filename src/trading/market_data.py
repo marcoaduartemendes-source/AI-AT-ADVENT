@@ -17,16 +17,102 @@ GRANULARITY_SECONDS = {
 }
 
 
+_BINANCE_INTERVALS = {
+    "ONE_MINUTE": "1m",
+    "FIVE_MINUTE": "5m",
+    "FIFTEEN_MINUTE": "15m",
+    "THIRTY_MINUTE": "30m",
+    "ONE_HOUR": "1h",
+    "TWO_HOUR": "2h",
+    "SIX_HOUR": "6h",
+    "ONE_DAY": "1d",
+}
+
+
+def _fetch_binance_public(product_id: str, granularity: str, num_candles: int) -> np.ndarray:
+    """Public OHLCV fallback via Binance — used when the Coinbase endpoint is
+    inaccessible (e.g. from a restricted network)."""
+    import requests
+
+    # BTC-USD → BTCUSDT (Binance uses USDT stablecoin pairs)
+    base, _, _ = product_id.partition("-")
+    symbol = f"{base}USDT"
+    interval = _BINANCE_INTERVALS.get(granularity, "1h")
+
+    resp = requests.get(
+        "https://api.binance.com/api/v3/klines",
+        params={"symbol": symbol, "interval": interval, "limit": num_candles},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    raw = resp.json()
+    # Kline fields: [open_time, open, high, low, close, volume, close_time, ...]
+    candles = [
+        [
+            float(k[0]) / 1000.0,  # ms → s
+            float(k[3]),           # low
+            float(k[2]),           # high
+            float(k[1]),           # open
+            float(k[4]),           # close
+            float(k[5]),           # volume
+        ]
+        for k in raw
+    ]
+    arr = np.array(candles, dtype=float)
+    return arr[arr[:, 0].argsort()]
+
+
+_SYNTHETIC_SEEDS = {"BTC-USD": 65000.0, "ETH-USD": 3400.0, "SOL-USD": 150.0}
+
+
+def _generate_synthetic_candles(product_id: str, num_candles: int, granularity: str) -> np.ndarray:
+    """Produce realistic-looking OHLCV for offline demos (no network)."""
+    import os
+    seed_price = _SYNTHETIC_SEEDS.get(product_id, 100.0)
+    rng = np.random.default_rng(hash((product_id, os.environ.get("SYNTH_SEED", ""))) & 0xFFFFFFFF)
+
+    # Geometric Brownian motion + occasional regime shifts for variety
+    n = num_candles
+    returns = rng.normal(0, 0.012, n)
+    # Inject a trending regime and a mean-reverting regime so all 3 strategies fire
+    returns[n // 4 : n // 4 + 15] += 0.008       # upward trend
+    returns[n // 2 : n // 2 + 10] -= 0.015       # sharp sell-off (mean-reversion setup)
+    returns[int(n * 0.8) :] += rng.normal(0, 0.025, n - int(n * 0.8))  # vol expansion
+
+    closes = seed_price * np.exp(np.cumsum(returns))
+    opens = np.concatenate([[seed_price], closes[:-1]])
+    intrabar = np.abs(rng.normal(0, 0.006, n)) * closes
+    highs = np.maximum(opens, closes) + intrabar
+    lows = np.minimum(opens, closes) - intrabar
+    volumes = np.abs(rng.normal(1000, 300, n))
+
+    interval = GRANULARITY_SECONDS[granularity]
+    end = int(time.time())
+    timestamps = np.array([end - interval * (n - 1 - i) for i in range(n)], dtype=float)
+
+    return np.column_stack([timestamps, lows, highs, opens, closes, volumes])
+
+
 def fetch_candles(
     client: CoinbaseClient,
     product_id: str,
     granularity: str = "ONE_HOUR",
     num_candles: int = 100,
 ) -> np.ndarray:
-    """
-    Returns OHLCV array of shape (N, 6):
-    [timestamp, low, high, open, close, volume], sorted oldest-first.
-    """
+    """Returns OHLCV array (N,6): [timestamp, low, high, open, close, volume]."""
+    import os
+
+    # Offline demo mode — for sandboxes / CI with no internet access
+    if os.environ.get("SYNTHETIC_DATA", "").lower() == "true":
+        return _generate_synthetic_candles(product_id, num_candles, granularity)
+
+    # Public fallback (Binance) when running without Coinbase auth
+    if getattr(client, "auth_mode", "") == "public":
+        try:
+            return _fetch_binance_public(product_id, granularity, num_candles)
+        except Exception:
+            pass
+
     interval = GRANULARITY_SECONDS[granularity]
     end = int(time.time())
     start = end - interval * num_candles
@@ -35,20 +121,13 @@ def fetch_candles(
     if not raw:
         return np.array([])
 
-    candles = []
-    for c in raw:
-        candles.append([
-            float(c["start"]),
-            float(c["low"]),
-            float(c["high"]),
-            float(c["open"]),
-            float(c["close"]),
-            float(c["volume"]),
-        ])
-
+    candles = [
+        [float(c["start"]), float(c["low"]), float(c["high"]),
+         float(c["open"]),  float(c["close"]), float(c["volume"])]
+        for c in raw
+    ]
     arr = np.array(candles, dtype=float)
-    arr = arr[arr[:, 0].argsort()]  # sort ascending by timestamp
-    return arr
+    return arr[arr[:, 0].argsort()]
 
 
 def get_close_prices(candles: np.ndarray) -> np.ndarray:

@@ -45,18 +45,27 @@ from trading.strategies.volatility_breakout import VolatilityBreakoutStrategy
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-def _require(key: str) -> str:
-    val = os.environ.get(key, "")
-    if not val:
-        print(f"ERROR: missing required env var {key!r}. Check your .env file.")
-        sys.exit(1)
-    return val
+def _placeholder(val: str) -> bool:
+    return (
+        not val
+        or val.startswith("organizations/your-")
+        or "REPLACE_WITH_YOUR_KEY" in val
+        or val == "your_coinbase_api_key"
+    )
 
 
-COINBASE_API_KEY = _require("COINBASE_API_KEY")
-COINBASE_API_SECRET = _require("COINBASE_API_SECRET")
+SIMULATION = os.environ.get("SIMULATION", "").lower() == "true"
+COINBASE_API_KEY = os.environ.get("COINBASE_API_KEY", "")
+COINBASE_API_SECRET = os.environ.get("COINBASE_API_SECRET", "")
 
-DRY_RUN = os.environ.get("DRY_RUN", "true").lower() != "false"
+# Auto-activate simulation mode if keys are missing or still placeholders.
+if _placeholder(COINBASE_API_KEY) or _placeholder(COINBASE_API_SECRET):
+    SIMULATION = True
+    COINBASE_API_KEY = ""
+    COINBASE_API_SECRET = ""
+
+# Simulation forces DRY_RUN on (no real orders possible without auth anyway)
+DRY_RUN = True if SIMULATION else os.environ.get("DRY_RUN", "true").lower() != "false"
 MAX_TRADE_USD = min(float(os.environ.get("MAX_TRADE_USD", "20")), 20.0)
 MIN_CONFIDENCE = float(os.environ.get("MIN_CONFIDENCE", "0.6"))
 SCAN_INTERVAL_MINUTES = int(os.environ.get("SCAN_INTERVAL_MINUTES", "60"))
@@ -141,7 +150,12 @@ def main():
                         help="Run a single trading cycle and exit (for testing).")
     args = parser.parse_args()
 
-    mode = "PAPER TRADING (DRY RUN)" if DRY_RUN else "⚠  LIVE TRADING — REAL MONEY"
+    if SIMULATION:
+        mode = "SIMULATION  (public market data · no Coinbase account needed)"
+    elif DRY_RUN:
+        mode = "PAPER TRADING (DRY RUN)"
+    else:
+        mode = "⚠  LIVE TRADING — REAL MONEY"
     logger.info("=" * 64)
     logger.info("  Crypto Investment Bot")
     logger.info(f"  Mode      : {mode}")
@@ -164,14 +178,18 @@ def main():
     # ── Initialise client ─────────────────────────────────────────────────────
 
     client = CoinbaseClient(COINBASE_API_KEY, COINBASE_API_SECRET)
-    try:
-        accounts = client.get_accounts()
-        usd_accounts = [a for a in accounts if a.get("currency") == "USD"]
-        usd_balance = float(usd_accounts[0]["available_balance"]["value"]) if usd_accounts else 0.0
-        logger.info(f"Connected to Coinbase — {len(accounts)} accounts, USD balance: ${usd_balance:.2f}")
-    except Exception as exc:
-        logger.error(f"Cannot connect to Coinbase: {exc}")
-        sys.exit(1)
+
+    if SIMULATION:
+        logger.info("Simulation mode — using public Coinbase market data (no authentication).")
+    else:
+        try:
+            accounts = client.get_accounts()
+            usd_accounts = [a for a in accounts if a.get("currency") == "USD"]
+            usd_balance = float(usd_accounts[0]["available_balance"]["value"]) if usd_accounts else 0.0
+            logger.info(f"Connected to Coinbase — {len(accounts)} accounts, USD balance: ${usd_balance:.2f}")
+        except Exception as exc:
+            logger.error(f"Cannot connect to Coinbase: {exc}")
+            sys.exit(1)
 
     # ── Strategies ────────────────────────────────────────────────────────────
 
