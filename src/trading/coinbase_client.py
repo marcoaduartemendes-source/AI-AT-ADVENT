@@ -1,24 +1,77 @@
 import hashlib
 import hmac
 import json
+import secrets
 import time
 import uuid
 from typing import Dict, List, Optional
 
+import jwt
 import requests
 
 
 class CoinbaseClient:
-    """Coinbase Advanced Trade API client using HMAC authentication."""
+    """Coinbase Advanced Trade API client.
+
+    Auto-detects auth mode from the key format:
+
+    • CDP / JWT  — key starts with 'organizations/…/apiKeys/…'
+                   secret is an EC P-256 PEM private key
+                   (current default for new Coinbase keys)
+
+    • Legacy HMAC — any other key format
+                   secret is a base64 string
+    """
 
     BASE_URL = "https://api.coinbase.com"
+    HOST = "api.coinbase.com"
 
     def __init__(self, api_key: str, api_secret: str):
-        self.api_key = api_key
-        self.api_secret = api_secret.strip()
+        self.api_key = api_key.strip()
         self.session = requests.Session()
 
-    def _sign(self, method: str, path: str, body: str = "") -> Dict[str, str]:
+        if self.api_key.startswith("organizations/"):
+            self.auth_mode = "jwt"
+            # python-dotenv does not unescape — convert literal "\n" → real newline
+            self.private_key = api_secret.replace("\\n", "\n").strip()
+            if "BEGIN" not in self.private_key:
+                raise ValueError(
+                    "COINBASE_API_SECRET must be a PEM private key "
+                    "(starts with '-----BEGIN EC PRIVATE KEY-----')"
+                )
+        else:
+            self.auth_mode = "hmac"
+            self.api_secret = api_secret.strip()
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+
+    def _build_jwt(self, method: str, path: str) -> str:
+        """Build a short-lived JWT for one request."""
+        uri = f"{method.upper()} {self.HOST}{path}"
+        now = int(time.time())
+        payload = {
+            "sub": self.api_key,
+            "iss": "cdp",
+            "nbf": now,
+            "exp": now + 120,
+            "aud": ["retail_rest_api_proxy"],
+            "uri": uri,
+        }
+        return jwt.encode(
+            payload,
+            self.private_key,
+            algorithm="ES256",
+            headers={"kid": self.api_key, "nonce": secrets.token_hex(10)},
+        )
+
+    def _headers(self, method: str, path: str, body: str = "") -> Dict[str, str]:
+        if self.auth_mode == "jwt":
+            token = self._build_jwt(method, path)
+            return {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+        # Legacy HMAC
         timestamp = str(int(time.time()))
         message = f"{timestamp}{method.upper()}{path}{body}"
         sig = hmac.new(
@@ -33,22 +86,30 @@ class CoinbaseClient:
             "Content-Type": "application/json",
         }
 
+    # ── HTTP helpers ─────────────────────────────────────────────────────────
+
     def _get(self, path: str, params: Optional[Dict] = None) -> Dict:
-        headers = self._sign("GET", path)
         resp = self.session.get(
-            f"{self.BASE_URL}{path}", headers=headers, params=params, timeout=15
+            f"{self.BASE_URL}{path}",
+            headers=self._headers("GET", path),
+            params=params,
+            timeout=15,
         )
         resp.raise_for_status()
         return resp.json()
 
     def _post(self, path: str, body: Dict) -> Dict:
         body_str = json.dumps(body)
-        headers = self._sign("POST", path, body_str)
         resp = self.session.post(
-            f"{self.BASE_URL}{path}", headers=headers, data=body_str, timeout=15
+            f"{self.BASE_URL}{path}",
+            headers=self._headers("POST", path, body_str),
+            data=body_str,
+            timeout=15,
         )
         resp.raise_for_status()
         return resp.json()
+
+    # ── Endpoints ────────────────────────────────────────────────────────────
 
     def get_accounts(self) -> List[Dict]:
         data = self._get("/api/v3/brokerage/accounts")
