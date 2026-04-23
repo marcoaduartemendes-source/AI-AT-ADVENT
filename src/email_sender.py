@@ -149,7 +149,7 @@ def send_email(
 ) -> None:
     """Send the daily digest as a styled HTML email via SMTP."""
     date_str = datetime.now().strftime("%A, %B %d, %Y")
-    subject = f"🤖 Daily AI Digest — {date_str}"
+    subject = "TODAY's MAJOR AI NEWS"
 
     html_body = _digest_to_html(digest_content, subject)
 
