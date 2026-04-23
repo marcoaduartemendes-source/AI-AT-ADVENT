@@ -59,7 +59,56 @@ jobs:
               sys.exit(1)
           PY
 
-      - name: Generate and send daily digest
+      - name: Test SMTP connection
+        env:
+          SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_FROM:    ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:      ${{ secrets.EMAIL_TO }}
+        run: |
+          python - <<'PY'
+          import smtplib, os, sys, ssl
+
+          host = os.environ["SMTP_HOST"]
+          port = int(os.environ.get("SMTP_PORT", "587"))
+          user = os.environ["SMTP_USERNAME"]
+          pwd  = os.environ["SMTP_PASSWORD"]
+
+          print(f"Testing SMTP {host}:{port} as {user} ...")
+          errors = []
+
+          # Try STARTTLS port 587
+          try:
+              with smtplib.SMTP(host, port, timeout=15) as s:
+                  s.starttls()
+                  s.login(user, pwd)
+              print("STARTTLS login: OK")
+              sys.exit(0)
+          except smtplib.SMTPAuthenticationError as e:
+              errors.append(f"STARTTLS auth FAILED: {e}")
+          except Exception as e:
+              errors.append(f"STARTTLS connect FAILED: {e}")
+
+          # Try SSL port 465
+          try:
+              ctx = ssl.create_default_context()
+              with smtplib.SMTP_SSL(host, 465, context=ctx, timeout=15) as s:
+                  s.login(user, pwd)
+              print("SSL-465 login: OK")
+              sys.exit(0)
+          except smtplib.SMTPAuthenticationError as e:
+              errors.append(f"SSL-465 auth FAILED: {e}")
+          except Exception as e:
+              errors.append(f"SSL-465 connect FAILED: {e}")
+
+          for err in errors:
+              print(err, file=sys.stderr)
+          sys.exit(1)
+          PY
+
+
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EMAIL_FROM:        ${{ secrets.EMAIL_FROM }}
