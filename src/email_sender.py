@@ -1,5 +1,6 @@
 import smtplib
 import socket
+import ssl
 import logging
 import markdown
 from email.mime.multipart import MIMEMultipart
@@ -164,16 +165,30 @@ def send_email(
 
     logger.info("Sending digest email to %s via %s:%d ...", to_email, smtp_host, smtp_port)
 
-    try:
+    # Try STARTTLS on port 587, then fall back to SSL on port 465
+    def _try_starttls():
         with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
-            if use_tls:
-                server.starttls()
+            server.starttls()
             server.login(smtp_username, smtp_password)
             server.sendmail(from_email, [to_email], msg.as_string())
-        logger.info("Email sent successfully.")
-    except smtplib.SMTPAuthenticationError as exc:
-        logger.error("SMTP authentication failed — check SMTP_USERNAME / SMTP_PASSWORD: %s", exc)
-        raise
-    except smtplib.SMTPException as exc:
-        logger.error("SMTP error while sending: %s", exc)
-        raise
+
+    def _try_ssl():
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL(smtp_host, 465, context=ctx, timeout=30) as server:
+            server.login(smtp_username, smtp_password)
+            server.sendmail(from_email, [to_email], msg.as_string())
+
+    try:
+        _try_starttls()
+        logger.info("Email sent successfully via STARTTLS.")
+    except (OSError, smtplib.SMTPException) as exc:
+        logger.warning("STARTTLS failed (%s), retrying with SSL port 465...", exc)
+        try:
+            _try_ssl()
+            logger.info("Email sent successfully via SSL.")
+        except smtplib.SMTPAuthenticationError as exc2:
+            logger.error("SMTP auth failed — check SMTP_USERNAME / SMTP_PASSWORD: %s", exc2)
+            raise
+        except Exception as exc2:
+            logger.error("Both SMTP methods failed: %s", exc2)
+            raise
