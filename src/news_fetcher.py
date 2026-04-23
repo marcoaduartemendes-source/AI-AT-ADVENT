@@ -19,68 +19,49 @@ class Article:
     source: str
     category: str
 
-# News sources with RSS feeds — add/remove as needed
+# News sources — Google News RSS + HackerNews Algolia work universally
+# (including from cloud-IP environments where direct publisher feeds return 403).
 NEWS_SOURCES = [
-    # === Core AI Providers ===
+    # === Core AI Providers (via Google News) ===
     {
-        "name": "Anthropic",
-        "feed_url": "https://www.anthropic.com/news/rss",
+        "name": "Anthropic / Claude",
+        "feed_url": "https://news.google.com/rss/search?q=Anthropic+OR+Claude+AI&hl=en-US&gl=US&ceid=US:en",
         "category": "Anthropic & Claude",
     },
     {
-        "name": "OpenAI",
-        "feed_url": "https://openai.com/blog/rss.xml",
+        "name": "OpenAI / ChatGPT",
+        "feed_url": "https://news.google.com/rss/search?q=OpenAI+OR+ChatGPT+OR+%22GPT-5%22&hl=en-US&gl=US&ceid=US:en",
         "category": "OpenAI & ChatGPT",
     },
     {
-        "name": "Google DeepMind",
-        "feed_url": "https://blog.google/technology/ai/rss/",
+        "name": "Google Gemini / DeepMind",
+        "feed_url": "https://news.google.com/rss/search?q=%22Google+Gemini%22+OR+%22Google+DeepMind%22&hl=en-US&gl=US&ceid=US:en",
         "category": "Google AI & Gemini",
     },
     {
-        "name": "Google AI Blog",
-        "feed_url": "https://ai.googleblog.com/feeds/posts/default?alt=rss",
-        "category": "Google AI & Gemini",
-    },
-    {
-        "name": "Meta AI",
-        "feed_url": "https://engineering.fb.com/feed/",
+        "name": "Meta AI / Llama",
+        "feed_url": "https://news.google.com/rss/search?q=%22Meta+AI%22+OR+Llama+AI&hl=en-US&gl=US&ceid=US:en",
         "category": "Meta AI",
     },
     {
-        "name": "Mistral AI",
-        "feed_url": "https://mistral.ai/news/feed.xml",
+        "name": "Mistral / xAI / Grok",
+        "feed_url": "https://news.google.com/rss/search?q=Mistral+AI+OR+xAI+OR+Grok&hl=en-US&gl=US&ceid=US:en",
         "category": "Other AI Providers",
     },
     {
-        "name": "Hugging Face",
-        "feed_url": "https://huggingface.co/blog/feed.xml",
+        "name": "Hugging Face / Cohere",
+        "feed_url": "https://news.google.com/rss/search?q=%22Hugging+Face%22+OR+Cohere+AI&hl=en-US&gl=US&ceid=US:en",
         "category": "Other AI Providers",
     },
-    # === Industry News ===
+    # === Industry news ===
     {
-        "name": "The Verge AI",
-        "feed_url": "https://www.theverge.com/ai-artificial-intelligence/rss/index.xml",
+        "name": "AI Industry (Google News)",
+        "feed_url": "https://news.google.com/rss/search?q=artificial+intelligence+when:1d&hl=en-US&gl=US&ceid=US:en",
         "category": "Industry News",
     },
     {
-        "name": "TechCrunch AI",
-        "feed_url": "https://techcrunch.com/category/artificial-intelligence/feed/",
-        "category": "Industry News",
-    },
-    {
-        "name": "VentureBeat AI",
-        "feed_url": "https://venturebeat.com/category/ai/feed/",
-        "category": "Industry News",
-    },
-    {
-        "name": "Ars Technica",
-        "feed_url": "https://feeds.arstechnica.com/arstechnica/technology-lab",
-        "category": "Industry News",
-    },
-    {
-        "name": "MIT Technology Review AI",
-        "feed_url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+        "name": "Hacker News AI",
+        "feed_url": "https://hnrss.org/newest?q=AI+OR+LLM+OR+Claude+OR+GPT&count=25",
         "category": "Industry News",
     },
 ]
