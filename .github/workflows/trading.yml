@@ -2,23 +2,27 @@ name: Crypto Trading Bot
 
 on:
   schedule:
-    - cron: "0 * * * *"   # every hour, on the hour (UTC)
-  workflow_dispatch:        # lets you trigger a manual run from the GitHub website
+    - cron: "0 * * * *"   # every hour on the hour (UTC)
+  workflow_dispatch:        # manual trigger from GitHub website / iPhone
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
-  trade:
+  trade-and-publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write       # needed to save the database back to the repo
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
 
     steps:
-      # ── 1. Get the code ──────────────────────────────────────────────────────
-      - name: Checkout
-        uses: actions/checkout@v4
+      # ── 1. Code ──────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
 
       # ── 2. Python ────────────────────────────────────────────────────────────
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
@@ -26,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # ── 3. Restore database from previous run ────────────────────────────────
+      # ── 3. Restore DB from previous run (keeps trade history + positions) ────
       - name: Restore trading database
         uses: actions/cache@v4
         with:
@@ -34,8 +38,7 @@ jobs:
           key: trading-db-${{ github.run_number }}
           restore-keys: trading-db-
 
-      - name: Create data directory
-        run: mkdir -p data
+      - run: mkdir -p data dashboard
 
       # ── 4. Run one trading cycle ─────────────────────────────────────────────
       - name: Run trading cycle
@@ -48,5 +51,15 @@ jobs:
           TRADING_PRODUCTS:    ${{ vars.TRADING_PRODUCTS || 'BTC-USD,ETH-USD,SOL-USD' }}
         run: python src/main_trading.py --once
 
-      # ── 5. Save database so next run remembers positions ─────────────────────
-      # (cache is already saved automatically by actions/cache above)
+      # ── 5. Upload dashboard to GitHub Pages ──────────────────────────────────
+      - name: Configure Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload dashboard artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - name: Deploy to GitHub Pages
+        id: pages
+        uses: actions/deploy-pages@v4

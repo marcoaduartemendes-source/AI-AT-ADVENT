@@ -38,6 +38,7 @@ from trading.coinbase_client import CoinbaseClient
 from trading.market_data import fetch_candles
 from trading.performance import PerformanceTracker
 from trading.portfolio import PortfolioManager
+from trading.dashboard import generate_dashboard
 from trading.strategies.base import SignalType
 from trading.strategies.mean_reversion import MeanReversionStrategy
 from trading.strategies.momentum import MomentumStrategy
@@ -246,6 +247,14 @@ def main():
         open_pos = portfolio.get_open_positions()
         if open_pos:
             logger.info(f"Open positions: {json.dumps(open_pos, indent=2)}")
+
+        # Regenerate dashboard after every cycle
+        try:
+            dash_mode = "SIMULATION" if SIMULATION else ("PAPER TRADING" if DRY_RUN else "LIVE TRADING")
+            path = generate_dashboard(tracker.db_path, "dashboard/index.html", dash_mode)
+            logger.info(f"Dashboard updated → {path}")
+        except Exception as exc:
+            logger.warning(f"Dashboard generation failed: {exc}")
 
         if args.once:
             logger.info("Single-cycle mode (--once): exiting after one pass.")
