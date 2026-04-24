@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def _diagnose_env() -> dict:
     """Report presence/absence of every secret without leaking values."""
     keys = [
-        "ANTHROPIC_API_KEY", "EMAIL_FROM", "EMAIL_TO",
+        "EMAIL_FROM", "EMAIL_TO",
         "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
     ]
     report = {}
