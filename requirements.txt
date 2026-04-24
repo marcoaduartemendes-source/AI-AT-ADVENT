@@ -1,3 +1,4 @@
+# Core
 anthropic>=0.40.0
 requests>=2.31.0
 python-dotenv>=1.0.0
@@ -6,3 +7,10 @@ markdown>=3.5.0
 numpy>=1.24.0
 PyJWT>=2.8.0
 cryptography>=41.0.0
+
+# Cash flow forecast — Monarch Money connector
+monarch-money>=1.0.0
+pyotp>=2.9.0          # only needed if Monarch 2-factor auth is enabled
+
+# Cash flow forecast — Chase connector (Plaid)
+plaid-python>=14.0.0

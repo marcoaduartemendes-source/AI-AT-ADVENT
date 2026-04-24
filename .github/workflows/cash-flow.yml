@@ -1,0 +1,64 @@
+name: 13-Week Cash Flow Forecast
+
+on:
+  schedule:
+    # Every Monday at 6 AM ET (11:00 UTC Mar–Nov / 12:00 UTC Nov–Mar)
+    - cron: "0 11 * * 1"
+
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Days of transaction history to analyse (default 90)"
+        required: false
+        default: "90"
+      current_balance:
+        description: "Override opening cash balance in USD (leave blank to pull from Monarch)"
+        required: false
+        default: ""
+
+jobs:
+  cash-flow-forecast:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run cash flow forecast
+        env:
+          # ── Email (shared with daily digest) ──────────────────────
+          EMAIL_FROM:     ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO:       ${{ secrets.EMAIL_TO }}
+          SMTP_HOST:      ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:      ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME:  ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD:  ${{ secrets.SMTP_PASSWORD }}
+
+          # ── Monarch Money ───────────────────────────────────
+          MONARCH_EMAIL:      ${{ secrets.MONARCH_EMAIL }}
+          MONARCH_PASSWORD:   ${{ secrets.MONARCH_PASSWORD }}
+          MONARCH_MFA_SECRET: ${{ secrets.MONARCH_MFA_SECRET }}
+
+          # ── Chase via Plaid ─────────────────────────────────
+          PLAID_CLIENT_ID:   ${{ secrets.PLAID_CLIENT_ID }}
+          PLAID_SECRET:      ${{ secrets.PLAID_SECRET }}
+          PLAID_ACCESS_TOKEN: ${{ secrets.PLAID_ACCESS_TOKEN }}
+          PLAID_ENV:         ${{ secrets.PLAID_ENV }}
+
+          # ── Rocket Money ──────────────────────────────────
+          # Rocket Money has no API; CSV path only works if the file is
+          # committed to the repo or uploaded as an artifact.
+          ROCKET_MONEY_CSV_PATH: ${{ secrets.ROCKET_MONEY_CSV_PATH }}
+
+          # ── Forecast tuning ─────────────────────────────────
+          CASHFLOW_LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '90' }}
+          CASHFLOW_FORECAST_WEEKS: "13"
+          CURRENT_BALANCE: ${{ github.event.inputs.current_balance || '' }}
+
+        run: python cash_flow.py
