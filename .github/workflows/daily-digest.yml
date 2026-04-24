@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       smtp_password:
-        description: "Gmail App Password"
-        required: true
+        description: "Gmail App Password (leave blank — uses saved secret)"
+        required: false
+        default: ""
 
 jobs:
   send-digest:
