@@ -1,6 +1,8 @@
 name: Daily AI News Digest
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "0 9 * * *"   # 9:00 UTC = 5 AM EDT (Mar–Nov) / change to 0 10 for EST (Nov–Mar)
 
