@@ -2,40 +2,24 @@ name: Daily AI News Digest
 
 on:
   schedule:
-    - cron: "0 10 * * *"   # 10:00 UTC = 5 AM EST / 6 AM EDT
+    - cron: "0 10 * * *"   # Every day 5 AM EST
 
   workflow_dispatch:
     inputs:
       smtp_password:
-        description: "Gmail App Password (16 chars, no spaces)"
+        description: "Gmail App Password"
         required: true
 
 jobs:
   send-digest:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Generate and send daily digest
+      - run: pip install requests
+      - name: Send digest
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          EMAIL_FROM:        "Marcoaduartemendes@gmail.com"
-          EMAIL_TO:          "Marcoaduartemendes@gmail.com"
-          SMTP_HOST:         "smtp.gmail.com"
-          SMTP_PORT:         "587"
-          SMTP_USERNAME:     "Marcoaduartemendes@gmail.com"
-          SMTP_PASSWORD:     ${{ github.event.inputs.smtp_password || secrets.SMTP_PASSWORD }}
-          HOURS_BACK:        "24"
-        run: python -m src.main
+          SMTP_PASSWORD: ${{ github.event.inputs.smtp_password || secrets.SMTP_PASSWORD }}
+        run: python send_digest.py
