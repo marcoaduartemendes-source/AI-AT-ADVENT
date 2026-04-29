@@ -2,8 +2,13 @@ name: Crypto Trading Bot
 
 on:
   schedule:
-    - cron: "0 * * * *"   # every hour, on the hour (UTC)
+    - cron: "*/5 * * * *"   # every 5 minutes (GH Actions minimum; runs may be delayed under load)
   workflow_dispatch:        # lets you trigger a manual run from the GitHub website
+
+# Allow only one run at a time; cancel scheduled runs that pile up if a previous one is still going
+concurrency:
+  group: crypto-trading-bot
+  cancel-in-progress: false
 
 jobs:
   trade:
@@ -46,6 +51,11 @@ jobs:
           MAX_TRADE_USD:       ${{ vars.MAX_TRADE_USD || '20' }}
           MIN_CONFIDENCE:      ${{ vars.MIN_CONFIDENCE || '0.6' }}
           TRADING_PRODUCTS:    ${{ vars.TRADING_PRODUCTS || 'BTC-USD,ETH-USD,SOL-USD' }}
+          GRANULARITY:         ${{ vars.GRANULARITY || 'FIVE_MINUTE' }}
+          STOP_LOSS_PCT:       ${{ vars.STOP_LOSS_PCT || '0.02' }}
+          TAKE_PROFIT_PCT:     ${{ vars.TAKE_PROFIT_PCT || '0.04' }}
+          MAX_OPEN_POSITIONS:  ${{ vars.MAX_OPEN_POSITIONS || '5' }}
+          COOLDOWN_SECONDS:    ${{ vars.COOLDOWN_SECONDS || '900' }}
         run: python src/main_trading.py --once
 
       # ── 5. Save database so next run remembers positions ─────────────────────

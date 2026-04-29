@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,8 +14,8 @@ logger = logging.getLogger(__name__)
 HARD_CAP_USD = 20.0
 # Minimum order size (Coinbase requirement is typically $1)
 MIN_ORDER_USD = 1.0
-# Seconds between trades on the same (strategy, product) pair
-COOLDOWN_SECONDS = 3600
+# Seconds between trades on the same (strategy, product) pair (overridable via env)
+COOLDOWN_SECONDS = int(os.environ.get("COOLDOWN_SECONDS", "900"))
 
 
 @dataclass
@@ -48,11 +49,17 @@ class PortfolioManager:
         max_trade_usd: float = HARD_CAP_USD,
         dry_run: bool = True,
         min_confidence: float = 0.6,
+        stop_loss_pct: float = 0.02,
+        take_profit_pct: float = 0.04,
+        max_open_positions: int = 5,
     ):
         self.client = client
         self.max_trade_usd = min(max_trade_usd, HARD_CAP_USD)
         self.dry_run = dry_run
         self.min_confidence = min_confidence
+        self.stop_loss_pct = stop_loss_pct
+        self.take_profit_pct = take_profit_pct
+        self.max_open_positions = max_open_positions
 
         # positions[strategy][product_id] = Position
         self.positions: Dict[str, Dict[str, Position]] = {}
@@ -91,6 +98,52 @@ class PortfolioManager:
     def _touch_cooldown(self, strategy: str, product_id: str):
         self.last_trade_time.setdefault(strategy, {})[product_id] = time.time()
 
+    def _open_position_count(self) -> int:
+        return sum(len(v) for v in self.positions.values())
+
+    # ── Risk management ──────────────────────────────────────────────────────
+
+    def check_stops(self, current_prices: Dict[str, float]) -> List["TradeRecord"]:
+        """Force-close any position whose live price hit stop-loss or take-profit.
+
+        current_prices: {product_id: latest_price}
+        Returns list of TradeRecords for any forced exits.
+        """
+        forced_exits: List[TradeRecord] = []
+        # Snapshot to avoid mutating dict during iteration
+        for strategy, prod_map in list(self.positions.items()):
+            for product_id, pos in list(prod_map.items()):
+                price = current_prices.get(product_id)
+                if price is None or pos.entry_price <= 0:
+                    continue
+                ret = (price - pos.entry_price) / pos.entry_price
+                exit_reason = None
+                if ret <= -self.stop_loss_pct:
+                    exit_reason = f"STOP-LOSS ({ret * 100:+.2f}%)"
+                elif ret >= self.take_profit_pct:
+                    exit_reason = f"TAKE-PROFIT ({ret * 100:+.2f}%)"
+                if not exit_reason:
+                    continue
+
+                logger.warning(
+                    f"[{strategy}] Forced exit on {product_id} — {exit_reason} "
+                    f"entry=${pos.entry_price:.4f} now=${price:.4f}"
+                )
+                exit_signal = Signal(
+                    strategy_name=strategy,
+                    product_id=product_id,
+                    signal=SignalType.SELL,
+                    confidence=1.0,  # bypass min_confidence
+                    price=price,
+                    reason=exit_reason,
+                    metadata={"forced": True},
+                )
+                # Bypass cooldown for safety exits
+                rec = self._execute_sell(exit_signal, pos)
+                if rec:
+                    forced_exits.append(rec)
+        return forced_exits
+
     # ── Public API ───────────────────────────────────────────────────────────
 
     def process_signal(self, signal: Signal) -> Optional[TradeRecord]:
@@ -115,6 +168,12 @@ class PortfolioManager:
         if signal.signal == SignalType.BUY:
             if existing is not None:
                 logger.debug(f"[{strategy}] Already holding {product_id}, skipping BUY")
+                return None
+            if self._open_position_count() >= self.max_open_positions:
+                logger.info(
+                    f"[{strategy}] BUY {product_id} skipped — "
+                    f"already at max_open_positions={self.max_open_positions}"
+                )
                 return None
             return self._execute_buy(signal)
 

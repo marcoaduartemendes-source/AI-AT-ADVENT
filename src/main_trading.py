@@ -35,9 +35,9 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 from trading.coinbase_client import CoinbaseClient
-from trading.market_data import fetch_candles
+from trading.market_data import fetch_candles, get_current_price
 from trading.performance import PerformanceTracker
-from trading.portfolio import PortfolioManager
+from trading.portfolio import PortfolioManager, TradeRecord
 from trading.strategies.base import SignalType
 from trading.strategies.mean_reversion import MeanReversionStrategy
 from trading.strategies.momentum import MomentumStrategy
@@ -68,8 +68,12 @@ if _placeholder(COINBASE_API_KEY) or _placeholder(COINBASE_API_SECRET):
 DRY_RUN = True if SIMULATION else os.environ.get("DRY_RUN", "true").lower() != "false"
 MAX_TRADE_USD = min(float(os.environ.get("MAX_TRADE_USD", "20")), 20.0)
 MIN_CONFIDENCE = float(os.environ.get("MIN_CONFIDENCE", "0.6"))
-SCAN_INTERVAL_MINUTES = int(os.environ.get("SCAN_INTERVAL_MINUTES", "60"))
+SCAN_INTERVAL_MINUTES = int(os.environ.get("SCAN_INTERVAL_MINUTES", "5"))
 PRODUCTS = [p.strip() for p in os.environ.get("TRADING_PRODUCTS", "BTC-USD,ETH-USD,SOL-USD").split(",") if p.strip()]
+GRANULARITY = os.environ.get("GRANULARITY", "FIVE_MINUTE")
+STOP_LOSS_PCT = float(os.environ.get("STOP_LOSS_PCT", "0.02"))
+TAKE_PROFIT_PCT = float(os.environ.get("TAKE_PROFIT_PCT", "0.04"))
+MAX_OPEN_POSITIONS = int(os.environ.get("MAX_OPEN_POSITIONS", "5"))
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -98,8 +102,92 @@ signal.signal(signal.SIGTERM, _handle_signal)
 
 # ── Core loop ─────────────────────────────────────────────────────────────────
 
+def _live_prices(client, products):
+    out = {}
+    for p in products:
+        price = get_current_price(client, p)
+        if price is not None:
+            out[p] = price
+    return out
+
+
+def _write_step_summary(tracker, portfolio, strategy_names, cycle_trades, mode):
+    """Emit a markdown summary to GITHUB_STEP_SUMMARY for the Actions run page."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"## Crypto Trading Bot — {mode}\n\n")
+
+            # ── This cycle's trades
+            if cycle_trades:
+                f.write("### Trades this run\n\n")
+                f.write("| Strategy | Side | Product | USD | Price | PnL | Mode |\n")
+                f.write("|---|---|---|---|---|---|---|\n")
+                for t in cycle_trades:
+                    pnl = f"${t.pnl_usd:+.2f}" if t.pnl_usd is not None else "—"
+                    tag = "DRY" if t.dry_run else "LIVE"
+                    f.write(
+                        f"| {t.strategy} | {t.side} | {t.product_id} | "
+                        f"${t.amount_usd:.2f} | ${t.price:.4f} | {pnl} | {tag} |\n"
+                    )
+                f.write("\n")
+            else:
+                f.write("_No trades placed this run._\n\n")
+
+            # ── Open positions
+            open_pos = portfolio.get_open_positions()
+            if open_pos:
+                f.write("### Open positions\n\n")
+                f.write("| Strategy | Product | Qty | Cost basis | Entry price | Entry time |\n")
+                f.write("|---|---|---|---|---|---|\n")
+                for strat, pmap in open_pos.items():
+                    for pid, p in pmap.items():
+                        f.write(
+                            f"| {strat} | {pid} | {p['quantity']:.8f} | "
+                            f"${p['cost_basis_usd']:.2f} | ${p['entry_price']:.4f} | "
+                            f"{p['entry_time']} |\n"
+                        )
+                f.write("\n")
+            else:
+                f.write("_No open positions._\n\n")
+
+            # ── All-time P&L per strategy
+            f.write("### All-time P&L\n\n")
+            f.write("| Strategy | Closed | Wins | Losses | Win % | Total P&L | Avg/trade |\n")
+            f.write("|---|---|---|---|---|---|---|\n")
+            for name in strategy_names:
+                m = tracker.get_metrics(name)
+                f.write(
+                    f"| {name} | {m['closed_trades']} | {m['wins']} | {m['losses']} | "
+                    f"{m['win_rate'] * 100:.1f}% | ${m['total_pnl']:+.2f} | "
+                    f"${m['avg_pnl']:+.2f} |\n"
+                )
+            total = tracker.get_metrics()
+            f.write(
+                f"| **COMBINED** | **{total['closed_trades']}** | **{total['wins']}** | "
+                f"**{total['losses']}** | **{total['win_rate'] * 100:.1f}%** | "
+                f"**${total['total_pnl']:+.2f}** | **${total['avg_pnl']:+.2f}** |\n"
+            )
+    except Exception as exc:
+        logger.warning(f"Could not write step summary: {exc}")
+
+
 def run_cycle(client, strategies, portfolio: PortfolioManager, tracker: PerformanceTracker):
     signals_total, trades_total = 0, 0
+    cycle_trades: list = []
+
+    # ── Risk pass: enforce stop-loss / take-profit on open positions BEFORE signals
+    open_pos = portfolio.get_open_positions()
+    if open_pos:
+        prods_held = {pid for pmap in open_pos.values() for pid in pmap}
+        prices = _live_prices(client, prods_held)
+        forced = portfolio.check_stops(prices)
+        for trade in forced:
+            tracker.record_trade(trade)
+            cycle_trades.append(trade)
+            trades_total += 1
 
     for strategy in strategies:
         for product_id in PRODUCTS:
@@ -130,6 +218,7 @@ def run_cycle(client, strategies, portfolio: PortfolioManager, tracker: Performa
                 if trade:
                     trades_total += 1
                     tracker.record_trade(trade)
+                    cycle_trades.append(trade)
                     pnl_str = f" | PnL=${trade.pnl_usd:+.2f}" if trade.pnl_usd is not None else ""
                     mode_str = " [DRY RUN]" if trade.dry_run else " [LIVE]"
                     logger.info(
@@ -141,7 +230,7 @@ def run_cycle(client, strategies, portfolio: PortfolioManager, tracker: Performa
                 logger.error(f"[{strategy.name}] Error on {product_id}: {exc}", exc_info=True)
 
     logger.info(f"Cycle complete — {signals_total} signals, {trades_total} trades")
-    return signals_total, trades_total
+    return signals_total, trades_total, cycle_trades
 
 
 def main():
@@ -162,7 +251,10 @@ def main():
     logger.info(f"  Products  : {', '.join(PRODUCTS)}")
     logger.info(f"  Max trade : ${MAX_TRADE_USD:.2f} USD")
     logger.info(f"  Min conf  : {MIN_CONFIDENCE}")
+    logger.info(f"  Granular. : {GRANULARITY}")
     logger.info(f"  Interval  : {SCAN_INTERVAL_MINUTES} min")
+    logger.info(f"  Stop-loss : {STOP_LOSS_PCT * 100:.1f}%   Take-profit: {TAKE_PROFIT_PCT * 100:.1f}%")
+    logger.info(f"  Max open  : {MAX_OPEN_POSITIONS} positions")
     logger.info("=" * 64)
 
     if not DRY_RUN:
@@ -199,20 +291,20 @@ def main():
             fast_period=10,
             slow_period=30,
             rsi_period=14,
-            granularity="ONE_HOUR",
+            granularity=GRANULARITY,
         ),
         MeanReversionStrategy(
             products=PRODUCTS,
             window=20,
             z_entry=2.0,
-            granularity="ONE_HOUR",
+            granularity=GRANULARITY,
         ),
         VolatilityBreakoutStrategy(
             products=PRODUCTS,
             bb_window=20,
             squeeze_threshold=0.5,
             history_window=50,
-            granularity="ONE_HOUR",
+            granularity=GRANULARITY,
         ),
     ]
 
@@ -224,6 +316,9 @@ def main():
         max_trade_usd=MAX_TRADE_USD,
         dry_run=DRY_RUN,
         min_confidence=MIN_CONFIDENCE,
+        stop_loss_pct=STOP_LOSS_PCT,
+        take_profit_pct=TAKE_PROFIT_PCT,
+        max_open_positions=MAX_OPEN_POSITIONS,
     )
     tracker = PerformanceTracker()
     portfolio.attach_tracker(tracker)   # positions survive between hourly restarts
@@ -231,11 +326,12 @@ def main():
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     cycle = 0
+    cycle_trades_last: list = []
     while not _shutdown:
         cycle += 1
         logger.info(f"\n{'─' * 30} Cycle #{cycle} {'─' * 30}")
 
-        run_cycle(client, strategies, portfolio, tracker)
+        _, _, cycle_trades_last = run_cycle(client, strategies, portfolio, tracker)
 
         # Dashboard every 5 cycles (and on cycle 1)
         if cycle == 1 or cycle % 5 == 0:
@@ -263,6 +359,7 @@ def main():
 
     logger.info("Bot shut down cleanly.")
     tracker.print_dashboard(strategy_names)
+    _write_step_summary(tracker, portfolio, strategy_names, cycle_trades_last, mode)
 
 
 if __name__ == "__main__":
