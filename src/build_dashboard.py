@@ -609,9 +609,19 @@ function renderPods() {
   const strategies = pods.strategies || [];
   const risk = pods.risk;
   const wrap = document.getElementById("pods-banner");
-  if (!strategies.length && !risk) { wrap.innerHTML = ""; return; }
 
   let html = `<div class="pods-wrap">`;
+
+  if (!strategies.length && !risk) {
+    html += `<div class="risk-banner" style="border-style: dashed;">`;
+    html += `<div class="item"><span class="label">Multi-Asset Orchestrator:</span><strong>scaffolded · waiting for first live cycle</strong></div>`;
+    html += `<div class="item"><span class="label">Strategies:</span>crypto_funding_carry · risk_parity_etf · kalshi_calibration_arb</div>`;
+    html += `<div class="item"><span class="label">Run cadence:</span>every 5 min (DRY)</div>`;
+    html += `</div></div>`;
+    wrap.innerHTML = html;
+    return;
+  }
+
 
   if (risk) {
     const ddCls = risk.drawdown_pct >= 0.10 ? "neg" : (risk.drawdown_pct >= 0.05 ? "" : "pos");

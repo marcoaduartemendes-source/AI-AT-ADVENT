@@ -29,12 +29,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore trading database (read-only)
+      - name: Restore legacy trading database (read-only)
         uses: actions/cache/restore@v4
         with:
           path: data/trading_performance.db
           key: trading-db-readonly-placeholder
           restore-keys: trading-db-
+
+      - name: Restore orchestrator state databases (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/risk_state.db
+            data/allocator.db
+            data/trading_performance.db
+          key: orchestrator-state-readonly-placeholder
+          restore-keys: orchestrator-state-
+
+      - name: List restored DBs
+        run: ls -la data/ 2>/dev/null || echo "(data dir empty)"
 
       - name: Build dashboard
         env:
