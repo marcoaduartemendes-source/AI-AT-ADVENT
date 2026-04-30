@@ -31,6 +31,13 @@ from trading.strategies.mean_reversion import MeanReversionStrategy
 from trading.strategies.momentum import MomentumStrategy
 from trading.strategies.volatility_breakout import VolatilityBreakoutStrategy
 
+# Optional imports — orchestrator state (added W1)
+try:
+    from allocator.lifecycle import StrategyRegistry
+    _HAS_ORCHESTRATOR = True
+except ImportError:
+    _HAS_ORCHESTRATOR = False
+
 # ─── Config ──────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -152,6 +159,73 @@ def load_live_data() -> Dict:
         "equity_curve": eq,
         "summary": summary,
     }
+
+
+def load_orchestrator_state() -> Dict:
+    """Pull current strategy pod state + risk snapshot from the orchestrator
+    DBs. Returns an empty/default payload if the orchestrator hasn't run yet
+    (e.g. on first dashboard build before the new system has cycled)."""
+    out = {
+        "strategies": [],
+        "risk": None,
+        "lifecycle_events": [],
+    }
+    if not _HAS_ORCHESTRATOR:
+        return out
+
+    # Allocator state
+    try:
+        registry = StrategyRegistry()
+        latest = registry.latest_allocations()
+        for name, row in latest.items():
+            out["strategies"].append({
+                "name": name,
+                "state": row.get("state"),
+                "target_pct": float(row.get("target_pct") or 0),
+                "target_usd": float(row.get("target_usd") or 0),
+                "sharpe": row.get("sharpe"),
+                "drawdown_pct": row.get("drawdown_pct"),
+                "reason": row.get("reason"),
+                "timestamp": row.get("timestamp"),
+            })
+        out["lifecycle_events"] = registry.lifecycle_events(limit=20)
+    except Exception as exc:
+        logger.warning(f"Could not load allocator state: {exc}")
+
+    # Risk state — read the latest snapshot
+    try:
+        import sqlite3
+        risk_db = os.environ.get("RISK_DB_PATH", "data/risk_state.db")
+        if Path(risk_db).exists():
+            conn = sqlite3.connect(risk_db)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT timestamp, equity_usd, note FROM equity_snapshots "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            peak = conn.execute(
+                "SELECT MAX(equity_usd) AS peak FROM equity_snapshots"
+            ).fetchone()
+            ks = conn.execute(
+                "SELECT timestamp, state, drawdown_pct, note FROM kill_switch_events "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            conn.close()
+            if row:
+                eq = float(row["equity_usd"])
+                pk = float(peak["peak"]) if peak and peak["peak"] else eq
+                out["risk"] = {
+                    "equity_usd": eq,
+                    "peak_equity_usd": pk,
+                    "drawdown_pct": (pk - eq) / pk if pk > 0 else 0.0,
+                    "last_snapshot": row["timestamp"],
+                    "last_kill_switch_state": ks["state"] if ks else "NORMAL",
+                    "last_kill_switch_at": ks["timestamp"] if ks else None,
+                }
+    except Exception as exc:
+        logger.warning(f"Could not load risk state: {exc}")
+
+    return out
 
 
 def _empty_summary(label: str) -> Dict:
@@ -321,6 +395,20 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   details summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
   details[open] { padding-bottom: 12px; }
   .scroll { max-height: 360px; overflow: auto; }
+  .pods-wrap { padding: 16px 32px 0 32px; max-width: 1400px; margin: 0 auto; }
+  .pods-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .pod { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .pod-name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .pod-state { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; margin-bottom: 8px; }
+  .pod-state.ACTIVE { background: rgba(63,185,80,0.15); color: var(--green); }
+  .pod-state.WATCH { background: rgba(218,165,32,0.15); color: #d4a64c; }
+  .pod-state.FROZEN { background: rgba(248,81,73,0.15); color: var(--red); }
+  .pod-state.RETIRED { background: rgba(125,133,144,0.15); color: var(--muted); }
+  .pod-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .pod-row .label { color: var(--muted); }
+  .risk-banner { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; gap: 24px; flex-wrap: wrap; }
+  .risk-banner .item { display: flex; gap: 8px; font-size: 13px; }
+  .risk-banner .item .label { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -333,6 +421,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     Stop: <span id="cfg-stop"></span> · Take: <span id="cfg-tp"></span> · Cooldown: <span id="cfg-cd"></span> · Max/trade: <span id="cfg-mt"></span>
   </div>
 </header>
+<div id="pods-banner"></div>
 <div class="tabs" id="tabs"></div>
 <div id="panels"></div>
 
@@ -515,6 +604,55 @@ function render(tab) {
   }
 }
 
+function renderPods() {
+  const pods = DATA.pods || {};
+  const strategies = pods.strategies || [];
+  const risk = pods.risk;
+  const wrap = document.getElementById("pods-banner");
+  if (!strategies.length && !risk) { wrap.innerHTML = ""; return; }
+
+  let html = `<div class="pods-wrap">`;
+
+  if (risk) {
+    const ddCls = risk.drawdown_pct >= 0.10 ? "neg" : (risk.drawdown_pct >= 0.05 ? "" : "pos");
+    html += `<div class="risk-banner">`;
+    html += `<div class="item"><span class="label">Equity:</span><strong>$${risk.equity_usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div>`;
+    html += `<div class="item"><span class="label">Peak:</span><strong>$${risk.peak_equity_usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></div>`;
+    html += `<div class="item"><span class="label">Drawdown:</span><strong class="${ddCls}">${(risk.drawdown_pct * 100).toFixed(2)}%</strong></div>`;
+    html += `<div class="item"><span class="label">Kill switch:</span><strong>${risk.last_kill_switch_state || "NORMAL"}</strong></div>`;
+    if (risk.last_snapshot) {
+      html += `<div class="item"><span class="label">Snapshot:</span>${fmtTime(risk.last_snapshot)}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (strategies.length) {
+    html += `<div class="pods-grid">`;
+    strategies.forEach(s => {
+      html += `<div class="pod">`;
+      html += `<div class="pod-name">${s.name}</div>`;
+      html += `<div class="pod-state ${s.state}">${s.state}</div>`;
+      html += `<div class="pod-row"><span class="label">Target %</span><span>${(s.target_pct * 100).toFixed(1)}%</span></div>`;
+      html += `<div class="pod-row"><span class="label">Target $</span><span>$${(s.target_usd || 0).toLocaleString(undefined,{maximumFractionDigits:0})}</span></div>`;
+      if (s.sharpe != null) {
+        html += `<div class="pod-row"><span class="label">Sharpe (60d)</span><span class="${s.sharpe >= 0 ? 'pos' : 'neg'}">${s.sharpe.toFixed(2)}</span></div>`;
+      }
+      if (s.drawdown_pct != null) {
+        html += `<div class="pod-row"><span class="label">DD</span><span>${(s.drawdown_pct * 100).toFixed(1)}%</span></div>`;
+      }
+      if (s.reason) {
+        html += `<div class="pod-row" style="font-size:11px;color:var(--muted);"><span>${s.reason}</span></div>`;
+      }
+      html += `</div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  wrap.innerHTML = html;
+}
+
+renderPods();
 activate("live");
 </script>
 </body>
@@ -567,6 +705,7 @@ def main():
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "config": config,
         "live": live,
+        "pods": load_orchestrator_state(),
     }
     for days in WINDOWS:
         logger.info(f"Running {days}-day backtest…")
