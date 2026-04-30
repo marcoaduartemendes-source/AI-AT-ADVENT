@@ -153,7 +153,24 @@ class AlpacaAdapter(BrokerAdapter):
         tf = _GRANULARITY_TO_ALPACA.get(granularity)
         if tf is None:
             raise BrokerError(f"Alpaca granularity not supported: {granularity}")
-        params = {"timeframe": tf, "limit": num_candles, "adjustment": "raw"}
+        # Alpaca v2 historical bars endpoint requires a `start` time. Compute
+        # one based on granularity × num_candles, with a 2× buffer for
+        # non-trading days. Use IEX feed which is free for paper accounts.
+        from datetime import timedelta
+        seconds_per_bar = {
+            "1Min": 60, "5Min": 300, "15Min": 900, "30Min": 1800,
+            "1Hour": 3600, "2Hour": 7200, "4Hour": 14400,
+            "1Day": 86400, "1Week": 604800,
+        }.get(tf, 86400)
+        start = (datetime.now(timezone.utc) -
+                  timedelta(seconds=seconds_per_bar * num_candles * 2))
+        params = {
+            "timeframe": tf,
+            "limit": num_candles,
+            "adjustment": "raw",
+            "feed": "iex",
+            "start": start.isoformat().replace("+00:00", "Z"),
+        }
         d = self._get(f"/stocks/{symbol}/bars", on_data=True, params=params)
         bars = d.get("bars", [])
         out: List[Candle] = []
