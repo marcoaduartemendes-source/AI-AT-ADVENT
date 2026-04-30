@@ -146,8 +146,14 @@ class MetaAllocator:
             weights = {k: v * scale for k, v in weights.items()}
 
         # 3) Apply max-weekly-delta clamp
+        # On first allocation for a freshly-registered strategy there is no
+        # prior weight; start from the configured baseline so the strategy
+        # can begin trading at its intended size instead of ramping over weeks.
         for n in active_names:
-            prev_pct = float(prev_allocs.get(n, {}).get("target_pct") or 0.0)
+            if n in prev_allocs:
+                prev_pct = float(prev_allocs[n].get("target_pct") or 0.0)
+            else:
+                prev_pct = self.registry.meta(n).target_alloc_pct
             delta = weights[n] - prev_pct
             if delta > self.cfg.max_weekly_delta_pct:
                 weights[n] = prev_pct + self.cfg.max_weekly_delta_pct
