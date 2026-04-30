@@ -1,0 +1,60 @@
+name: Build Dashboard
+
+on:
+  schedule:
+    - cron: "30 */6 * * *"   # every 6 hours, offset to avoid trading-cron contention
+  workflow_dispatch:
+
+concurrency:
+  group: dashboard-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: claude/daily-ai-news-digest-vcaC1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore trading database (read-only)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/trading_performance.db
+          key: trading-db-readonly-placeholder
+          restore-keys: trading-db-
+
+      - name: Build dashboard
+        env:
+          TRADING_PRODUCTS:    ${{ vars.TRADING_PRODUCTS || 'BTC-USD,ETH-USD,SOL-USD' }}
+          GRANULARITY:         ${{ vars.GRANULARITY || 'FIVE_MINUTE' }}
+          MAX_TRADE_USD:       ${{ vars.MAX_TRADE_USD || '20' }}
+          MIN_CONFIDENCE:      ${{ vars.MIN_CONFIDENCE || '0.6' }}
+          STOP_LOSS_PCT:       ${{ vars.STOP_LOSS_PCT || '0.02' }}
+          TAKE_PROFIT_PCT:     ${{ vars.TAKE_PROFIT_PCT || '0.04' }}
+          COOLDOWN_SECONDS:    ${{ vars.COOLDOWN_SECONDS || '900' }}
+        run: python src/build_dashboard.py
+
+      - name: Commit dashboard if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.html
+          if git diff --cached --quiet; then
+            echo "No dashboard changes."
+            exit 0
+          fi
+          git commit -m "chore: refresh trading dashboard"
+          git push
