@@ -55,7 +55,7 @@ class KalshiAdapter(BrokerAdapter):
         pem_text = pem_text.replace("\\n", "\n").strip()
         self._pem_text = pem_text
         ep = (endpoint or os.environ.get("KALSHI_ENDPOINT")
-              or "https://trading-api.kalshi.com/trade-api/v2").rstrip("/")
+              or "https://api.elections.kalshi.com/trade-api/v2").rstrip("/")
         self.endpoint = ep
         self.is_paper = "demo" in ep
         self._configured = bool(self.key_id and pem_text)
