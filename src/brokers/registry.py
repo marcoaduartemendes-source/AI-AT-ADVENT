@@ -35,10 +35,10 @@ def build_brokers() -> Dict[str, BrokerAdapter]:
         logger.info("Alpaca: credentials missing — adapter not constructed")
 
     ks_key = os.environ.get("KALSHI_KEY_ID", "")
-    ks_pk = os.environ.get("KALSHI_PRIVATE_KEY_PATH", "")
-    # Kalshi adapter is a placeholder, but we always include it so the
-    # dashboard surfaces "configured: false" rather than silent omission.
-    brokers["kalshi"] = KalshiAdapter(ks_key, ks_pk,
+    ks_pem = os.environ.get("KALSHI_PRIVATE_KEY", "")
+    # Always include Kalshi so the dashboard surfaces "configured: false"
+    # rather than silent omission when credentials are absent.
+    brokers["kalshi"] = KalshiAdapter(ks_key, ks_pem,
                                        os.environ.get("KALSHI_ENDPOINT", ""))
 
     return brokers

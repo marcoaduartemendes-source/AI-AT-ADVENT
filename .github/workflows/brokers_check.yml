@@ -27,5 +27,6 @@ jobs:
           ALPACA_SECRET_KEY:   ${{ secrets.ALPACA_SECRET_KEY }}
           ALPACA_ENDPOINT:     ${{ secrets.ALPACA_ENDPOINT }}
           KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
-          KALSHI_PRIVATE_KEY_PATH: ${{ secrets.KALSHI_PRIVATE_KEY_PATH }}
+          KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
+          KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
         run: python src/brokers_check.py
