@@ -1,0 +1,54 @@
+name: Scout Sweep
+
+# Runs all five scouts on a schedule, persisting signals to the bus.
+# Strategies pick them up automatically on their next orchestrator cycle.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"     # every 30 minutes
+  workflow_dispatch:
+
+concurrency:
+  group: scouts
+  cancel-in-progress: true
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Restore signal bus + state DBs
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/signal_bus.db
+            data/risk_state.db
+            data/allocator.db
+            data/trading_performance.db
+          key: orchestrator-state-${{ github.run_number }}-scouts
+          restore-keys: orchestrator-state-
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Run scout sweep
+        env:
+          # Brokers (some scouts need authenticated calls — Kalshi for
+          # prediction markets specifically)
+          COINBASE_API_KEY:    ${{ secrets.COINBASE_API_KEY }}
+          COINBASE_API_SECRET: ${{ secrets.COINBASE_API_SECRET }}
+          ALPACA_API_KEY_ID:   ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_SECRET_KEY:   ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_ENDPOINT:     ${{ secrets.ALPACA_ENDPOINT }}
+          KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
+          KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
+        run: python src/run_scouts.py --vacuum

@@ -75,7 +75,18 @@ class Orchestrator:
 
     def run_cycle(self, scout_signals: Optional[Dict] = None) -> CycleReport:
         report = CycleReport(timestamp=datetime.now(timezone.utc))
-        scout_signals = scout_signals or {}
+        # If no scout_signals dict was passed in, hydrate from the bus
+        if scout_signals is None:
+            try:
+                from scouts.signal_bus import SignalBus
+                bus = SignalBus()
+                scout_signals = {
+                    venue: bus.get_fresh_for_strategy(venue)
+                    for venue in {s.venue for s in self.strategies.values()}
+                }
+            except Exception as e:
+                logger.debug(f"No signal bus available: {e}")
+                scout_signals = {}
 
         # 1) Risk state
         try:

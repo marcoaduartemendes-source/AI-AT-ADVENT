@@ -218,11 +218,15 @@ class RiskManager:
 
         leverage = (notional / equity) if equity > 0 else 0.0
 
+        # Pull current VIX from the macro scout's signal-bus output if
+        # available; falls back to None gracefully when the bus is empty.
+        vix_now = self._latest_vix()
+
         # Multiplier — auto-adjusts on dd / vol / regime
         mult_state = self.multiplier.compute(
             drawdown_pct=dd_pct,
             realized_vol=realized_vol,
-            vix=None,  # wired in W2 with macro scout
+            vix=vix_now,
         )
 
         ks_state = self.config.state_for_drawdown(dd_pct)
@@ -327,6 +331,22 @@ class RiskManager:
                 f"scaled from ${notional_usd:.2f} to ${approved:.2f}", st)
 
         return RiskDecision(Decision.APPROVE, approved, "ok", st)
+
+    # ── Macro signal hookup ---------------------------------------------
+
+    def _latest_vix(self) -> Optional[float]:
+        """Read the macro scout's most-recent VIX reading from the bus."""
+        try:
+            from scouts.signal_bus import SignalBus
+            bus = SignalBus()
+            for row in bus.latest(venue="macro", signal_type="vix_regime", limit=5):
+                if row.is_fresh():
+                    vix = row.payload.get("vix")
+                    if vix is not None:
+                        return float(vix)
+        except Exception:
+            pass
+        return None
 
     # ── Manual controls --------------------------------------------------
 
