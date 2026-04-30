@@ -1,4 +1,4 @@
-name: Broker Health Check
+name: Broker + Risk + Allocator Health Check
 
 on:
   workflow_dispatch:
@@ -7,6 +7,9 @@ on:
     paths:
       - "src/brokers/**"
       - "src/brokers_check.py"
+      - "src/risk/**"
+      - "src/allocator/**"
+      - "src/risk_allocator_check.py"
       - ".github/workflows/brokers_check.yml"
 
 jobs:
@@ -30,3 +33,16 @@ jobs:
           KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
         run: python src/brokers_check.py
+
+      - name: Run risk + allocator smoke test
+        env:
+          COINBASE_API_KEY:    ${{ secrets.COINBASE_API_KEY }}
+          COINBASE_API_SECRET: ${{ secrets.COINBASE_API_SECRET }}
+          ALPACA_API_KEY_ID:   ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_SECRET_KEY:   ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_ENDPOINT:     ${{ secrets.ALPACA_ENDPOINT }}
+          KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
+          KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
+          RISK_MULTIPLIER:     ${{ vars.RISK_MULTIPLIER || '1.0' }}
+        run: python src/risk_allocator_check.py
