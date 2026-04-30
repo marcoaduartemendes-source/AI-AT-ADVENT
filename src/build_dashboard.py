@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from backtest import (
     DEFAULT_FEE_BPS,
     backtest_strategy,
-    fetch_binance_history,
+    fetch_coinbase_public_history,
     trade_to_dict,
 )
 from trading.performance import PerformanceTracker
@@ -556,7 +556,7 @@ def main():
     candles_by_product: Dict = {}
     for pid in PRODUCTS:
         try:
-            candles = fetch_binance_history(pid, GRANULARITY, days=max(WINDOWS) + 2)
+            candles = fetch_coinbase_public_history(pid, GRANULARITY, days=max(WINDOWS) + 2)
             candles_by_product[pid] = candles
             logger.info(f"  {pid}: {len(candles)} candles")
         except Exception as exc:

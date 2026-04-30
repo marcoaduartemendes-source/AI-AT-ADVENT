@@ -3,8 +3,8 @@
 Replays a strategy over historical OHLCV bars using the same risk rules
 as the live bot (stop-loss, take-profit, cooldown, max-trade size).
 
-Historical candles come from Binance's public klines endpoint — no auth,
-no rate-limit headaches. Prices differ from Coinbase by <0.05% on majors.
+Historical candles come from Coinbase's public market endpoint
+(no auth, geo-friendly). Returns up to 350 candles per request.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import requests
 
-from trading.market_data import GRANULARITY_SECONDS, _BINANCE_INTERVALS
+from trading.market_data import GRANULARITY_SECONDS
 from trading.strategies.base import BaseStrategy, SignalType
 
 
@@ -76,58 +76,72 @@ class BacktestResult:
 # ─── Historical data ──────────────────────────────────────────────────────────
 
 
-def fetch_binance_history(
+def fetch_coinbase_public_history(
     product_id: str, granularity: str, days: int
 ) -> np.ndarray:
-    """Paginated klines fetch. Returns OHLCV array sorted ascending by time."""
-    base, _, _ = product_id.partition("-")
-    symbol = f"{base}USDT"
-    interval = _BINANCE_INTERVALS.get(granularity, "5m")
-    interval_sec = GRANULARITY_SECONDS[granularity]
+    """Paginated public Coinbase candles fetch. Returns OHLCV (N,6).
 
-    end_ms = int(time.time() * 1000)
-    start_ms = end_ms - days * 86400 * 1000
+    Coinbase Advanced Trade public market endpoint accepts up to ~350
+    candles per request. We page backwards from now, taking 300/window
+    to stay safely under the cap.
+    """
+    interval_sec = GRANULARITY_SECONDS[granularity]
+    per_page = 300
+    page_seconds = per_page * interval_sec
+
+    end = int(time.time())
+    earliest = end - days * 86400
     out: List[List[float]] = []
 
-    cursor = start_ms
-    while cursor < end_ms:
+    cursor_end = end
+    while cursor_end > earliest:
+        cursor_start = max(earliest, cursor_end - page_seconds)
         resp = requests.get(
-            "https://api.binance.com/api/v3/klines",
+            f"https://api.coinbase.com/api/v3/brokerage/market/products/{product_id}/candles",
             params={
-                "symbol": symbol,
-                "interval": interval,
-                "startTime": cursor,
-                "endTime": end_ms,
-                "limit": 1000,
+                "start": cursor_start,
+                "end": cursor_end,
+                "granularity": granularity,
             },
             timeout=20,
         )
-        resp.raise_for_status()
-        batch = resp.json()
+        if resp.status_code != 200:
+            # Surface details for the first failure but don't keep retrying forever
+            raise RuntimeError(
+                f"Coinbase public candles {product_id} {resp.status_code}: {resp.text[:160]}"
+            )
+        batch = resp.json().get("candles", [])
         if not batch:
             break
-        for k in batch:
-            # [open_time_ms, open, high, low, close, volume, ...]
+        for c in batch:
             out.append([
-                float(k[0]) / 1000.0,
-                float(k[3]),  # low
-                float(k[2]),  # high
-                float(k[1]),  # open
-                float(k[4]),  # close
-                float(k[5]),  # volume
+                float(c["start"]),
+                float(c["low"]),
+                float(c["high"]),
+                float(c["open"]),
+                float(c["close"]),
+                float(c["volume"]),
             ])
-        last_open_ms = int(batch[-1][0])
-        next_cursor = last_open_ms + interval_sec * 1000
-        if next_cursor <= cursor:
+        # Coinbase returns most recent first; advance cursor to the earliest in batch
+        oldest_ts = min(float(c["start"]) for c in batch)
+        next_end = int(oldest_ts)
+        if next_end >= cursor_end:
             break
-        cursor = next_cursor
-        if len(batch) < 1000:
-            break
+        cursor_end = next_end
+        # Politeness: stay well under the 10 req/sec public limit
+        time.sleep(0.1)
 
     arr = np.array(out, dtype=float) if out else np.empty((0, 6))
     if arr.size:
+        # De-dupe in case of overlap, then sort
+        _, unique_idx = np.unique(arr[:, 0], return_index=True)
+        arr = arr[np.sort(unique_idx)]
         arr = arr[arr[:, 0].argsort()]
     return arr
+
+
+# Backward-compat alias kept for the dashboard import name
+fetch_binance_history = fetch_coinbase_public_history
 
 
 # ─── Backtest core ────────────────────────────────────────────────────────────
