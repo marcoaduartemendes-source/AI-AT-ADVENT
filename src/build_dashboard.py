@@ -96,9 +96,15 @@ def load_live_data() -> Dict:
             cum += t["pnl_usd"]
             eq.append({"t": t["timestamp"], "pnl_cumulative": cum})
 
-    # Per-strategy summary
+    # Per-strategy summary — include legacy strategies AND the new
+    # orchestrator-driven strategies so the dashboard shows all of them.
     by_strategy: Dict[str, Dict] = {}
-    for name in ["Momentum", "MeanReversion", "VolatilityBreakout"]:
+    all_strategy_names = [
+        "Momentum", "MeanReversion", "VolatilityBreakout",         # legacy
+        "crypto_funding_carry", "risk_parity_etf",                 # new
+        "kalshi_calibration_arb",
+    ]
+    for name in all_strategy_names:
         m = tracker.get_metrics(name)
         strat_trades = [t for t in all_trades if t["strategy"] == name]
         entry_volume = sum(
@@ -422,6 +428,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </div>
 </header>
 <div id="pods-banner"></div>
+<div id="strategy-pnl-overview"></div>
 <div class="tabs" id="tabs"></div>
 <div id="panels"></div>
 
@@ -481,14 +488,27 @@ function render(tab) {
   }
   html += `</div>`;
 
-  // Per-strategy summary
-  html += `<div class="panel"><h2>By strategy</h2><table><thead><tr>
-    <th>Strategy</th><th>Trades</th><th>Win rate</th><th class="num">Total P&L</th>
-    <th class="num">Volume</th><th class="num">Return on volume</th><th class="num">Avg/trade</th></tr></thead><tbody>`;
+  // Per-strategy P&L overview (always visible; cards)
+  html += `<div class="panel"><h2>P&L by strategy</h2>`;
+  html += `<div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">`;
   Object.values(d.by_strategy).forEach(st => {
     const x = st.summary;
-    html += `<tr>
-      <td>${x.strategy}</td>
+    const sub = `${x.n_trades} closed · ${(x.win_rate * 100).toFixed(0)}% win`;
+    html += kpi(x.strategy, fmtUSD(x.total_pnl_usd), sub, cls(x.total_pnl_usd));
+  });
+  html += `</div></div>`;
+
+  // Per-strategy summary table + EXPANDABLE TRADE DETAILS per row
+  html += `<div class="panel"><h2>By strategy — click a row to see every trade</h2>`;
+  html += `<table><thead><tr>
+    <th>Strategy</th><th>Trades</th><th>Win rate</th><th class="num">Total P&L</th>
+    <th class="num">Volume</th><th class="num">Return on volume</th><th class="num">Avg/trade</th></tr></thead><tbody>`;
+  const stratList = Object.values(d.by_strategy);
+  stratList.forEach((st, idx) => {
+    const x = st.summary;
+    const safeId = `${tab}-strat-${idx}`;
+    html += `<tr style="cursor: pointer;" onclick="document.getElementById('${safeId}').open = !document.getElementById('${safeId}').open">
+      <td><strong>${x.strategy}</strong></td>
       <td>${x.n_trades} (${x.wins}W/${x.losses}L)</td>
       <td>${(x.win_rate * 100).toFixed(1)}%</td>
       <td class="num ${cls(x.total_pnl_usd)}">${fmtUSD(x.total_pnl_usd)}</td>
@@ -496,6 +516,45 @@ function render(tab) {
       <td class="num ${cls(x.return_on_volume_pct)}">${fmtPct(x.return_on_volume_pct)}</td>
       <td class="num ${cls(x.avg_pnl_usd)}">${fmtUSD(x.avg_pnl_usd)}</td>
     </tr>`;
+    // Expandable trade detail row
+    const stTrades = (st.trades || []).slice().sort((a,b) => {
+      const ta = a.close_time || a.open_time || a.timestamp;
+      const tb = b.close_time || b.open_time || b.timestamp;
+      return tb.localeCompare(ta);
+    });
+    html += `<tr><td colspan="7" style="padding: 0; background: var(--panel-2);">
+      <details id="${safeId}" style="border: none; background: transparent; padding: 0;">
+        <summary style="padding: 10px 14px;">${stTrades.length} trade(s) for <strong>${x.strategy}</strong></summary>
+        <div class="scroll" style="max-height: 280px;"><table style="margin: 0;"><thead><tr>
+          <th>Time</th><th>Product</th><th>Side</th><th class="num">Price</th>
+          <th class="num">Qty</th><th class="num">USD</th><th class="num">P&L</th><th>Reason</th></tr></thead><tbody>`;
+    stTrades.slice(0, 200).forEach(t => {
+      const time = fmtTime(t.close_time || t.open_time || t.timestamp);
+      const side = t.side || (t.exit_reason ? "SELL" : "BUY");
+      const price = t.exit_price ?? t.entry_price ?? t.price;
+      const qty = t.quantity ?? 0;
+      const usd = t.amount_usd ?? 0;
+      const pnl = t.pnl_usd;
+      let reason = t.exit_reason || t.reason || "";
+      let rPill = "";
+      if (reason === "stop_loss") rPill = `<span class="pill stop">STOP</span>`;
+      else if (reason === "take_profit") rPill = `<span class="pill tp">TP</span>`;
+      else if (reason === "signal") rPill = `<span class="pill sig">SIGNAL</span>`;
+      else if (reason) rPill = `<span class="pill" style="background: rgba(125,133,144,0.15); color: var(--muted);">${reason}</span>`;
+      html += `<tr>
+        <td>${time}</td><td>${t.product_id || ""}</td>
+        <td><span class="pill ${side === "BUY" ? "buy" : "sell"}">${side}</span></td>
+        <td class="num">$${price ? Number(price).toFixed(4) : "—"}</td>
+        <td class="num">${qty ? Number(qty).toFixed(6) : "—"}</td>
+        <td class="num">$${Number(usd).toFixed(2)}</td>
+        <td class="num ${cls(pnl)}">${fmtUSD(pnl)}</td>
+        <td>${rPill}</td>
+      </tr>`;
+    });
+    if (stTrades.length === 0) {
+      html += `<tr><td colspan="8" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
+    }
+    html += `</tbody></table></div></details></td></tr>`;
   });
   html += `</tbody></table></div>`;
 
@@ -663,6 +722,48 @@ function renderPods() {
 }
 
 renderPods();
+
+function renderStrategyPnLOverview() {
+  // Always-visible banner: each strategy's lifetime LIVE P&L (real trades only)
+  const wrap = document.getElementById("strategy-pnl-overview");
+  const live = DATA.live || {};
+  const byStrat = live.by_strategy || {};
+  const names = Object.keys(byStrat);
+  if (!names.length) { wrap.innerHTML = ""; return; }
+
+  let totalPnl = 0, totalTrades = 0, totalWins = 0, totalVol = 0;
+  names.forEach(n => {
+    const s = byStrat[n].summary || {};
+    totalPnl += (s.total_pnl_usd || 0);
+    totalTrades += (s.n_trades || 0);
+    totalWins += (s.wins || 0);
+    totalVol += (s.entry_volume_usd || 0);
+  });
+
+  let html = `<div class="panel-wrap" style="padding-top: 12px;">`;
+  html += `<div class="panel"><h2>Strategy P&L overview — lifetime live trading</h2>`;
+  // Top KPI strip
+  html += `<div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 16px;">`;
+  html += kpi("Total P&L (live)", fmtUSD(totalPnl), `${totalTrades} trades`, cls(totalPnl));
+  html += kpi("Volume traded", "$" + totalVol.toFixed(0), "lifetime entry notional");
+  html += kpi("Win rate", totalTrades ? (totalWins / totalTrades * 100).toFixed(1) + "%" : "—",
+              totalTrades ? `${totalWins}W / ${totalTrades - totalWins}L` : "no trades yet");
+  html += `</div>`;
+  // Per-strategy mini-cards
+  html += `<div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">`;
+  names.forEach(n => {
+    const s = byStrat[n].summary || {};
+    const pnl = s.total_pnl_usd || 0;
+    const sub = `${s.n_trades || 0} trades · ${((s.win_rate || 0) * 100).toFixed(0)}% win`;
+    html += kpi(n, fmtUSD(pnl), sub, cls(pnl));
+  });
+  html += `</div>`;
+  html += `</div></div>`;
+
+  wrap.innerHTML = html;
+}
+
+renderStrategyPnLOverview();
 activate("live");
 </script>
 </body>
