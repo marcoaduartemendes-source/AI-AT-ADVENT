@@ -27,7 +27,18 @@ from allocator.metrics import StrategyPerformance
 from brokers.registry import build_brokers
 from risk.manager import RiskManager
 from risk.policies import RiskConfig
-from strategies import CryptoFundingCarry, KalshiCalibrationArb, RiskParityETF
+from strategies import (
+    CommodityCarry,
+    CryptoBasisTrade,
+    CryptoFundingCarry,
+    CryptoXSMom,
+    KalshiCalibrationArb,
+    MacroKalshi,
+    PEAD,
+    RiskParityETF,
+    TSMomETF,
+    VolManagedOverlay,
+)
 from strategy_engine.orchestrator import Orchestrator, OrchestratorConfig
 
 logging.basicConfig(
@@ -42,36 +53,94 @@ DRY_RUN_DEFAULT = True
 # ─── Strategy wiring ──────────────────────────────────────────────────────
 
 
-PHASE_1_STRATEGIES = [
+ALL_STRATEGIES = [
+    # ── Phase 1
     StrategyMeta(
         name="crypto_funding_carry",
         asset_classes=["CRYPTO_PERP"], venue="coinbase",
-        target_alloc_pct=0.30, max_alloc_pct=0.40, min_alloc_pct=0.05,
-        description="Long spot / short perp; capture funding rate",
+        target_alloc_pct=0.15, max_alloc_pct=0.30, min_alloc_pct=0.03,
+        description="Long spot / short perp; capture funding rate (P1)",
     ),
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.50, max_alloc_pct=0.60, min_alloc_pct=0.30,
-        description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC)",
+        target_alloc_pct=0.40, max_alloc_pct=0.60, min_alloc_pct=0.20,
+        description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
     ),
     StrategyMeta(
         name="kalshi_calibration_arb",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.15, max_alloc_pct=0.20, min_alloc_pct=0.05,
-        description="Favorite-longshot bias arb on Kalshi",
+        target_alloc_pct=0.05, max_alloc_pct=0.10, min_alloc_pct=0.02,
+        description="Favorite-longshot bias arb on Kalshi (P1)",
+    ),
+    # ── Phase 2
+    StrategyMeta(
+        name="crypto_basis_trade",
+        asset_classes=["CRYPTO_FUTURE"], venue="coinbase",
+        target_alloc_pct=0.10, max_alloc_pct=0.20, min_alloc_pct=0.02,
+        description="Long spot / short dated future on Coinbase (P2)",
+    ),
+    StrategyMeta(
+        name="tsmom_etf",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.10, max_alloc_pct=0.20, min_alloc_pct=0.03,
+        description="12-1m time-series momentum on 7-ETF basket (P2)",
+    ),
+    StrategyMeta(
+        name="commodity_carry",
+        asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
+        target_alloc_pct=0.07, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Top-N backwardated commodity futures (P2)",
+    ),
+    # ── Phase 3
+    StrategyMeta(
+        name="pead",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.05, max_alloc_pct=0.12, min_alloc_pct=0.02,
+        description="Post-earnings announcement drift (P3)",
+    ),
+    StrategyMeta(
+        name="macro_kalshi",
+        asset_classes=["PREDICTION"], venue="kalshi",
+        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.01,
+        description="Kalshi macro events vs implied probabilities (P3)",
+    ),
+    StrategyMeta(
+        name="crypto_xsmom",
+        asset_classes=["CRYPTO_SPOT"], venue="coinbase",
+        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.02,
+        description="Cross-sectional momentum on top-15 alts (P3)",
+    ),
+    StrategyMeta(
+        name="vol_managed_overlay",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.00, max_alloc_pct=0.00, min_alloc_pct=0.0,
+        description="Vol-target multiplier; publishes scaler only, no trades (P3)",
     ),
 ]
+
+# Backward compat alias used by older test scripts
+PHASE_1_STRATEGIES = ALL_STRATEGIES
 
 
 def build_strategies(brokers):
     instances = {}
     if "coinbase" in brokers:
-        instances["crypto_funding_carry"] = CryptoFundingCarry(brokers["coinbase"])
+        cb = brokers["coinbase"]
+        instances["crypto_funding_carry"] = CryptoFundingCarry(cb)
+        instances["crypto_basis_trade"] = CryptoBasisTrade(cb)
+        instances["commodity_carry"] = CommodityCarry(cb)
+        instances["crypto_xsmom"] = CryptoXSMom(cb)
     if "alpaca" in brokers:
-        instances["risk_parity_etf"] = RiskParityETF(brokers["alpaca"])
+        al = brokers["alpaca"]
+        instances["risk_parity_etf"] = RiskParityETF(al)
+        instances["tsmom_etf"] = TSMomETF(al)
+        instances["pead"] = PEAD(al)
+        instances["vol_managed_overlay"] = VolManagedOverlay(al)
     if "kalshi" in brokers:
-        instances["kalshi_calibration_arb"] = KalshiCalibrationArb(brokers["kalshi"])
+        ks = brokers["kalshi"]
+        instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
+        instances["macro_kalshi"] = MacroKalshi(ks)
     return instances
 
 

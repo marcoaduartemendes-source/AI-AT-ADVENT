@@ -37,12 +37,15 @@ jobs:
           restore-keys: trading-db-
 
       - name: Restore orchestrator state databases (read-only)
+        # NOTE: deliberately exclude data/trading_performance.db here so we
+        # don't overwrite the legacy bot's live-trade history that the
+        # previous step (trading-db-) just restored.
         uses: actions/cache/restore@v4
         with:
           path: |
             data/risk_state.db
             data/allocator.db
-            data/trading_performance.db
+            data/signal_bus.db
           key: orchestrator-state-readonly-placeholder
           restore-keys: orchestrator-state-
 

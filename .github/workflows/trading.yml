@@ -1,9 +1,16 @@
-name: Crypto Trading Bot
+name: Crypto Trading Bot (RETIRED — basic strategies only)
+
+# Retired in W2: this workflow ran the original EMA/MACD/Bollinger
+# strategies that lost 1.27%/round-trip to fees in backtest. Replaced by
+# the new "Multi-Asset Orchestrator" workflow which runs the 10 advanced
+# strategies through the layered architecture (broker → strategy → risk →
+# allocator → execution).
+#
+# Schedule disabled. Available on manual dispatch only for historical
+# verification — DO NOT re-enable without removing this comment.
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes (GH Actions minimum; runs may be delayed under load)
-  workflow_dispatch:        # lets you trigger a manual run from the GitHub website
+  workflow_dispatch:
 
 # Allow only one run at a time; cancel scheduled runs that pile up if a previous one is still going
 concurrency:

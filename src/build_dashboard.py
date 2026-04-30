@@ -100,9 +100,12 @@ def load_live_data() -> Dict:
     # orchestrator-driven strategies so the dashboard shows all of them.
     by_strategy: Dict[str, Dict] = {}
     all_strategy_names = [
-        "Momentum", "MeanReversion", "VolatilityBreakout",         # legacy
-        "crypto_funding_carry", "risk_parity_etf",                 # new
-        "kalshi_calibration_arb",
+        # ── Production strategies (orchestrator-driven)
+        "crypto_funding_carry", "risk_parity_etf", "kalshi_calibration_arb",
+        "crypto_basis_trade", "tsmom_etf", "commodity_carry",
+        "pead", "macro_kalshi", "crypto_xsmom", "vol_managed_overlay",
+        # ── Legacy (retired in W2; kept here so historical trades remain visible)
+        "Momentum", "MeanReversion", "VolatilityBreakout",
     ]
     for name in all_strategy_names:
         m = tracker.get_metrics(name)
