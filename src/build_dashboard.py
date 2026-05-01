@@ -13,9 +13,10 @@ import os
 import sys
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 # Ensure src/ is on the path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -127,57 +128,17 @@ def load_live_data() -> Dict:
         # ── Legacy (retired in W2; kept here so historical trades remain visible)
         "Momentum", "MeanReversion", "VolatilityBreakout",
     ]
+    # Pre-bucket trades by strategy in ONE pass instead of N×len(trades)
+    # passes — was a hidden 13×10000 = 130k-iteration hot loop.
+    trades_by_strategy: Dict[str, List[Dict]] = defaultdict(list)
+    for t in all_trades:
+        trades_by_strategy[t.get("strategy") or "<unknown>"].append(t)
     for name in all_strategy_names:
-        # IMPORTANT: recompute aggregates from the *sanitized* in-memory
-        # list, NOT tracker.get_metrics() — the latter queries the DB
-        # directly and would re-include trades whose pnl_usd was a
-        # phantom-loss artifact of recording at submission time
-        # (price=0). The sanitization above already nulled those out
-        # in `all_trades`; we must aggregate from there to stay
-        # consistent with what the dashboard displays per-trade.
-        strat_trades = [t for t in all_trades if t["strategy"] == name]
-        closed = [t for t in strat_trades if t.get("pnl_usd") is not None]
-        wins = sum(1 for t in closed if t["pnl_usd"] > 0)
-        losses_n = len(closed) - wins
-        total_pnl = sum(t["pnl_usd"] for t in closed)
-        avg_pnl = (total_pnl / len(closed)) if closed else 0.0
-        entry_volume = sum(
-            t["amount_usd"] for t in strat_trades if t["side"] == "BUY"
-        )
-        # Sharpe + max-drawdown only make sense for ≥3 closed trades.
-        sharpe = 0.0
-        max_dd = 0.0
-        if len(closed) >= 3:
-            pnls = [t["pnl_usd"] for t in closed]
-            mu = sum(pnls) / len(pnls)
-            var = sum((p - mu) ** 2 for p in pnls) / max(len(pnls) - 1, 1)
-            std = var ** 0.5
-            sharpe = (mu / std * (len(pnls) ** 0.5)) if std > 0 else 0.0
-            cum = 0.0
-            peak = 0.0
-            for p in pnls:
-                cum += p
-                if cum > peak:
-                    peak = cum
-                dd = peak - cum
-                if dd > max_dd:
-                    max_dd = dd
+        strat_trades = trades_by_strategy.get(name, [])
+        summary = _summarize(strat_trades)
+        summary["strategy"] = name
         by_strategy[name] = {
-            "summary": {
-                "strategy": name,
-                "n_trades": len(closed),
-                "wins": wins,
-                "losses": losses_n,
-                "win_rate": (wins / len(closed)) if closed else 0.0,
-                "total_pnl_usd": total_pnl,
-                "entry_volume_usd": entry_volume,
-                "return_on_volume_pct": (
-                    total_pnl / entry_volume * 100 if entry_volume > 0 else 0.0
-                ),
-                "avg_pnl_usd": avg_pnl,
-                "sharpe": sharpe,
-                "max_drawdown": max_dd,
-            },
+            "summary": summary,
             "trades": strat_trades,
         }
 
@@ -198,83 +159,59 @@ def load_live_data() -> Dict:
     conn.close()
     # Live broker positions + per-broker account snapshots so the
     # dashboard can render a "money on each broker" view.
+    # Parallel fetch across venues — three brokers were sequential
+    # (~6 blocking HTTP round-trips), now all three run concurrently.
     by_broker: Dict[str, Dict] = {}
+    open_orders_all: List[Dict] = []
     try:
         from brokers.registry import build_brokers
         brokers = build_brokers()
-        for venue_name, adapter in brokers.items():
-            broker_entry = {
-                "venue": venue_name,
-                "cash_usd": 0.0,
-                "buying_power_usd": 0.0,
-                "equity_usd": 0.0,
-                "invested_usd": 0.0,         # market value of open positions
-                "unrealized_pnl_usd": 0.0,
-                "n_positions": 0,
-                "available_pct": 0.0,         # cash / equity
-                "error": None,
+        with ThreadPoolExecutor(max_workers=max(1, len(brokers))) as ex:
+            futures = {
+                ex.submit(_broker_snapshot, name, adapter): name
+                for name, adapter in brokers.items()
             }
-            # Account snapshot
-            try:
-                acct = adapter.get_account()
-                broker_entry["cash_usd"] = float(acct.cash_usd or 0)
-                broker_entry["buying_power_usd"] = float(acct.buying_power_usd or 0)
-                broker_entry["equity_usd"] = float(acct.equity_usd or 0)
-            except Exception as e:
-                logger.warning(f"  account snapshot {venue_name} failed: {e}")
-                broker_entry["error"] = str(e)[:200]
-            # Positions (also fold into open_pos_raw as before)
-            try:
-                positions = adapter.get_positions()
-            except Exception as e:
-                logger.warning(f"  live positions {venue_name} failed: {e}")
-                positions = []
-                broker_entry["error"] = (broker_entry["error"] or "") + f" | positions: {e}"[:200]
-            for p in positions:
-                mkt = (p.quantity or 0) * (p.market_price or 0)
-                broker_entry["invested_usd"] += mkt
-                broker_entry["unrealized_pnl_usd"] += (p.unrealized_pnl_usd or 0)
-                broker_entry["n_positions"] += 1
-                open_pos_raw.append({
-                    "strategy": f"<{venue_name}>",
-                    "product_id": p.symbol,
-                    "quantity": p.quantity,
-                    "cost_basis_usd": p.quantity * p.avg_entry_price,
-                    "entry_price": p.avg_entry_price,
-                    "entry_time": "",
-                    "market_price": p.market_price,
-                    "unrealized_pnl_usd": p.unrealized_pnl_usd,
-                    "venue": venue_name,
-                })
-            # Available % of equity (rough utilisation)
-            if broker_entry["equity_usd"] > 0:
-                broker_entry["available_pct"] = (
-                    broker_entry["cash_usd"] / broker_entry["equity_usd"] * 100
-                )
-            by_broker[venue_name] = broker_entry
+            for fut in as_completed(futures):
+                name = futures[fut]
+                try:
+                    snap = fut.result(timeout=30)
+                except Exception as e:
+                    logger.warning(f"broker snapshot {name} failed: {e}")
+                    continue
+                # Fold positions into the legacy open_pos_raw list so
+                # downstream summary aggregation keeps working.
+                for pos in snap.pop("positions", []):
+                    open_pos_raw.append({
+                        "strategy": f"<{name}>",
+                        "product_id": pos["symbol"],
+                        "quantity": pos["quantity"],
+                        "cost_basis_usd": pos["cost_basis_usd"],
+                        "entry_price": pos["entry_price"],
+                        "entry_time": "",
+                        "market_price": pos["market_price"],
+                        "unrealized_pnl_usd": pos["unrealized_pnl_usd"],
+                        "venue": pos["venue"],
+                    })
+                open_orders_all.extend(snap.pop("open_orders", []))
+                by_broker[name] = snap
     except Exception as e:
         logger.warning(f"Could not fetch live broker positions: {e}")
 
     # Top-level totals — REALIZED + UNREALIZED so the dashboard reflects
     # the actual P&L state (open positions moving up/down right now),
-    # not just trades that have round-tripped.
-    closed = [t for t in all_trades if t.get("pnl_usd") is not None]
-    realized_pnl = sum(t["pnl_usd"] for t in closed)
+    # not just trades that have round-tripped. Day P&L from an
+    # equity-snapshot lookup happens later (after orchestrator state).
+    base = _summarize(all_trades)
+    realized_pnl = base["total_pnl_usd"]
     unrealized_pnl = sum(p.get("unrealized_pnl_usd", 0) or 0 for p in open_pos_raw)
     market_value = sum(
         (p.get("quantity", 0) or 0) * (p.get("market_price", 0) or 0)
         for p in open_pos_raw
     )
     total_pnl = realized_pnl + unrealized_pnl
-    entry_volume = sum(t["amount_usd"] for t in all_trades if t["side"] == "BUY")
     summary = {
         "label": "Live",
-        "n_trades": len(closed),
-        "wins": sum(1 for t in closed if t["pnl_usd"] > 0),
-        "losses": sum(1 for t in closed if t["pnl_usd"] <= 0),
-        "win_rate": (
-            sum(1 for t in closed if t["pnl_usd"] > 0) / len(closed) if closed else 0.0
-        ),
+        **base,
         # total_pnl_usd is the headline number on the dashboard — keep
         # it as realized+unrealized so the user sees real-time P&L.
         "total_pnl_usd": total_pnl,
@@ -282,17 +219,66 @@ def load_live_data() -> Dict:
         "unrealized_pnl_usd": unrealized_pnl,
         "market_value_usd": market_value,
         "n_open_positions": len(open_pos_raw),
-        "entry_volume_usd": entry_volume,
         "return_on_volume_pct": (
-            total_pnl / entry_volume * 100 if entry_volume > 0 else 0.0
+            total_pnl / base["entry_volume_usd"] * 100
+            if base["entry_volume_usd"] > 0 else 0.0
         ),
     }
+
+    # Per-product (per-symbol) P&L breakdown — closes the "is BTC up
+    # while ETH bleeds?" gap. Combines realized P&L from closed trades
+    # with unrealized P&L from open positions, keyed by product_id.
+    by_product: Dict[str, Dict] = {}
+    for t in all_trades:
+        sym = t.get("product_id") or "<unknown>"
+        b = by_product.setdefault(sym, {
+            "symbol": sym,
+            "realized_pnl_usd": 0.0,
+            "unrealized_pnl_usd": 0.0,
+            "n_trades": 0,
+            "n_buy": 0, "n_sell": 0,
+            "entry_volume_usd": 0.0,
+            "quantity_open": 0.0,
+            "market_value_usd": 0.0,
+        })
+        if t.get("pnl_usd") is not None:
+            b["realized_pnl_usd"] += t["pnl_usd"]
+            b["n_trades"] += 1
+        if t.get("side") == "BUY":
+            b["n_buy"] += 1
+            b["entry_volume_usd"] += (t.get("amount_usd") or 0)
+        elif t.get("side") == "SELL":
+            b["n_sell"] += 1
+    for p in open_pos_raw:
+        sym = p.get("product_id") or "<unknown>"
+        b = by_product.setdefault(sym, {
+            "symbol": sym,
+            "realized_pnl_usd": 0.0,
+            "unrealized_pnl_usd": 0.0,
+            "n_trades": 0, "n_buy": 0, "n_sell": 0,
+            "entry_volume_usd": 0.0,
+            "quantity_open": 0.0,
+            "market_value_usd": 0.0,
+        })
+        b["unrealized_pnl_usd"] += (p.get("unrealized_pnl_usd") or 0)
+        b["quantity_open"] += (p.get("quantity") or 0)
+        b["market_value_usd"] += ((p.get("quantity") or 0) *
+                                    (p.get("market_price") or 0))
+    for b in by_product.values():
+        b["total_pnl_usd"] = b["realized_pnl_usd"] + b["unrealized_pnl_usd"]
+    by_product_list = sorted(
+        by_product.values(),
+        key=lambda x: abs(x["total_pnl_usd"]),
+        reverse=True,
+    )
 
     return {
         "trades": all_trades_sorted,
         "open_positions": open_pos_raw,
+        "open_orders": open_orders_all,
         "by_strategy": by_strategy,
         "by_broker": by_broker,
+        "by_product": by_product_list,
         "equity_curve": eq,
         "summary": summary,
     }
@@ -329,13 +315,15 @@ def load_orchestrator_state() -> Dict:
     except Exception as exc:
         logger.warning(f"Could not load allocator state: {exc}")
 
-    # Risk state — read the latest snapshot
+    # Risk state — read the latest snapshot AND the full series so the
+    # dashboard can render a mark-to-market equity / drawdown curve.
     try:
         import sqlite3
         risk_db = os.environ.get("RISK_DB_PATH", "data/risk_state.db")
         if Path(risk_db).exists():
             conn = sqlite3.connect(risk_db)
             conn.row_factory = sqlite3.Row
+            # Latest snapshot
             row = conn.execute(
                 "SELECT timestamp, equity_usd, note FROM equity_snapshots "
                 "ORDER BY id DESC LIMIT 1"
@@ -347,7 +335,64 @@ def load_orchestrator_state() -> Dict:
                 "SELECT timestamp, state, drawdown_pct, note FROM kill_switch_events "
                 "ORDER BY id DESC LIMIT 1"
             ).fetchone()
+            # Full history of kill-switch trips (helps spot patterns)
+            ks_history_rows = conn.execute(
+                "SELECT timestamp, state, drawdown_pct, note "
+                "FROM kill_switch_events ORDER BY id DESC LIMIT 30"
+            ).fetchall()
+            # Equity snapshot series — cap at 1000 points to keep the
+            # dashboard payload small. 1k 5-min snapshots is ~3.5 days
+            # of history, plenty for the current view.
+            series_rows = conn.execute(
+                "SELECT timestamp, equity_usd FROM equity_snapshots "
+                "ORDER BY id DESC LIMIT 1000"
+            ).fetchall()
             conn.close()
+
+            equity_series = [
+                {"t": r["timestamp"], "equity": float(r["equity_usd"])}
+                for r in reversed(series_rows)  # oldest → newest
+            ]
+            # Drawdown series derived in one pass
+            dd_series = []
+            running_peak = 0.0
+            for pt in equity_series:
+                if pt["equity"] > running_peak:
+                    running_peak = pt["equity"]
+                dd_pct = ((running_peak - pt["equity"]) / running_peak * 100
+                          if running_peak > 0 else 0.0)
+                dd_series.append({"t": pt["t"], "dd_pct": dd_pct})
+
+            # Day P&L: equity now vs. earliest snapshot in last 24h
+            day_pnl = None
+            if equity_series:
+                latest_ts_str = equity_series[-1]["t"]
+                try:
+                    latest_ts = datetime.fromisoformat(
+                        latest_ts_str.replace("Z", "+00:00")
+                    )
+                    day_ago = latest_ts.timestamp() - 86400
+                    last_eq = equity_series[-1]["equity"]
+                    # Walk back to the first sample older than 24h
+                    base_eq = None
+                    for pt in equity_series:
+                        try:
+                            t = datetime.fromisoformat(
+                                pt["t"].replace("Z", "+00:00")
+                            ).timestamp()
+                        except Exception:
+                            continue
+                        if t >= day_ago:
+                            base_eq = pt["equity"]
+                            break
+                    if base_eq is not None and base_eq > 0:
+                        day_pnl = {
+                            "absolute_usd": last_eq - base_eq,
+                            "pct": (last_eq - base_eq) / base_eq * 100,
+                        }
+                except Exception:
+                    pass
+
             if row:
                 eq = float(row["equity_usd"])
                 pk = float(peak["peak"]) if peak and peak["peak"] else eq
@@ -358,6 +403,10 @@ def load_orchestrator_state() -> Dict:
                     "last_snapshot": row["timestamp"],
                     "last_kill_switch_state": ks["state"] if ks else "NORMAL",
                     "last_kill_switch_at": ks["timestamp"] if ks else None,
+                    "equity_series": equity_series,
+                    "drawdown_series": dd_series,
+                    "kill_switch_history": [dict(r) for r in ks_history_rows],
+                    "day_pnl": day_pnl,
                 }
     except Exception as exc:
         logger.warning(f"Could not load risk state: {exc}")
@@ -416,7 +465,140 @@ def _empty_summary(label: str) -> Dict:
         "total_pnl_usd": 0.0,
         "entry_volume_usd": 0.0,
         "return_on_volume_pct": 0.0,
+        "avg_pnl_usd": 0.0,   # JS reads this on every row; missing field caused undefined.toFixed
     }
+
+
+def _summarize(trades: List[Dict]) -> Dict:
+    """Single source of truth for trade aggregates.
+
+    Replaces 4 near-identical aggregation blocks that drifted apart over
+    time (per-strategy live, headline live, per-strategy backtest,
+    backtest merge). Computes wins / losses / win rate / total P&L /
+    entry volume / return on volume / Sharpe / max drawdown from a list
+    of trade dicts that may contain `pnl_usd=None` for not-yet-closed.
+    """
+    closed = [t for t in trades if t.get("pnl_usd") is not None]
+    n = len(closed)
+    wins = sum(1 for t in closed if t["pnl_usd"] > 0)
+    losses = n - wins
+    total_pnl = sum(t["pnl_usd"] for t in closed)
+    avg_pnl = (total_pnl / n) if n else 0.0
+    entry_volume = sum(
+        (t.get("amount_usd") or 0) for t in trades if t.get("side") == "BUY"
+    )
+    rov = (total_pnl / entry_volume * 100) if entry_volume > 0 else 0.0
+    sharpe = 0.0
+    max_dd = 0.0
+    if n >= 3:
+        pnls = [t["pnl_usd"] for t in closed]
+        mu = total_pnl / n
+        var = sum((p - mu) ** 2 for p in pnls) / max(n - 1, 1)
+        std = var ** 0.5
+        sharpe = (mu / std * (n ** 0.5)) if std > 0 else 0.0
+        cum = 0.0
+        peak = 0.0
+        for p in pnls:
+            cum += p
+            if cum > peak:
+                peak = cum
+            dd = peak - cum
+            if dd > max_dd:
+                max_dd = dd
+    return {
+        "n_trades": n,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": (wins / n) if n else 0.0,
+        "total_pnl_usd": total_pnl,
+        "avg_pnl_usd": avg_pnl,
+        "entry_volume_usd": entry_volume,
+        "return_on_volume_pct": rov,
+        "sharpe": sharpe,
+        "max_drawdown": max_dd,
+    }
+
+
+def _broker_snapshot(venue: str, adapter) -> Dict:
+    """Pull account + positions + open orders for one broker.
+
+    Designed to be called concurrently from a ThreadPoolExecutor — each
+    venue is independent. Catches errors per-call so one broker failure
+    doesn't poison the whole snapshot.
+    """
+    entry: Dict = {
+        "venue": venue,
+        "cash_usd": 0.0,
+        "buying_power_usd": 0.0,
+        "equity_usd": 0.0,
+        "invested_usd": 0.0,
+        "unrealized_pnl_usd": 0.0,
+        "n_positions": 0,
+        "n_open_orders": 0,
+        "available_pct": 0.0,
+        "last_ok_at": None,
+        "error": None,
+        "positions": [],
+        "open_orders": [],
+    }
+    errs = []
+    # Account
+    try:
+        acct = adapter.get_account()
+        entry["cash_usd"] = float(acct.cash_usd or 0)
+        entry["buying_power_usd"] = float(acct.buying_power_usd or 0)
+        entry["equity_usd"] = float(acct.equity_usd or 0)
+    except Exception as e:
+        errs.append(f"account: {type(e).__name__}: {str(e)[:80]}")
+    # Positions
+    try:
+        positions = adapter.get_positions() or []
+    except Exception as e:
+        positions = []
+        errs.append(f"positions: {type(e).__name__}: {str(e)[:80]}")
+    for p in positions:
+        mkt = (p.quantity or 0) * (p.market_price or 0)
+        entry["invested_usd"] += mkt
+        entry["unrealized_pnl_usd"] += (p.unrealized_pnl_usd or 0)
+        entry["n_positions"] += 1
+        entry["positions"].append({
+            "symbol": p.symbol,
+            "quantity": p.quantity,
+            "entry_price": p.avg_entry_price,
+            "market_price": p.market_price,
+            "market_value_usd": mkt,
+            "cost_basis_usd": p.quantity * p.avg_entry_price,
+            "unrealized_pnl_usd": p.unrealized_pnl_usd,
+            "venue": venue,
+        })
+    # Open orders (used for the new "Pending orders" panel)
+    if hasattr(adapter, "get_open_orders"):
+        try:
+            opens = adapter.get_open_orders() or []
+            for o in opens:
+                entry["open_orders"].append({
+                    "venue": venue,
+                    "order_id": o.order_id,
+                    "symbol": o.symbol,
+                    "side": o.side.value if hasattr(o.side, "value") else str(o.side),
+                    "quantity": o.quantity,
+                    "notional_usd": o.notional_usd,
+                    "limit_price": o.limit_price,
+                    "status": (o.status.value if hasattr(o.status, "value")
+                                else str(o.status)),
+                    "submitted_at": (o.submitted_at.isoformat()
+                                      if o.submitted_at else None),
+                })
+            entry["n_open_orders"] = len(opens)
+        except Exception as e:
+            errs.append(f"open_orders: {type(e).__name__}: {str(e)[:80]}")
+    if entry["equity_usd"] > 0:
+        entry["available_pct"] = entry["cash_usd"] / entry["equity_usd"] * 100
+    if not errs:
+        entry["last_ok_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        entry["error"] = " | ".join(errs)[:300]
+    return entry
 
 
 # ─── Backtest data ────────────────────────────────────────────────────────────
@@ -651,6 +833,55 @@ function render(tab) {
   const isLive = tab === "live";
 
   let html = `<div class="panel-wrap">`;
+
+  // ─── System health banner (live tab only) ────────────────────────
+  // Shows whether the orchestrator + brokers are healthy. Green when
+  // all brokers are reachable and the orchestrator cycled in the last
+  // 15 min; yellow if stale; red if any broker errored.
+  if (isLive) {
+    const now = Date.now();
+    const lastRiskTs = (DATA.pods?.risk?.last_snapshot) || null;
+    const orchAgeMin = lastRiskTs
+      ? Math.floor((now - new Date(lastRiskTs).getTime()) / 60000)
+      : null;
+    const brokers = Object.values(DATA.live.by_broker || {});
+    const errBrokers = brokers.filter(b => b.error);
+    const okBrokers = brokers.filter(b => !b.error);
+    let healthClass = "pos";
+    let healthText = "All systems operational";
+    if (errBrokers.length) {
+      healthClass = "neg";
+      healthText = `${errBrokers.length} broker error${errBrokers.length>1?"s":""}: ${errBrokers.map(b=>b.venue).join(", ")}`;
+    } else if (orchAgeMin !== null && orchAgeMin > 15) {
+      healthClass = "neg";
+      healthText = `Orchestrator stale (last cycle ${orchAgeMin} min ago)`;
+    } else if (orchAgeMin !== null && orchAgeMin > 8) {
+      healthClass = "";
+      healthText = `Orchestrator: last cycle ${orchAgeMin} min ago`;
+    }
+    const orchStatus = (orchAgeMin === null)
+      ? "no cycle data"
+      : `last cycle ${orchAgeMin} min ago`;
+    html += `<div class="panel" style="margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <strong class="${healthClass}">● ${healthText}</strong>
+          <div style="color: var(--muted); font-size: 12px; margin-top: 4px;">
+            Orchestrator: ${orchStatus} · Brokers OK: ${okBrokers.length}/${brokers.length}
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">`;
+    brokers.forEach(b => {
+      const ageStr = b.last_ok_at
+        ? `${Math.floor((now - new Date(b.last_ok_at).getTime())/60000)}m ago`
+        : "—";
+      const klass = b.error ? "stop" : "tp";
+      const tip = b.error ? b.error : `last OK: ${ageStr}`;
+      html += `<span class="pill ${klass}" title="${tip}">${b.venue}: ${b.error ? "err" : ageStr}</span>`;
+    });
+    html += `</div></div></div>`;
+  }
+
   html += `<div class="kpi-row">`;
   if (isLive) {
     // Live tab: show realized + unrealized broken out so the user sees
@@ -661,10 +892,17 @@ function render(tab) {
     const unrPnl   = (s.unrealized_pnl_usd ?? 0);
     const mktVal   = (s.market_value_usd ?? 0);
     const nOpen    = (s.n_open_positions ?? DATA.live.open_positions.length);
+    const dayPnl   = DATA.pods?.risk?.day_pnl;
     html += kpi("Total P&L",
                 fmtUSD(totalPnl),
                 `realized + unrealized`,
                 cls(totalPnl));
+    if (dayPnl) {
+      html += kpi("Day P&L",
+                  fmtUSD(dayPnl.absolute_usd),
+                  `${dayPnl.pct >= 0 ? "+" : ""}${dayPnl.pct.toFixed(2)}% in 24h`,
+                  cls(dayPnl.absolute_usd));
+    }
     html += kpi("Unrealized P&L",
                 fmtUSD(unrPnl),
                 `${nOpen} open position${nOpen===1?"":"s"} · $${mktVal.toFixed(0)} market value`,
@@ -674,6 +912,14 @@ function render(tab) {
                 `${s.n_trades} closed trade${s.n_trades===1?"":"s"}`,
                 cls(realPnl));
     html += kpi("Win rate", (s.win_rate * 100).toFixed(1) + "%", `${s.wins}W / ${s.losses}L`);
+    // Drawdown card
+    const dd = DATA.pods?.risk?.drawdown_pct;
+    if (dd !== null && dd !== undefined) {
+      html += kpi("Drawdown",
+                  (dd * 100).toFixed(2) + "%",
+                  "from peak equity",
+                  dd > 0.05 ? "neg" : "");
+    }
   } else {
     html += kpi("Total P&L", fmtUSD(s.total_pnl_usd), `${s.n_trades} closed trades`, cls(s.total_pnl_usd));
     html += kpi("Return on volume", fmtPct(s.return_on_volume_pct), `over $${s.entry_volume_usd.toFixed(0)} traded`, cls(s.return_on_volume_pct));
@@ -681,6 +927,81 @@ function render(tab) {
     html += kpi("Trade volume", "$" + s.entry_volume_usd.toFixed(0), `entry notional`);
   }
   html += `</div>`;
+
+  // ─── Equity curve + drawdown chart (live tab only) ────────────────
+  // Plots the full mark-to-market equity series from risk_state.db
+  // alongside the underwater (drawdown) curve. This is the single
+  // chart most useful for spotting whether the bot is gaining money,
+  // bleeding money, or stuck flat — and for catching drawdown trips.
+  if (isLive && DATA.pods?.risk?.equity_series?.length > 1) {
+    const eq = DATA.orchestrator.risk.equity_series;
+    const ddSeries = DATA.orchestrator.risk.drawdown_series || [];
+    html += `<div class="panel">
+      <h2>Mark-to-market equity</h2>
+      <div style="position: relative; height: 280px;">
+        <canvas id="mtm-equity-chart"></canvas>
+      </div>
+    </div>`;
+    if (ddSeries.length > 1) {
+      html += `<div class="panel">
+        <h2>Drawdown (underwater curve)</h2>
+        <div style="position: relative; height: 200px;">
+          <canvas id="mtm-dd-chart"></canvas>
+        </div>
+      </div>`;
+    }
+    // Defer chart creation until the canvas is in the DOM.
+    setTimeout(() => {
+      const eqCtx = document.getElementById("mtm-equity-chart");
+      if (eqCtx) {
+        new Chart(eqCtx, {
+          type: "line",
+          data: {
+            labels: eq.map(p => p.t.slice(0,16).replace("T"," ")),
+            datasets: [{
+              label: "Equity ($)",
+              data: eq.map(p => p.equity),
+              borderColor: "#4ec9b0",
+              backgroundColor: "rgba(78, 201, 176, 0.10)",
+              fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { maxTicksLimit: 8, color: "#7d8590" }, grid: { color: "rgba(125,133,144,0.1)" }},
+              y: { ticks: { color: "#7d8590", callback: v => "$"+v.toFixed(0) }, grid: { color: "rgba(125,133,144,0.1)" }},
+            },
+          },
+        });
+      }
+      const ddCtx = document.getElementById("mtm-dd-chart");
+      if (ddCtx) {
+        new Chart(ddCtx, {
+          type: "line",
+          data: {
+            labels: ddSeries.map(p => p.t.slice(0,16).replace("T"," ")),
+            datasets: [{
+              label: "Drawdown (%)",
+              data: ddSeries.map(p => -p.dd_pct),  // negative for visual
+              borderColor: "#f47174",
+              backgroundColor: "rgba(244, 113, 116, 0.18)",
+              fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { maxTicksLimit: 8, color: "#7d8590" }, grid: { color: "rgba(125,133,144,0.1)" }},
+              y: { ticks: { color: "#7d8590", callback: v => v.toFixed(1)+"%" }, grid: { color: "rgba(125,133,144,0.1)" }},
+            },
+          },
+        });
+      }
+    }, 50);
+  }
 
   // Per-broker breakdown (live tab only) — show cash available,
   // amount invested (market value of positions), and unrealized P&L
@@ -742,6 +1063,86 @@ function render(tab) {
     html += `</tbody></table></div>`;
   }
 
+  // ─── Pending orders (live tab only) ──────────────────────────────
+  // Surfaces every open order across brokers so the user can see
+  // what's actually queued. Stale orders (>30 min) are highlighted —
+  // the orchestrator auto-cancels them but a pile here means a
+  // strategy is firing too aggressively or the broker is stuck.
+  if (isLive && DATA.live.open_orders && DATA.live.open_orders.length) {
+    const ords = DATA.live.open_orders.slice().sort((a,b) =>
+      (b.submitted_at || "").localeCompare(a.submitted_at || ""));
+    html += `<div class="panel"><h2>Pending orders <span style="color:var(--muted); font-weight:400; font-size:14px;">(${ords.length})</span></h2>`;
+    html += `<table><thead><tr>
+      <th>Broker</th><th>Symbol</th><th>Side</th>
+      <th class="num">Qty / Notional</th><th class="num">Limit</th>
+      <th>Status</th><th>Submitted</th><th>Age</th>
+    </tr></thead><tbody>`;
+    const now = Date.now();
+    ords.slice(0, 50).forEach(o => {
+      const age = o.submitted_at
+        ? Math.floor((now - new Date(o.submitted_at).getTime()) / 60000)
+        : null;
+      const stale = age !== null && age > 30;
+      const sideKlass = (o.side === "BUY") ? "pos" : "neg";
+      const qtyOrNotional = o.notional_usd
+        ? fmtUSD(o.notional_usd)
+        : (o.quantity != null ? o.quantity.toFixed(4) : "—");
+      html += `<tr${stale ? ' style="background: rgba(244,113,116,0.06);"' : ''}>
+        <td>${o.venue}</td>
+        <td><strong>${o.symbol}</strong></td>
+        <td class="${sideKlass}">${o.side}</td>
+        <td class="num">${qtyOrNotional}</td>
+        <td class="num">${o.limit_price ? "$"+o.limit_price.toFixed(2) : "MKT"}</td>
+        <td><span class="pill" style="background: rgba(125,133,144,0.15); color: var(--muted);">${o.status}</span></td>
+        <td>${o.submitted_at ? fmtTime(o.submitted_at) : "—"}</td>
+        <td class="num ${stale ? 'neg' : ''}">${age !== null ? age + "m" : "—"}</td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+    if (ords.length > 50) {
+      html += `<div style="color: var(--muted); font-size: 12px; padding: 8px;">Showing 50 of ${ords.length} pending orders.</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ─── P&L by product / symbol (live tab only) ──────────────────────
+  // Closes the "is BTC up while ETH bleeds?" hole. Combines realized
+  // P&L from closed trades with unrealized from open positions, ranks
+  // by absolute total P&L so winners and biggest losers float to top.
+  if (isLive && DATA.live.by_product && DATA.live.by_product.length) {
+    const prods = DATA.live.by_product
+      .filter(p => p.total_pnl_usd !== 0 || p.market_value_usd > 0 || p.n_trades > 0);
+    if (prods.length) {
+      html += `<div class="panel"><h2>P&L by product</h2>`;
+      html += `<table><thead><tr>
+        <th>Symbol</th>
+        <th class="num">Realized</th>
+        <th class="num">Unrealized</th>
+        <th class="num">Total P&L</th>
+        <th class="num">Open qty</th>
+        <th class="num">Market value</th>
+        <th class="num">Trades</th>
+        <th class="num">Volume</th>
+      </tr></thead><tbody>`;
+      prods.slice(0, 25).forEach(p => {
+        html += `<tr>
+          <td><strong>${p.symbol}</strong></td>
+          <td class="num ${cls(p.realized_pnl_usd)}">${fmtUSD(p.realized_pnl_usd)}</td>
+          <td class="num ${cls(p.unrealized_pnl_usd)}">${fmtUSD(p.unrealized_pnl_usd)}</td>
+          <td class="num ${cls(p.total_pnl_usd)}">${fmtUSD(p.total_pnl_usd)}</td>
+          <td class="num">${p.quantity_open ? p.quantity_open.toFixed(4) : "—"}</td>
+          <td class="num">${p.market_value_usd ? fmtUSD(p.market_value_usd).replace(/^\+\$/,"$") : "—"}</td>
+          <td class="num">${p.n_trades} (${p.n_buy}B/${p.n_sell}S)</td>
+          <td class="num">$${p.entry_volume_usd.toFixed(0)}</td>
+        </tr>`;
+      });
+      if (prods.length > 25) {
+        html += `<tr><td colspan="8" style="color: var(--muted); font-size: 12px; text-align: center;">... and ${prods.length - 25} more</td></tr>`;
+      }
+      html += `</tbody></table></div>`;
+    }
+  }
+
   // Per-strategy P&L overview (always visible; cards)
   html += `<div class="panel"><h2>P&L by strategy</h2>`;
   html += `<div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">`;
@@ -752,17 +1153,35 @@ function render(tab) {
   });
   html += `</div></div>`;
 
+  // Build a name → lifecycle-state lookup so each row shows whether
+  // the strategy is LIVE / DRY / FROZEN / RETIRED.
+  const podByName = {};
+  (DATA.pods?.strategies || []).forEach(p => { podByName[p.name] = p; });
+  const lifecyclePill = (state) => {
+    if (!state) return "";
+    const klass = state === "ACTIVE" ? "tp"
+                : state === "FROZEN" ? "stop"
+                : state === "RETIRED" ? "stop"
+                : "";
+    return `<span class="pill ${klass}" style="margin-left:6px;font-size:10px;">${state}</span>`;
+  };
+
   // Per-strategy summary table + EXPANDABLE TRADE DETAILS per row
   html += `<div class="panel"><h2>By strategy — click a row to see every trade</h2>`;
   html += `<table><thead><tr>
-    <th>Strategy</th><th>Trades</th><th>Win rate</th><th class="num">Total P&L</th>
+    <th>Strategy</th><th>State</th><th>Trades</th><th>Win rate</th><th class="num">Total P&L</th>
     <th class="num">Volume</th><th class="num">Return on volume</th><th class="num">Avg/trade</th></tr></thead><tbody>`;
   const stratList = Object.values(d.by_strategy);
   stratList.forEach((st, idx) => {
     const x = st.summary;
     const safeId = `${tab}-strat-${idx}`;
+    const pod = podByName[x.strategy];
+    const stateCell = pod
+      ? `${lifecyclePill(pod.state)} <span style="color:var(--muted);font-size:11px;">${(pod.target_pct*100).toFixed(1)}%</span>`
+      : `<span style="color:var(--muted);font-size:11px;">—</span>`;
     html += `<tr style="cursor: pointer;" onclick="document.getElementById('${safeId}').open = !document.getElementById('${safeId}').open">
       <td><strong>${x.strategy}</strong></td>
+      <td>${stateCell}</td>
       <td>${x.n_trades} (${x.wins}W/${x.losses}L)</td>
       <td>${(x.win_rate * 100).toFixed(1)}%</td>
       <td class="num ${cls(x.total_pnl_usd)}">${fmtUSD(x.total_pnl_usd)}</td>
@@ -776,7 +1195,7 @@ function render(tab) {
       const tb = b.close_time || b.open_time || b.timestamp;
       return tb.localeCompare(ta);
     });
-    html += `<tr><td colspan="7" style="padding: 0; background: var(--panel-2);">
+    html += `<tr><td colspan="8" style="padding: 0; background: var(--panel-2);">
       <details id="${safeId}" style="border: none; background: transparent; padding: 0;">
         <summary style="padding: 10px 14px;">${stTrades.length} trade(s) for <strong>${x.strategy}</strong></summary>
         <div class="scroll" style="max-height: 280px;"><table style="margin: 0;"><thead><tr>
