@@ -279,6 +279,7 @@ class RiskManager:
         strategy_name: Optional[str] = None,
         existing_position_usd: float = 0.0,
         state: Optional[RiskState] = None,
+        venue: Optional[str] = None,
     ) -> RiskDecision:
         """Approve, scale, or reject a candidate order.
 
@@ -320,8 +321,9 @@ class RiskManager:
                     f"{st.multiplier.effective:.2f} ({', '.join(st.multiplier.notes) or 'base'})"
                 )
 
-        # ─ Per-order ceiling (scales with equity)
-        per_order_cap = min(cfg.max_trade_usd,
+        # ─ Per-order ceiling (scales with equity); per-venue override wins
+        venue_cap = cfg.cap_for_venue(venue) if venue else cfg.max_trade_usd
+        per_order_cap = min(venue_cap,
                             cfg.max_position_pct * st.equity_usd)
         if approved > per_order_cap:
             approved = per_order_cap

@@ -7,7 +7,7 @@ defaults aimed at the 15% return / 12% vol / 12% max-DD profile.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
@@ -79,6 +79,21 @@ class RiskConfig:
     """Per-order ceiling; prevents one bad signal from blowing up the book.
     Scales with equity automatically — see RiskManager.compute_state()."""
 
+    # Per-broker overrides (None = use max_trade_usd above).
+    # Used to cap small live tests on one venue (e.g. $50 on Coinbase)
+    # without crippling Alpaca paper trading at the same time.
+    max_trade_usd_coinbase: Optional[float] = None
+    max_trade_usd_alpaca: Optional[float] = None
+    max_trade_usd_kalshi: Optional[float] = None
+
+    def cap_for_venue(self, venue: str) -> float:
+        per_venue = {
+            "coinbase": self.max_trade_usd_coinbase,
+            "alpaca":   self.max_trade_usd_alpaca,
+            "kalshi":   self.max_trade_usd_kalshi,
+        }.get(venue)
+        return per_venue if per_venue is not None else self.max_trade_usd
+
     # ── Cooldown ---------------------------------------------------------
     kill_switch_cooldown_seconds: int = 86400
     """After KILL fires, wait this long before allowing manual restart."""
@@ -87,6 +102,14 @@ class RiskConfig:
     def from_env(cls) -> "RiskConfig":
         """Build config from env vars. Repo workflow can override any field
         by setting an env var with the corresponding uppercase name."""
+        def _opt_envf(name: str) -> Optional[float]:
+            v = os.environ.get(name)
+            if v is None or v == "":
+                return None
+            try:
+                return float(v)
+            except ValueError:
+                return None
         return cls(
             target_portfolio_vol=_envf("TARGET_PORTFOLIO_VOL", 0.12),
             max_position_pct=_envf("MAX_POSITION_PCT", 0.30),
@@ -102,6 +125,9 @@ class RiskConfig:
             multiplier_default=_envf("RISK_MULTIPLIER", 1.0),
             min_trade_usd=_envf("MIN_TRADE_USD", 5.0),
             max_trade_usd=_envf("MAX_TRADE_USD_GLOBAL", 5000.0),
+            max_trade_usd_coinbase=_opt_envf("MAX_TRADE_USD_COINBASE"),
+            max_trade_usd_alpaca=_opt_envf("MAX_TRADE_USD_ALPACA"),
+            max_trade_usd_kalshi=_opt_envf("MAX_TRADE_USD_KALSHI"),
             kill_switch_cooldown_seconds=_envi("KILL_SWITCH_COOLDOWN_SECONDS", 86400),
         )
 

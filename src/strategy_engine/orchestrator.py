@@ -239,6 +239,7 @@ class Orchestrator:
             strategy_name=proposal.strategy,
             existing_position_usd=existing_usd,
             state=state,
+            venue=proposal.venue,
         )
 
         if decision.decision == Decision.REJECT:
