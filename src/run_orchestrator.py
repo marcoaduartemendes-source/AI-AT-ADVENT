@@ -64,7 +64,9 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.40, max_alloc_pct=0.60, min_alloc_pct=0.20,
+        # Per Opus's first review: capped at 30% to satisfy the
+        # single-strategy hard cap rule.
+        target_alloc_pct=0.28, max_alloc_pct=0.30, min_alloc_pct=0.20,
         description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
     ),
     StrategyMeta(
@@ -83,13 +85,16 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="tsmom_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.10, max_alloc_pct=0.20, min_alloc_pct=0.03,
+        # Per Opus review: increased from 10% to absorb risk_parity_etf overage
+        target_alloc_pct=0.18, max_alloc_pct=0.25, min_alloc_pct=0.05,
         description="12-1m time-series momentum on 7-ETF basket (P2)",
     ),
     StrategyMeta(
         name="commodity_carry",
         asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
-        target_alloc_pct=0.07, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        # Per Opus review: increased from 7% — scout fires but strategy
+        # under-allocated to capture term-structure edge
+        target_alloc_pct=0.10, max_alloc_pct=0.18, min_alloc_pct=0.03,
         description="Top-N backwardated commodity futures (P2)",
     ),
     # ── Phase 3
