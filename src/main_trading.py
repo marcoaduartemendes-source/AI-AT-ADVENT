@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from trading.coinbase_client import CoinbaseClient
 from trading.market_data import fetch_candles, get_current_price
 from trading.performance import PerformanceTracker
-from trading.portfolio import PortfolioManager, TradeRecord
+from trading.portfolio import PortfolioManager
 from trading.strategies.base import SignalType
 from trading.strategies.mean_reversion import MeanReversionStrategy
 from trading.strategies.momentum import MomentumStrategy

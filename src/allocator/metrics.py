@@ -23,8 +23,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, timedelta, UTC
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ class StrategyPerformance:
     # the dominant noise is small-N, which the shrinkage handles.
     ANNUALIZATION = math.sqrt(252)
 
-    def __init__(self, db_path: Optional[str] = None, *, shrinkage_tau: int = 30):
+    def __init__(self, db_path: str | None = None, *, shrinkage_tau: int = 30):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
         )
@@ -74,7 +73,7 @@ class StrategyPerformance:
     # ── Public API -------------------------------------------------------
 
     def metrics_for(self, strategy_name: str, window_days: int = 60) -> StrategyMetrics:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=window_days)).isoformat()
         try:
             with self._conn() as c:
                 rows = c.execute(
@@ -89,7 +88,7 @@ class StrategyPerformance:
 
         return self._compute(strategy_name, window_days, pnls)
 
-    def _compute(self, name: str, window_days: int, pnls: List[float]) -> StrategyMetrics:
+    def _compute(self, name: str, window_days: int, pnls: list[float]) -> StrategyMetrics:
         n = len(pnls)
         if n == 0:
             return StrategyMetrics(name=name, window_days=window_days,
@@ -138,5 +137,5 @@ class StrategyPerformance:
             drawdown_pct=dd_pct,
         )
 
-    def metrics_bulk(self, names: List[str], window_days: int = 60) -> Dict[str, StrategyMetrics]:
+    def metrics_bulk(self, names: list[str], window_days: int = 60) -> dict[str, StrategyMetrics]:
         return {n: self.metrics_for(n, window_days) for n in names}

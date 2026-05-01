@@ -4,9 +4,8 @@ import logging
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from email.utils import parsedate_to_datetime
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +14,7 @@ class Article:
     title: str
     url: str
     summary: str
-    published: Optional[datetime]
+    published: datetime | None
     source: str
     category: str
 
@@ -86,7 +85,7 @@ def _strip_html(raw: str, max_chars: int = 500) -> str:
         return raw[:max_chars]
 
 
-def _parse_date(date_str: str) -> Optional[datetime]:
+def _parse_date(date_str: str) -> datetime | None:
     """Parse RFC 2822 (RSS) or ISO 8601 (Atom) date strings."""
     if not date_str:
         return None
@@ -94,7 +93,7 @@ def _parse_date(date_str: str) -> Optional[datetime]:
     # RFC 2822 — used by RSS 2.0
     try:
         dt = parsedate_to_datetime(date_str)
-        return dt.astimezone(timezone.utc)
+        return dt.astimezone(UTC)
     except Exception:
         pass
     # ISO 8601 variants — used by Atom
@@ -102,8 +101,8 @@ def _parse_date(date_str: str) -> Optional[datetime]:
         try:
             dt = datetime.strptime(date_str[:25], fmt)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
         except ValueError:
             continue
     return None
@@ -157,8 +156,8 @@ def _parse_rss_or_atom(content: bytes, source_name: str, category: str,
         channel = root.find("channel") or root
         items = channel.findall("item") or root.findall("item")
         for item in items[:max_items]:
-            def _text(tag: str) -> str:
-                el = item.find(tag)
+            def _text(tag: str, _item=item) -> str:
+                el = _item.find(tag)
                 return (el.text or "").strip() if el is not None else ""
 
             title = _text("title") or "Untitled"
@@ -190,7 +189,7 @@ def _fetch_feed(source: dict, cutoff: datetime, max_per_source: int = 8) -> list
 
 def fetch_all_news(hours_back: int = 24) -> list[Article]:
     """Fetch articles from all sources published within the last N hours."""
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
     all_articles: list[Article] = []
 
     for source in NEWS_SOURCES:
@@ -199,7 +198,7 @@ def fetch_all_news(hours_back: int = 24) -> list[Article]:
         time.sleep(0.5)  # polite crawling delay
 
     # Sort newest first; undated articles go last
-    _epoch = datetime.min.replace(tzinfo=timezone.utc)
+    _epoch = datetime.min.replace(tzinfo=UTC)
     all_articles.sort(key=lambda a: a.published or _epoch, reverse=True)
 
     logger.info("Fetched %d articles total across %d sources", len(all_articles), len(NEWS_SOURCES))

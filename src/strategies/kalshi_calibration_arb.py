@@ -24,7 +24,6 @@ the Kelly-sizing scaffold and proposal generation.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -77,17 +76,17 @@ class KalshiCalibrationArb(Strategy):
 
     # ── Public ----------------------------------------------------------
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
         # Mispriced-market list comes from the prediction-market scout (W2).
-        candidates: List[Dict] = ctx.scout_signals.get("mispriced", [])
+        candidates: list[dict] = ctx.scout_signals.get("mispriced", [])
         if not candidates:
             logger.debug(f"[{self.name}] no scout candidates this cycle")
             return []
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         per_trade_cap_usd = ctx.target_alloc_usd * self.max_per_trade_pct
 
         for market in candidates:

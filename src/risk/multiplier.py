@@ -13,9 +13,8 @@ signals to clear.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
-from .policies import KillSwitchState, RiskConfig
+from .policies import RiskConfig
 
 
 @dataclass
@@ -27,7 +26,7 @@ class MultiplierState:
     drawdown_factor: float = 1.0 # auto-de-lev factor from current DD
     vol_factor: float = 1.0      # auto-de-lev factor from realized vol
     regime_factor: float = 1.0   # external regime override (VIX etc.)
-    notes: List[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 class DynamicRiskMultiplier:
@@ -60,7 +59,7 @@ class DynamicRiskMultiplier:
             return 0.6, f"WARNING ({dd_pct * 100:.1f}% DD)"
         return 1.0, ""
 
-    def _vol_factor(self, realized_vol: Optional[float]) -> tuple[float, str]:
+    def _vol_factor(self, realized_vol: float | None) -> tuple[float, str]:
         """Step-down when realized vol exceeds target by `vol_spike_ratio`."""
         if realized_vol is None or realized_vol <= 0:
             return 1.0, ""
@@ -71,7 +70,7 @@ class DynamicRiskMultiplier:
             return f, f"vol_spike ({realized_vol * 100:.1f}%/{self.config.target_portfolio_vol * 100:.1f}%)"
         return 1.0, ""
 
-    def _regime_factor(self, vix: Optional[float]) -> tuple[float, str]:
+    def _regime_factor(self, vix: float | None) -> tuple[float, str]:
         """External regime override. Coarse VIX-based scaling."""
         if vix is None:
             return 1.0, ""
@@ -86,8 +85,8 @@ class DynamicRiskMultiplier:
     def compute(
         self,
         drawdown_pct: float,
-        realized_vol: Optional[float] = None,
-        vix: Optional[float] = None,
+        realized_vol: float | None = None,
+        vix: float | None = None,
     ) -> MultiplierState:
         dd_f, dd_note = self._drawdown_factor(drawdown_pct)
         vol_f, vol_note = self._vol_factor(realized_vol)

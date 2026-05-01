@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import List, Optional
 
 import numpy as np
 
@@ -43,7 +42,7 @@ class RiskParityETF(Strategy):
     def __init__(
         self,
         broker,
-        universe: Optional[List[str]] = None,
+        universe: list[str] | None = None,
         vol_lookback_days: int = 60,
     ):
         super().__init__(broker)
@@ -52,7 +51,7 @@ class RiskParityETF(Strategy):
 
     # ── Core --------------------------------------------------------------
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
@@ -67,7 +66,7 @@ class RiskParityETF(Strategy):
         if not prices:
             return []
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         for symbol in self.universe:
             w = weights.get(symbol, 0.0)
             target_usd = ctx.target_alloc_usd * w

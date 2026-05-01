@@ -6,7 +6,6 @@ decides per-broker max trade size.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
 import pytest
 

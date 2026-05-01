@@ -5,7 +5,6 @@ import logging
 import markdown
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from datetime import datetime
 
 # Force IPv4 — some environments don't support IPv6 sockets
 _real_getaddrinfo = socket.getaddrinfo
@@ -149,7 +148,6 @@ def send_email(
     use_tls: bool = True,
 ) -> None:
     """Send the daily digest as a styled HTML email via SMTP."""
-    date_str = datetime.now().strftime("%A, %B %d, %Y")
     subject = "TODAY's MAJOR AI NEWS"
 
     html_body = _digest_to_html(digest_content, subject)

@@ -20,10 +20,9 @@ import math
 import os
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Dict, Iterable, List, Optional
 
 from .multiplier import DynamicRiskMultiplier, MultiplierState
 from .policies import KillSwitchState, RiskConfig
@@ -47,7 +46,7 @@ class RiskDecision:
     decision: Decision
     approved_notional_usd: float = 0.0   # post-scaling order size in USD
     reason: str = ""
-    state: Optional["RiskState"] = None
+    state: RiskState | None = None
 
 
 @dataclass
@@ -59,7 +58,7 @@ class RiskState:
     peak_equity_usd: float
     drawdown_pct: float
     kill_switch: KillSwitchState
-    realized_vol: Optional[float]      # annualized, None until enough samples
+    realized_vol: float | None      # annualized, None until enough samples
     leverage: float                    # gross notional / equity
     multiplier: MultiplierState
     venues_ok: bool = True             # any broker auth/API problems?
@@ -77,7 +76,7 @@ class RiskState:
 class EquitySnapshotDB:
     """Tiny SQLite table for the rolling-peak drawdown calc."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("RISK_DB_PATH", "data/risk_state.db")
         )
@@ -115,10 +114,10 @@ class EquitySnapshotDB:
         with self._conn() as c:
             c.execute(
                 "INSERT INTO equity_snapshots (timestamp, equity_usd, note) VALUES (?, ?, ?)",
-                (datetime.now(timezone.utc).isoformat(), equity_usd, note),
+                (datetime.now(UTC).isoformat(), equity_usd, note),
             )
 
-    def peak_equity(self, since: Optional[datetime] = None) -> float:
+    def peak_equity(self, since: datetime | None = None) -> float:
         with self._conn() as c:
             if since:
                 row = c.execute(
@@ -131,7 +130,7 @@ class EquitySnapshotDB:
                 ).fetchone()
         return float(row["peak"]) if row and row["peak"] is not None else 0.0
 
-    def recent_returns(self, n: int = 60) -> List[float]:
+    def recent_returns(self, n: int = 60) -> list[float]:
         """Returns the last `n` snapshot-to-snapshot pct returns."""
         with self._conn() as c:
             rows = c.execute(
@@ -149,10 +148,10 @@ class EquitySnapshotDB:
         with self._conn() as c:
             c.execute(
                 "INSERT INTO kill_switch_events (timestamp, state, drawdown_pct, note) VALUES (?, ?, ?, ?)",
-                (datetime.now(timezone.utc).isoformat(), state.value, dd_pct, note),
+                (datetime.now(UTC).isoformat(), state.value, dd_pct, note),
             )
 
-    def last_kill_switch_event(self) -> Optional[Dict]:
+    def last_kill_switch_event(self) -> dict | None:
         with self._conn() as c:
             row = c.execute(
                 "SELECT * FROM kill_switch_events ORDER BY id DESC LIMIT 1"
@@ -168,19 +167,19 @@ class RiskManager:
 
     def __init__(
         self,
-        brokers: Optional[Dict] = None,    # broker registry; if None, no live equity
-        config: Optional[RiskConfig] = None,
-        db: Optional[EquitySnapshotDB] = None,
+        brokers: dict | None = None,    # broker registry; if None, no live equity
+        config: RiskConfig | None = None,
+        db: EquitySnapshotDB | None = None,
     ):
         self.brokers = brokers or {}
         self.config = config or RiskConfig.from_env()
         self.multiplier = DynamicRiskMultiplier(self.config)
         self.db = db or EquitySnapshotDB()
-        self._cached_state: Optional[RiskState] = None
+        self._cached_state: RiskState | None = None
         # Per-cycle broker snapshot cache; refreshed by compute_state()
-        self._broker_snapshots: Dict[str, Dict] = {}
+        self._broker_snapshots: dict[str, dict] = {}
 
-    def cached_positions(self, venue: str) -> List:
+    def cached_positions(self, venue: str) -> list:
         """Read-through accessor for the per-cycle position cache.
         Saves redundant get_positions() calls during a single cycle."""
         snap = self._broker_snapshots.get(venue, {})
@@ -228,7 +227,7 @@ class RiskManager:
         # Realized vol: annualized stdev of recent returns, assuming 5-min cadence
         # (with hourly cron there are ~12 returns/day, ~252 trading days/year)
         rets = self.db.recent_returns(60)
-        realized_vol: Optional[float] = None
+        realized_vol: float | None = None
         if len(rets) >= 10:
             mean = sum(rets) / len(rets)
             var = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
@@ -255,7 +254,7 @@ class RiskManager:
                                         note=f"equity=${equity:.2f} peak=${peak:.2f}")
 
         state = RiskState(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             equity_usd=equity,
             peak_equity_usd=peak,
             drawdown_pct=dd_pct,
@@ -276,10 +275,10 @@ class RiskManager:
         notional_usd: float,
         symbol: str,
         is_closing: bool = False,
-        strategy_name: Optional[str] = None,
+        strategy_name: str | None = None,
         existing_position_usd: float = 0.0,
-        state: Optional[RiskState] = None,
-        venue: Optional[str] = None,
+        state: RiskState | None = None,
+        venue: str | None = None,
     ) -> RiskDecision:
         """Approve, scale, or reject a candidate order.
 
@@ -356,7 +355,7 @@ class RiskManager:
 
     # ── Macro signal hookup ---------------------------------------------
 
-    def _latest_vix(self) -> Optional[float]:
+    def _latest_vix(self) -> float | None:
         """Read the macro scout's most-recent VIX reading from the bus."""
         try:
             from scouts.signal_bus import SignalBus
@@ -386,7 +385,7 @@ class RiskManager:
 
     # ── Diagnostics ------------------------------------------------------
 
-    def summary_dict(self) -> Dict:
+    def summary_dict(self) -> dict:
         st = self._cached_state or self.compute_state()
         return {
             "timestamp": st.timestamp.isoformat(),

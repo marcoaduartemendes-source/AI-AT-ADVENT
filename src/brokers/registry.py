@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, Optional
 
 from .alpaca import AlpacaAdapter
 from .base import BrokerAdapter
@@ -13,11 +12,11 @@ from .kalshi import KalshiAdapter
 logger = logging.getLogger(__name__)
 
 
-def build_brokers() -> Dict[str, BrokerAdapter]:
+def build_brokers() -> dict[str, BrokerAdapter]:
     """Construct every broker we have credentials for. Adapters with missing
     creds are still included (they raise on use) so the dashboard can report
     which venues are not yet wired up."""
-    brokers: Dict[str, BrokerAdapter] = {}
+    brokers: dict[str, BrokerAdapter] = {}
 
     cb_key = os.environ.get("COINBASE_API_KEY", "")
     cb_sec = os.environ.get("COINBASE_API_SECRET", "")
@@ -44,5 +43,5 @@ def build_brokers() -> Dict[str, BrokerAdapter]:
     return brokers
 
 
-def get_broker(name: str) -> Optional[BrokerAdapter]:
+def get_broker(name: str) -> BrokerAdapter | None:
     return build_brokers().get(name)

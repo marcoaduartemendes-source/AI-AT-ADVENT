@@ -34,7 +34,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov ruff
+
+      - name: Lint (ruff)
+        run: ruff check src/ tests/
 
       - name: Run regression + unit tests
         env:

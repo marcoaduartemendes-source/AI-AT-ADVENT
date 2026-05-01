@@ -17,7 +17,6 @@ compare directly to Kalshi.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -39,11 +38,11 @@ class MacroKalshi(Strategy):
     name = "macro_kalshi"
     venue = "kalshi"
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
-        candidates: List[Dict] = ctx.scout_signals.get("mispriced", []) or []
+        candidates: list[dict] = ctx.scout_signals.get("mispriced", []) or []
         if not candidates:
             return []
 
@@ -56,7 +55,7 @@ class MacroKalshi(Strategy):
         if not macro_candidates:
             return []
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         per_trade_cap = ctx.target_alloc_usd * MAX_PER_TRADE_PCT
 
         for m in macro_candidates:

@@ -18,8 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import datetime, UTC
 
 from brokers.base import OrderSide, OrderType
 from common import cached_get
@@ -46,7 +45,7 @@ class CryptoBasisTrade(Strategy):
     name = "crypto_basis_trade"
     venue = "coinbase"
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
@@ -61,7 +60,7 @@ class CryptoBasisTrade(Strategy):
             return []
         futures = data.get("products", [])
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         per_leg = ctx.target_alloc_usd / 2
 
         for spot_sym, root in PAIRS.items():
@@ -75,7 +74,7 @@ class CryptoBasisTrade(Strategy):
 
             # Days to expiry
             expiry = front["expiry"]
-            today = datetime.now(timezone.utc).date()
+            today = datetime.now(UTC).date()
             days_to_exp = max(1, (expiry - today).days)
 
             # Annualized basis (positive = future trades premium = sell future)
@@ -166,7 +165,7 @@ class CryptoBasisTrade(Strategy):
                 dt = datetime.strptime(expiry, "%d%b%y").date()
             except ValueError:
                 continue
-            if dt < datetime.now(timezone.utc).date():
+            if dt < datetime.now(UTC).date():
                 continue
             try:
                 price = float(p.get("price") or 0)
@@ -178,7 +177,7 @@ class CryptoBasisTrade(Strategy):
         candidates.sort(key=lambda c: c["expiry"])
         return candidates[0] if candidates else None
 
-    def _spot_price(self, spot_sym: str) -> Optional[float]:
+    def _spot_price(self, spot_sym: str) -> float | None:
         data = cached_get(f"{PUBLIC_PRODUCTS}/{spot_sym}", ttl_seconds=30)
         if not data:
             return None

@@ -28,10 +28,9 @@ import logging
 import os
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, UTC
 from enum import Enum
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +47,7 @@ class StrategyMeta:
     """Static metadata about a strategy. Stored in the registry."""
 
     name: str
-    asset_classes: List[str]              # e.g. ["CRYPTO_PERP"]
+    asset_classes: list[str]              # e.g. ["CRYPTO_PERP"]
     venue: str                            # primary broker
     target_alloc_pct: float               # baseline % of capital (allocator may scale)
     max_alloc_pct: float = 0.30           # hard ceiling
@@ -60,12 +59,12 @@ class StrategyMeta:
 class StrategyRegistry:
     """Runtime registry of strategies + lifecycle persistence."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("ALLOCATOR_DB_PATH", "data/allocator.db")
         )
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        self._meta: Dict[str, StrategyMeta] = {}
+        self._meta: dict[str, StrategyMeta] = {}
         with self._conn() as c:
             c.execute("""
                 CREATE TABLE IF NOT EXISTS strategy_state (
@@ -122,13 +121,13 @@ class StrategyRegistry:
                 c.execute(
                     "INSERT INTO strategy_state (name, state, updated_at, note) VALUES (?,?,?,?)",
                     (meta.name, StrategyState.ACTIVE.value,
-                     datetime.now(timezone.utc).isoformat(), "registered"),
+                     datetime.now(UTC).isoformat(), "registered"),
                 )
 
-    def list_names(self) -> List[str]:
+    def list_names(self) -> list[str]:
         return list(self._meta.keys())
 
-    def meta(self, name: str) -> Optional[StrategyMeta]:
+    def meta(self, name: str) -> StrategyMeta | None:
         return self._meta.get(name)
 
     # ── State -----------------------------------------------------------
@@ -144,7 +143,7 @@ class StrategyRegistry:
         prev = self.get_state(name)
         if prev == new:
             return
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         with self._conn() as c:
             c.execute(
                 "INSERT OR REPLACE INTO strategy_state (name, state, updated_at, note) "
@@ -156,7 +155,7 @@ class StrategyRegistry:
             )
         logger.info(f"[lifecycle] {name}: {prev.value} → {new.value} ({reason})")
 
-    def all_states(self) -> Dict[str, StrategyState]:
+    def all_states(self) -> dict[str, StrategyState]:
         with self._conn() as c:
             rows = c.execute("SELECT name, state FROM strategy_state").fetchall()
         return {r["name"]: StrategyState(r["state"]) for r in rows
@@ -165,17 +164,17 @@ class StrategyRegistry:
     # ── Allocation history ---------------------------------------------
 
     def record_allocation(self, name: str, *, target_pct: float, target_usd: float,
-                           state: StrategyState, sharpe: Optional[float] = None,
-                           drawdown_pct: Optional[float] = None, reason: str = "") -> None:
+                           state: StrategyState, sharpe: float | None = None,
+                           drawdown_pct: float | None = None, reason: str = "") -> None:
         with self._conn() as c:
             c.execute(
                 "INSERT INTO allocations (timestamp, name, target_pct, target_usd, "
                 "state, sharpe, drawdown_pct, reason) VALUES (?,?,?,?,?,?,?,?)",
-                (datetime.now(timezone.utc).isoformat(), name, target_pct, target_usd,
+                (datetime.now(UTC).isoformat(), name, target_pct, target_usd,
                  state.value, sharpe, drawdown_pct, reason),
             )
 
-    def latest_allocations(self) -> Dict[str, Dict]:
+    def latest_allocations(self) -> dict[str, dict]:
         with self._conn() as c:
             rows = c.execute("""
                 SELECT a.* FROM allocations a INNER JOIN (
@@ -184,7 +183,7 @@ class StrategyRegistry:
             """).fetchall()
         return {r["name"]: dict(r) for r in rows}
 
-    def lifecycle_events(self, limit: int = 50) -> List[Dict]:
+    def lifecycle_events(self, limit: int = 50) -> list[dict]:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT * FROM lifecycle_events ORDER BY id DESC LIMIT ?",

@@ -20,9 +20,7 @@ Bug index (in order shipped):
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, UTC
 from unittest.mock import MagicMock
 
 import pytest
@@ -184,7 +182,7 @@ class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
         adapter = MagicMock()
         strat = CryptoBasisTrade(adapter)
         ctx = StrategyContext(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             portfolio_equity_usd=10000,
             target_alloc_pct=0.02,
             target_alloc_usd=200,

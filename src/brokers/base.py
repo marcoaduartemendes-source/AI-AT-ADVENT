@@ -17,7 +17,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
 
 
 class BrokerError(Exception):
@@ -61,7 +60,7 @@ class Account:
     buying_power_usd: float
     equity_usd: float
     is_paper: bool = False
-    raw: Dict = field(default_factory=dict)
+    raw: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -73,16 +72,16 @@ class Position:
     avg_entry_price: float
     market_price: float
     unrealized_pnl_usd: float
-    raw: Dict = field(default_factory=dict)
+    raw: dict = field(default_factory=dict)
 
 
 @dataclass
 class Quote:
     venue: str
     symbol: str
-    bid: Optional[float]
-    ask: Optional[float]
-    last: Optional[float]
+    bid: float | None
+    ask: float | None
+    last: float | None
     timestamp: datetime
 
 
@@ -104,13 +103,13 @@ class Order:
     side: OrderSide
     type: OrderType
     quantity: float
-    notional_usd: Optional[float]
-    limit_price: Optional[float]
+    notional_usd: float | None
+    limit_price: float | None
     status: OrderStatus
     filled_quantity: float = 0.0
-    filled_avg_price: Optional[float] = None
-    submitted_at: Optional[datetime] = None
-    raw: Dict = field(default_factory=dict)
+    filled_avg_price: float | None = None
+    submitted_at: datetime | None = None
+    raw: dict = field(default_factory=dict)
 
 
 class BrokerAdapter(ABC):
@@ -128,7 +127,7 @@ class BrokerAdapter(ABC):
 
     def _get_cached_candles(
         self, symbol: str, granularity: str, num_candles: int
-    ) -> Optional[List["Candle"]]:
+    ) -> list[Candle] | None:
         cache = getattr(self, "_candle_cache", None)
         if cache is None:
             return None
@@ -140,7 +139,7 @@ class BrokerAdapter(ABC):
 
     def _put_cached_candles(
         self, symbol: str, granularity: str, num_candles: int,
-        candles: List["Candle"],
+        candles: list[Candle],
     ) -> None:
         if not hasattr(self, "_candle_cache"):
             self._candle_cache = {}
@@ -154,7 +153,7 @@ class BrokerAdapter(ABC):
     def get_account(self) -> Account: ...
 
     @abstractmethod
-    def get_positions(self) -> List[Position]: ...
+    def get_positions(self) -> list[Position]: ...
 
     # ── Market data -------------------------------------------------------
     @abstractmethod
@@ -163,7 +162,7 @@ class BrokerAdapter(ABC):
     @abstractmethod
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
-    ) -> List[Candle]:
+    ) -> list[Candle]:
         """Recent candles, oldest-first. `granularity` follows Coinbase
         naming (`ONE_MINUTE`, `FIVE_MINUTE`, `ONE_HOUR`, `ONE_DAY`, …).
         Adapters translate to native units."""
@@ -175,10 +174,10 @@ class BrokerAdapter(ABC):
         symbol: str,
         side: OrderSide,
         type: OrderType,
-        quantity: Optional[float] = None,
-        notional_usd: Optional[float] = None,
-        limit_price: Optional[float] = None,
-        client_order_id: Optional[str] = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+        limit_price: float | None = None,
+        client_order_id: str | None = None,
     ) -> Order:
         """Submit an order. Provide either `quantity` (units of base asset) OR
         `notional_usd` (dollar amount); adapter picks whichever the venue
@@ -192,16 +191,16 @@ class BrokerAdapter(ABC):
 
     # ── Capability discovery (used by strategies + meta-allocator) -------
     @abstractmethod
-    def list_supported_asset_classes(self) -> List[AssetClass]: ...
+    def list_supported_asset_classes(self) -> list[AssetClass]: ...
 
     @abstractmethod
     def list_tradable_symbols(
-        self, asset_class: Optional[AssetClass] = None
-    ) -> List[str]:
+        self, asset_class: AssetClass | None = None
+    ) -> list[str]:
         """Return venue-native symbols. Cached by adapter where appropriate."""
 
     # ── Diagnostics -------------------------------------------------------
-    def healthcheck(self) -> Dict:
+    def healthcheck(self) -> dict:
         """Lightweight check used by the strategy-pod dashboard. Adapters
         may override; default just calls get_account()."""
         try:

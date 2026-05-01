@@ -10,7 +10,7 @@ proves the new polling loop actually backfills data correctly.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,7 +26,7 @@ def _seed_unfilled_trade(tracker: PerformanceTracker, order_id: str,
     """Insert a row that looks like a trade recorded at submit-time —
     price=0, pnl_usd=NULL, has an order_id."""
     tracker.record_trade(TradeRecord(
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         strategy=strategy,
         product_id=symbol,
         side=side,

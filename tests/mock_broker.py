@@ -28,9 +28,8 @@ raise NotImplementedError — extend as needed.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from datetime import datetime, UTC
 
 from brokers.base import (
     Account,
@@ -76,9 +75,9 @@ class MockBroker:
         self,
         venue: str = "mock",
         cash_usd: float = 100_000.0,
-        equity_usd: Optional[float] = None,
-        buying_power_usd: Optional[float] = None,
-        positions: Optional[List[MockPosition]] = None,
+        equity_usd: float | None = None,
+        buying_power_usd: float | None = None,
+        positions: list[MockPosition] | None = None,
         is_paper: bool = True,
     ):
         self.venue = venue
@@ -88,20 +87,20 @@ class MockBroker:
         self._buying_power = (
             buying_power_usd if buying_power_usd is not None else cash_usd
         )
-        self._positions: List[MockPosition] = list(positions or [])
-        self._orders: Dict[str, Order] = {}
+        self._positions: list[MockPosition] = list(positions or [])
+        self._orders: dict[str, Order] = {}
         self._order_seq = 0
 
         # Test injection points
-        self.fill_next: Optional[str] = None      # "FILLED" | "PENDING" | …
-        self.reject_next: Optional[str] = None    # raise BrokerError on next place
-        self.partial_fill_qty: Optional[float] = None
-        self.fill_price: Optional[float] = None   # override fill price
+        self.fill_next: str | None = None      # "FILLED" | "PENDING" | …
+        self.reject_next: str | None = None    # raise BrokerError on next place
+        self.partial_fill_qty: float | None = None
+        self.fill_price: float | None = None   # override fill price
 
         # Bookkeeping for assertions
-        self.placed_orders: List[Order] = []
-        self.cancelled_orders: List[str] = []
-        self.get_order_calls: List[str] = []
+        self.placed_orders: list[Order] = []
+        self.cancelled_orders: list[str] = []
+        self.get_order_calls: list[str] = []
 
     # ── BrokerAdapter ABI ────────────────────────────────────────────
 
@@ -114,7 +113,7 @@ class MockBroker:
             is_paper=self.is_paper,
         )
 
-    def get_positions(self) -> List[Position]:
+    def get_positions(self) -> list[Position]:
         return [p.to_position(self.venue) for p in self._positions]
 
     def get_quote(self, symbol: str) -> Quote:
@@ -124,21 +123,21 @@ class MockBroker:
                 return Quote(
                     venue=self.venue, symbol=symbol,
                     bid=p.mark - 0.01, ask=p.mark + 0.01,
-                    last=p.mark, timestamp=datetime.now(timezone.utc),
+                    last=p.mark, timestamp=datetime.now(UTC),
                 )
         return Quote(
             venue=self.venue, symbol=symbol,
             bid=99.99, ask=100.01, last=100.0,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
-    ) -> List[Candle]:
+    ) -> list[Candle]:
         # Flat 100-bar series at $100 — strategies that depend on real
         # candles should be tested with synthesized fixtures, not the
         # mock broker.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return [
             Candle(timestamp=now, open=100, high=100, low=100,
                    close=100, volume=1000)
@@ -150,10 +149,10 @@ class MockBroker:
         symbol: str,
         side: OrderSide,
         type: OrderType,
-        quantity: Optional[float] = None,
-        notional_usd: Optional[float] = None,
-        limit_price: Optional[float] = None,
-        client_order_id: Optional[str] = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+        limit_price: float | None = None,
+        client_order_id: str | None = None,
     ) -> Order:
         if self.reject_next:
             msg = self.reject_next
@@ -198,7 +197,7 @@ class MockBroker:
             notional_usd=notional_usd, limit_price=limit_price,
             status=status,
             filled_quantity=filled_qty, filled_avg_price=filled_px,
-            submitted_at=datetime.now(timezone.utc),
+            submitted_at=datetime.now(UTC),
         )
         self._orders[oid] = order
         self.placed_orders.append(order)
@@ -214,7 +213,7 @@ class MockBroker:
             raise BrokerError(f"Order {order_id} not found")
         return self._orders[order_id]
 
-    def get_open_orders(self) -> List[Order]:
+    def get_open_orders(self) -> list[Order]:
         return [
             o for o in self._orders.values()
             if o.status in (OrderStatus.PENDING, OrderStatus.OPEN,
@@ -235,7 +234,7 @@ class MockBroker:
     # ── Test helpers ─────────────────────────────────────────────────
 
     def fill_order(self, order_id: str, price: float,
-                    quantity: Optional[float] = None) -> None:
+                    quantity: float | None = None) -> None:
         """Manually transition an order from PENDING to FILLED for the
         next get_order() call. Use this to simulate the broker
         eventually filling an order between cycles."""
@@ -281,7 +280,7 @@ class MockBroker:
                 if existing.qty <= 1e-9:
                     self._positions.remove(existing)
 
-    def _mark_for(self, symbol: str) -> Optional[float]:
+    def _mark_for(self, symbol: str) -> float | None:
         for p in self._positions:
             if p.symbol == symbol:
                 return p.mark

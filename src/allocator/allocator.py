@@ -20,12 +20,10 @@ the dashboard.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, UTC
 
-from .lifecycle import StrategyMeta, StrategyRegistry, StrategyState
+from .lifecycle import StrategyRegistry, StrategyState
 from .metrics import StrategyMetrics, StrategyPerformance
 
 logger = logging.getLogger(__name__)
@@ -70,7 +68,7 @@ class StrategyAllocation:
 
     timestamp: datetime
     portfolio_equity_usd: float
-    decisions: List[AllocationDecision] = field(default_factory=list)
+    decisions: list[AllocationDecision] = field(default_factory=list)
     total_active_pct: float = 0.0
 
 
@@ -81,8 +79,8 @@ class MetaAllocator:
     def __init__(
         self,
         registry: StrategyRegistry,
-        performance: Optional[StrategyPerformance] = None,
-        config: Optional[AllocatorConfig] = None,
+        performance: StrategyPerformance | None = None,
+        config: AllocatorConfig | None = None,
     ):
         self.registry = registry
         self.perf = performance or StrategyPerformance()
@@ -102,7 +100,7 @@ class MetaAllocator:
 
         # 2) Compute target weights
         prev_allocs = self.registry.latest_allocations()
-        decisions: List[AllocationDecision] = []
+        decisions: list[AllocationDecision] = []
 
         # Compute Sharpe-tilted weights for ACTIVE/WATCH only
         active_names = [n for n in names
@@ -116,7 +114,7 @@ class MetaAllocator:
         sharpes = {n: max(0.0, primary[n].shrunk_sharpe) for n in active_names}
         sharpe_sum = sum(sharpes.values())
 
-        weights: Dict[str, float] = {}
+        weights: dict[str, float] = {}
         for n in active_names:
             base = baselines[n]
             if sharpe_sum > 0:
@@ -207,7 +205,7 @@ class MetaAllocator:
             )
 
         return StrategyAllocation(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             portfolio_equity_usd=portfolio_equity_usd,
             decisions=decisions,
             total_active_pct=total_active_pct,

@@ -19,8 +19,7 @@ we license a fundamentals data feed — flagged in research synthesis.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List
+from datetime import datetime, UTC
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -41,14 +40,14 @@ class PEAD(Strategy):
     name = "pead"
     venue = "alpaca"
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
 
         # Close positions held > HOLD_DAYS first (drift window expired)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         n_open = 0
         for symbol, pos in ctx.open_positions.items():
             entry_iso = pos.get("entry_time") if isinstance(pos, dict) else None

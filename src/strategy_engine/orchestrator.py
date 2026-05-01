@@ -21,12 +21,11 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, UTC
 
-from allocator.allocator import AllocationDecision, MetaAllocator
+from allocator.allocator import MetaAllocator
 from allocator.lifecycle import StrategyRegistry, StrategyState
-from brokers.base import BrokerAdapter, OrderSide, OrderType
+from brokers.base import BrokerAdapter, OrderSide
 from risk.manager import Decision, RiskManager, RiskState
 from trading.performance import PerformanceTracker
 from trading.portfolio import TradeRecord
@@ -42,16 +41,16 @@ class OrchestratorConfig:
     cycle_label: str = ""                     # for logging
     dry_run: bool = True                      # global default
     # Per-broker overrides; None means "use global dry_run".
-    dry_run_coinbase: Optional[bool] = None
-    dry_run_alpaca: Optional[bool] = None
-    dry_run_kalshi: Optional[bool] = None
+    dry_run_coinbase: bool | None = None
+    dry_run_alpaca: bool | None = None
+    dry_run_kalshi: bool | None = None
     # Per-strategy LIVE override: even if the broker is DRY, these
     # strategies place real orders. Used for gradual live rollout — set
     # `live_strategies={"crypto_funding_carry"}` to risk only that pod.
     # Strategies in this set ignore both global and per-broker DRY flags.
-    live_strategies: Optional[set] = None
+    live_strategies: set | None = None
 
-    def is_dry(self, venue: str, strategy: Optional[str] = None) -> bool:
+    def is_dry(self, venue: str, strategy: str | None = None) -> bool:
         # Per-strategy LIVE override wins over everything else.
         if strategy and self.live_strategies and strategy in self.live_strategies:
             return False
@@ -66,25 +65,25 @@ class OrchestratorConfig:
 @dataclass
 class CycleReport:
     timestamp: datetime
-    risk: Optional[RiskState] = None
+    risk: RiskState | None = None
     proposals_total: int = 0
     proposals_approved: int = 0
     proposals_rejected: int = 0
     proposals_scaled: int = 0
     trades_submitted: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     rebalanced: bool = False
 
 
 class Orchestrator:
     def __init__(
         self,
-        brokers: Dict[str, BrokerAdapter],
+        brokers: dict[str, BrokerAdapter],
         registry: StrategyRegistry,
         risk_manager: RiskManager,
         allocator: MetaAllocator,
-        strategies: Dict[str, Strategy],
-        config: Optional[OrchestratorConfig] = None,
+        strategies: dict[str, Strategy],
+        config: OrchestratorConfig | None = None,
     ):
         self.brokers = brokers
         self.registry = registry
@@ -126,11 +125,11 @@ class Orchestrator:
 
     # ── One cycle ----------------------------------------------------------
 
-    def run_cycle(self, scout_signals: Optional[Dict] = None) -> CycleReport:
-        report = CycleReport(timestamp=datetime.now(timezone.utc))
+    def run_cycle(self, scout_signals: dict | None = None) -> CycleReport:
+        report = CycleReport(timestamp=datetime.now(UTC))
         # Cache pending orders per venue for the whole cycle so we don't
         # re-query the broker dozens of times.
-        self._pending_cache: Dict[str, Dict] = {}
+        self._pending_cache: dict[str, dict] = {}
 
         # Cancel pending orders older than the configured threshold.
         # Prevents a backlog of stale orders from blocking new ones.
@@ -245,7 +244,7 @@ class Orchestrator:
         elapsed_hours = (time.time() - self._last_rebalance_ts) / 3600
         return elapsed_hours >= self.cfg.rebalance_cadence_hours
 
-    def _pending_orders_for(self, venue: str) -> Dict:
+    def _pending_orders_for(self, venue: str) -> dict:
         """Return aggregated pending-order notional per symbol.
 
         Strategies subtract pending BUY notional from their buying intent
@@ -267,7 +266,7 @@ class Orchestrator:
             logger.debug(f"[{venue}] get_open_orders failed: {e}")
             if cache is not None: cache[venue] = {}
             return {}
-        out: Dict[str, Dict] = {}
+        out: dict[str, dict] = {}
         for o in orders:
             sym = o.symbol
             entry = out.setdefault(sym, {"buy_notional_usd": 0.0,
@@ -288,7 +287,7 @@ class Orchestrator:
             cache[venue] = out
         return out
 
-    def _positions_for(self, venue: str) -> Dict:
+    def _positions_for(self, venue: str) -> dict:
         # Reuse the risk manager's per-cycle position cache; avoids hitting
         # the broker API again for each strategy on the same venue.
         cached = []
@@ -504,7 +503,7 @@ class Orchestrator:
         # Map strategy name → venue (every strategy is mounted on
         # exactly one broker; this lookup is O(n_strategies) once
         # per cycle).
-        strat_to_venue: Dict[str, str] = {
+        strat_to_venue: dict[str, str] = {
             name: getattr(s, "venue", "")
             for name, s in self.strategies.items()
         }
@@ -551,7 +550,7 @@ class Orchestrator:
 
             # We have at least a partial fill. Compute realized PnL
             # only for closing SELLs we can attribute to a known entry.
-            pnl_usd: Optional[float] = None
+            pnl_usd: float | None = None
             if row.get("side") == "SELL":
                 # Look up entry price from the cached broker position.
                 cached = self.risk.cached_positions(venue)
@@ -712,7 +711,7 @@ class Orchestrator:
                 )
 
             record = TradeRecord(
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 strategy=proposal.strategy,
                 product_id=proposal.symbol,
                 side=proposal.side.value,
@@ -729,7 +728,7 @@ class Orchestrator:
 
     def _emergency_close_all(self, report: CycleReport, state: RiskState) -> None:
         """KILL switch fired — every strategy closes its own positions."""
-        for name, strategy in self.strategies.items():
+        for strategy in self.strategies.values():
             ctx = StrategyContext(
                 timestamp=report.timestamp,
                 portfolio_equity_usd=state.equity_usd,

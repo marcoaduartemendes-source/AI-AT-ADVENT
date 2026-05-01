@@ -14,8 +14,6 @@ than the configured threshold, and publishes a ranked list.
 from __future__ import annotations
 
 import logging
-import os
-from typing import Dict, List, Optional
 
 from brokers.registry import get_broker
 from strategies.kalshi_calibration_arb import (
@@ -45,7 +43,7 @@ class PredictionScout(ScoutAgent):
         self.entry_edge_cents = entry_edge_cents
         self.min_oi_usd = min_open_interest_usd
 
-    def scan(self) -> List[ScoutSignal]:
+    def scan(self) -> list[ScoutSignal]:
         broker = get_broker("kalshi")
         if broker is None:
             logger.warning(f"[{self.name}] Kalshi adapter not configured")
@@ -59,7 +57,7 @@ class PredictionScout(ScoutAgent):
             return []
 
         markets = d.get("markets", [])
-        ranked: List[Dict] = []
+        ranked: list[dict] = []
         for m in markets:
             ticker = m.get("ticker")
             yes_bid = m.get("yes_bid")          # cents

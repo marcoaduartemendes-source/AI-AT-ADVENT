@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 from .signal_bus import SignalBus
 
@@ -26,8 +24,8 @@ class ScoutSignal:
 
     venue: str          # "coinbase" | "alpaca" | "kalshi" | "macro"
     signal_type: str    # arbitrary kebab-cased type identifier
-    payload: Dict
-    ttl_seconds: Optional[int] = None   # None = use bus default
+    payload: dict
+    ttl_seconds: int | None = None   # None = use bus default
 
     def __post_init__(self):
         if not self.venue or not self.signal_type:
@@ -39,23 +37,23 @@ class ScoutAgent(ABC):
 
     name: str           # short identifier; e.g. "crypto_scout"
 
-    def __init__(self, bus: Optional[SignalBus] = None):
+    def __init__(self, bus: SignalBus | None = None):
         self.bus = bus or SignalBus()
 
     @abstractmethod
-    def scan(self) -> List[ScoutSignal]:
+    def scan(self) -> list[ScoutSignal]:
         """Pull external data, return signals to publish.
 
         Should be idempotent — if called twice in succession, both calls
         produce equivalent output (the bus dedupes via TTL, not identity).
         """
 
-    def run_once(self) -> Dict:
+    def run_once(self) -> dict:
         """Called by the scout workflow. Wraps scan() with persistence and
         returns a summary dict for logging/dashboards."""
         published = 0
-        errors: List[str] = []
-        signals: List[ScoutSignal] = []
+        errors: list[str] = []
+        signals: list[ScoutSignal] = []
         try:
             signals = self.scan()
         except Exception as e:

@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, List
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -29,10 +28,10 @@ logging.basicConfig(
 logger = logging.getLogger("run_scouts")
 
 
-SCOUTS: List[ScoutAgent] = []
+SCOUTS: list[ScoutAgent] = []
 
 
-def init_scouts(bus: SignalBus) -> List[ScoutAgent]:
+def init_scouts(bus: SignalBus) -> list[ScoutAgent]:
     """Build every scout. Scouts whose data sources are unreachable will
     surface their own errors at scan() time — they don't fail at construction."""
     return [
@@ -44,7 +43,7 @@ def init_scouts(bus: SignalBus) -> List[ScoutAgent]:
     ]
 
 
-def write_step_summary(reports: List[Dict], bus_size: int):
+def write_step_summary(reports: list[dict], bus_size: int):
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
@@ -81,7 +80,7 @@ def main():
         logger.info(f"Vacuum: deleted {deleted} expired rows")
 
     scouts = init_scouts(bus)
-    reports: List[Dict] = []
+    reports: list[dict] = []
     for scout in scouts:
         logger.info(f"Running {scout.name}…")
         report = scout.run_once()

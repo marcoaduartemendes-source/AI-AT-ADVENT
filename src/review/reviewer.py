@@ -17,8 +17,8 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, UTC
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +86,11 @@ class ReviewResult:
     overall_health: str        # GREEN / YELLOW / RED
     risk_multiplier_rec: float
     risk_multiplier_reason: str
-    strategy_actions: List[Dict[str, Any]] = field(default_factory=list)
-    investigate: List[str] = field(default_factory=list)
+    strategy_actions: list[dict[str, Any]] = field(default_factory=list)
+    investigate: list[str] = field(default_factory=list)
     next_review_horizon_days: int = 7
-    raw_payload: Dict[str, Any] = field(default_factory=dict)
-    cost_usd: Optional[float] = None
+    raw_payload: dict[str, Any] = field(default_factory=dict)
+    cost_usd: float | None = None
     model_used: str = ""
 
 
@@ -98,7 +98,7 @@ class ReviewResult:
 
 
 class ReviewDB:
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("REVIEW_DB_PATH", "data/strategic_review.db")
         )
@@ -140,14 +140,14 @@ class ReviewDB:
             )
             return cur.lastrowid
 
-    def latest(self) -> Optional[Dict]:
+    def latest(self) -> dict | None:
         with self._conn() as c:
             row = c.execute(
                 "SELECT * FROM reviews ORDER BY id DESC LIMIT 1"
             ).fetchone()
         return dict(row) if row else None
 
-    def history(self, limit: int = 20) -> List[Dict]:
+    def history(self, limit: int = 20) -> list[dict]:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT id, timestamp, overall_health, summary, risk_mult_rec "
@@ -162,13 +162,13 @@ class ReviewDB:
 class StrategicReviewer:
     """Pulls all the data, calls Opus, persists the structured result."""
 
-    def __init__(self, model: str = "claude-opus-4-7", db: Optional[ReviewDB] = None):
+    def __init__(self, model: str = "claude-opus-4-7", db: ReviewDB | None = None):
         self.model = model
         self.db = db or ReviewDB()
 
-    def gather_context(self) -> Dict:
+    def gather_context(self) -> dict:
         """Collect everything the reviewer needs in one dict."""
-        ctx: Dict = {"as_of": datetime.now(timezone.utc).isoformat()}
+        ctx: dict = {"as_of": datetime.now(UTC).isoformat()}
 
         # Risk state + recent equity
         try:
@@ -241,7 +241,7 @@ class StrategicReviewer:
             from scouts.signal_bus import SignalBus
             bus = SignalBus()
             recent = bus.latest(limit=500)
-            counts: Dict[str, int] = {}
+            counts: dict[str, int] = {}
             for r in recent:
                 key = f"{r.venue}:{r.signal_type}"
                 counts[key] = counts.get(key, 0) + 1
@@ -256,7 +256,7 @@ class StrategicReviewer:
         ctx = self.gather_context()
         return self._call_llm(ctx)
 
-    def _call_llm(self, ctx: Dict) -> ReviewResult:
+    def _call_llm(self, ctx: dict) -> ReviewResult:
         try:
             import anthropic
         except ImportError as e:
@@ -327,7 +327,7 @@ class StrategicReviewer:
             )
 
         result = ReviewResult(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             summary=payload.get("summary", ""),
             overall_health=payload.get("overall_health", "YELLOW"),
             risk_multiplier_rec=float(payload.get("risk_multiplier_recommendation", 1.0)),

@@ -16,8 +16,7 @@ bogus one.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List
+from datetime import datetime, UTC
 
 from common import cached_get
 
@@ -38,8 +37,8 @@ _FOMC_2026 = [
 class MacroScout(ScoutAgent):
     name = "macro_scout"
 
-    def scan(self) -> List[ScoutSignal]:
-        signals: List[ScoutSignal] = []
+    def scan(self) -> list[ScoutSignal]:
+        signals: list[ScoutSignal] = []
 
         # ── VIX regime
         vix = self._fetch_vix_yahoo()
@@ -48,7 +47,7 @@ class MacroScout(ScoutAgent):
             signals.append(ScoutSignal(
                 venue="macro", signal_type="vix_regime",
                 payload={"vix": vix, "regime": regime,
-                          "as_of": datetime.now(timezone.utc).isoformat()},
+                          "as_of": datetime.now(UTC).isoformat()},
                 ttl_seconds=4 * 3600,  # refresh every 4h
             ))
 
@@ -91,7 +90,7 @@ class MacroScout(ScoutAgent):
         return "calm"
 
     def _fomc_window_signal(self) -> ScoutSignal:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         upcoming = []
         for d in _FOMC_2026:
             dt = datetime.strptime(d, "%Y-%m-%d").date()

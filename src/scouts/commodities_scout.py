@@ -16,8 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import datetime
 
 from common import cached_get
 
@@ -42,7 +41,7 @@ COMMODITIES = {
 class CommoditiesScout(ScoutAgent):
     name = "commodities_scout"
 
-    def scan(self) -> List[ScoutSignal]:
+    def scan(self) -> list[ScoutSignal]:
         # Pull all FUTURE products (cached so crypto_basis_trade can reuse).
         data = cached_get(
             f"{COINBASE_PUBLIC}/products",
@@ -55,7 +54,7 @@ class CommoditiesScout(ScoutAgent):
         products = data.get("products", [])
 
         # group by root + sort by expiry
-        by_root: Dict[str, List[Dict]] = {}
+        by_root: dict[str, list[dict]] = {}
         for p in products:
             pid = p.get("product_id", "")
             m = re.match(r"^([A-Z0-9]+)-(\d+[A-Z]+\d+)-([A-Z]+)$", pid)
@@ -76,8 +75,8 @@ class CommoditiesScout(ScoutAgent):
             })
 
         # Build term structure
-        term_struct: Dict = {}
-        spot_prices: Dict[str, float] = {}
+        term_struct: dict = {}
+        spot_prices: dict[str, float] = {}
         for root, contracts in by_root.items():
             contracts.sort(key=lambda c: c["expiry"])
             if len(contracts) < 2:
@@ -111,13 +110,13 @@ class CommoditiesScout(ScoutAgent):
             }
 
         # Cross-commodity ratios
-        ratios: Dict = {}
+        ratios: dict = {}
         if "GOL" in spot_prices and "SLR" in spot_prices and spot_prices["SLR"] > 0:
             ratios["gold_silver"] = round(spot_prices["GOL"] / spot_prices["SLR"], 3)
         if "PT" in spot_prices and "GOL" in spot_prices and spot_prices["GOL"] > 0:
             ratios["platinum_gold"] = round(spot_prices["PT"] / spot_prices["GOL"], 4)
 
-        signals: List[ScoutSignal] = []
+        signals: list[ScoutSignal] = []
         if term_struct:
             signals.append(ScoutSignal(
                 venue="coinbase", signal_type="term_structure",

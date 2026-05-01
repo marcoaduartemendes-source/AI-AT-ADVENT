@@ -15,8 +15,7 @@ import logging
 import os
 import time
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, UTC
 
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
@@ -60,7 +59,7 @@ class KalshiAdapter(BrokerAdapter):
         self.is_paper = "demo" in ep
         self._configured = bool(self.key_id and pem_text)
 
-        self._private_key: Optional[RSAPrivateKey] = None
+        self._private_key: RSAPrivateKey | None = None
         if self._configured:
             try:
                 key = serialization.load_pem_private_key(
@@ -78,7 +77,7 @@ class KalshiAdapter(BrokerAdapter):
 
     # ── Signing ──────────────────────────────────────────────────────────
 
-    def _sign(self, method: str, path: str) -> Dict[str, str]:
+    def _sign(self, method: str, path: str) -> dict[str, str]:
         if not self._private_key:
             raise BrokerError("Kalshi adapter not configured")
         ts = str(int(time.time() * 1000))
@@ -129,11 +128,11 @@ class KalshiAdapter(BrokerAdapter):
             raw=d,
         )
 
-    def get_positions(self) -> List[Position]:
+    def get_positions(self) -> list[Position]:
         if not self._configured:
             return []
         d = self._request("GET", "/portfolio/positions")
-        out: List[Position] = []
+        out: list[Position] = []
         for p in d.get("market_positions", []):
             ticker = p.get("ticker") or p.get("market_ticker")
             qty = float(p.get("position", 0))
@@ -166,12 +165,12 @@ class KalshiAdapter(BrokerAdapter):
         return Quote(
             venue=self.venue, symbol=symbol,
             bid=bid, ask=ask, last=last,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
-    ) -> List[Candle]:
+    ) -> list[Candle]:
         # Prediction markets don't have OHLCV in the equity/crypto sense.
         # Strategies needing time series should hit /markets/{ticker}/history.
         return []
@@ -183,10 +182,10 @@ class KalshiAdapter(BrokerAdapter):
         symbol: str,
         side: OrderSide,
         type: OrderType,
-        quantity: Optional[float] = None,
-        notional_usd: Optional[float] = None,
-        limit_price: Optional[float] = None,
-        client_order_id: Optional[str] = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+        limit_price: float | None = None,
+        client_order_id: str | None = None,
     ) -> Order:
         if not self._configured:
             raise BrokerError("Kalshi adapter not configured")
@@ -196,7 +195,7 @@ class KalshiAdapter(BrokerAdapter):
         # short the YES (== buy NO). Adapter exposes BUY/SELL semantics
         # consistent with rest of system; we map both to the YES side.
         action = "buy" if side == OrderSide.BUY else "sell"
-        body: Dict = {
+        body: dict = {
             "ticker": symbol,
             "client_order_id": client_order_id or str(uuid.uuid4()),
             "type": "market" if type == OrderType.MARKET else "limit",
@@ -227,12 +226,12 @@ class KalshiAdapter(BrokerAdapter):
 
     # ── Capabilities ─────────────────────────────────────────────────────
 
-    def list_supported_asset_classes(self) -> List[AssetClass]:
+    def list_supported_asset_classes(self) -> list[AssetClass]:
         return [AssetClass.PREDICTION]
 
     def list_tradable_symbols(
-        self, asset_class: Optional[AssetClass] = None
-    ) -> List[str]:
+        self, asset_class: AssetClass | None = None
+    ) -> list[str]:
         """Return tickers of currently active markets. Capped at 100 for
         the default surface; strategies that want the full universe should
         page /markets directly."""
@@ -245,7 +244,7 @@ class KalshiAdapter(BrokerAdapter):
             logger.warning(f"Kalshi list_tradable_symbols failed: {e}")
             return []
 
-    def healthcheck(self) -> Dict:
+    def healthcheck(self) -> dict:
         if not self._configured:
             return {"venue": self.venue, "ok": False, "configured": False,
                     "note": "Kalshi credentials not set"}
@@ -267,7 +266,7 @@ class KalshiAdapter(BrokerAdapter):
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
 
-def _parse_order(d: Dict, venue: str, *,
+def _parse_order(d: dict, venue: str, *,
                  fallback_symbol: str = "",
                  fallback_side: OrderSide = OrderSide.BUY,
                  fallback_type: OrderType = OrderType.MARKET) -> Order:

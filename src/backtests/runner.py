@@ -17,8 +17,7 @@ import logging
 import math
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, UTC
 
 import numpy as np
 import requests
@@ -59,17 +58,17 @@ class BacktestSummary:
     entry_volume_usd: float = 0.0
     return_on_volume_pct: float = 0.0
     avg_pnl_usd: float = 0.0
-    sharpe: Optional[float] = None
+    sharpe: float | None = None
     max_drawdown_usd: float = 0.0
-    trades: List[Dict] = field(default_factory=list)
-    equity_curve: List[Dict] = field(default_factory=list)
+    trades: list[dict] = field(default_factory=list)
+    equity_curve: list[dict] = field(default_factory=list)
     note: str = ""
 
 
 # ─── Data fetchers ────────────────────────────────────────────────────────
 
 
-_HIST_CACHE: Dict[Tuple[str, str, int], np.ndarray] = {}
+_HIST_CACHE: dict[tuple[str, str, int], np.ndarray] = {}
 
 
 def _yahoo_history(symbol: str, days: int) -> np.ndarray:
@@ -132,7 +131,7 @@ def _coinbase_daily_history(symbol: str, days: int) -> np.ndarray:
 # ─── Per-strategy backtest functions ──────────────────────────────────────
 
 
-def _equity_curve_to_summary(name: str, days: int, trades: List[Dict],
+def _equity_curve_to_summary(name: str, days: int, trades: list[dict],
                               entry_volume: float) -> BacktestSummary:
     closed = [t for t in trades if t.get("pnl_usd") is not None]
     wins = sum(1 for t in closed if t["pnl_usd"] > 0)
@@ -186,17 +185,16 @@ def backtest_tsmom_etf(window_days: int) -> BacktestSummary:
         return BacktestSummary(strategy="tsmom_etf", window_days=window_days,
                                note="No Yahoo data available")
 
-    trades: List[Dict] = []
-    positions: Dict[str, Dict] = {}     # {sym: {"qty", "entry_price", "entry_time"}}
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}     # {sym: {"qty", "entry_price", "entry_time"}}
     entry_volume = 0.0
 
-    cutoff_ts = time.time() - window_days * 86400
     base_idx = max(len(next(iter(histories.values()))) - window_days, lookback + 1)
     n_bars = len(next(iter(histories.values())))
 
     for i in range(base_idx, n_bars):
         bar_time = datetime.fromtimestamp(
-            histories[list(histories.keys())[0]][i, 0], tz=timezone.utc)
+            histories[list(histories.keys())[0]][i, 0], tz=UTC)
         # Rebalance every `rebalance_every` bars
         if (i - base_idx) % rebalance_every != 0:
             continue
@@ -248,8 +246,8 @@ def backtest_risk_parity_etf(window_days: int) -> BacktestSummary:
         return BacktestSummary(strategy="risk_parity_etf", window_days=window_days,
                                note="No Yahoo data available")
 
-    trades: List[Dict] = []
-    positions: Dict[str, Dict] = {}
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
     entry_volume = 0.0
 
     n_bars = min(len(h) for h in histories.values())
@@ -273,7 +271,7 @@ def backtest_risk_parity_etf(window_days: int) -> BacktestSummary:
         weights = {s: w / tot for s, w in inv.items()}
 
         bar_time = datetime.fromtimestamp(
-            histories[list(histories.keys())[0]][i, 0], tz=timezone.utc).isoformat()
+            histories[list(histories.keys())[0]][i, 0], tz=UTC).isoformat()
         for sym in universe:
             if sym not in histories or i >= len(histories[sym]): continue
             target_usd = total_book_usd * weights.get(sym, 0)
@@ -347,8 +345,8 @@ def backtest_crypto_xsmom(window_days: int) -> BacktestSummary:
         return BacktestSummary(strategy="crypto_xsmom", window_days=window_days,
                                note="Insufficient Coinbase history")
 
-    trades: List[Dict] = []
-    positions: Dict[str, Dict] = {}
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
     entry_volume = 0.0
     n_bars = min(len(h) for h in histories.values())
     base_idx = max(n_bars - window_days, lookback)
@@ -370,7 +368,7 @@ def backtest_crypto_xsmom(window_days: int) -> BacktestSummary:
         winners = {sym for sym, _ in returns[:top_n]}
 
         bar_time = datetime.fromtimestamp(
-            histories[list(histories.keys())[0]][i, 0], tz=timezone.utc).isoformat()
+            histories[list(histories.keys())[0]][i, 0], tz=UTC).isoformat()
 
         # Open new winners
         for sym in winners:
@@ -423,7 +421,7 @@ def backtest_vol_managed_overlay(window_days: int) -> BacktestSummary:
 
     plain_eq = capital
     overlay_eq = capital
-    trades: List[Dict] = []
+    trades: list[dict] = []
     last_scaler = 1.0
 
     for i in range(base_idx, n_bars):
@@ -444,7 +442,7 @@ def backtest_vol_managed_overlay(window_days: int) -> BacktestSummary:
         overlay_eq *= (1 + daily_ret * scaler)
         # Log a "trade" each time scaler changes meaningfully
         if abs(scaler - last_scaler) > 0.05:
-            ts = datetime.fromtimestamp(candles[i, 0], tz=timezone.utc).isoformat()
+            ts = datetime.fromtimestamp(candles[i, 0], tz=UTC).isoformat()
             trades.append({
                 "strategy": "vol_managed_overlay", "side": "REBAL",
                 "product_id": "SPY",
@@ -485,8 +483,8 @@ def backtest_strategy_by_name(name: str, window_days: int) -> BacktestSummary:
     )
 
 
-def backtest_all(window_days: int) -> Dict[str, BacktestSummary]:
-    out: Dict[str, BacktestSummary] = {}
+def backtest_all(window_days: int) -> dict[str, BacktestSummary]:
+    out: dict[str, BacktestSummary] = {}
     for name in _STRATEGY_BACKTESTS:
         try:
             out[name] = backtest_strategy_by_name(name, window_days)

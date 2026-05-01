@@ -23,7 +23,6 @@ import logging
 import os
 import re
 import sys
-from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -36,7 +35,7 @@ log = logging.getLogger("apply_review")
 ORCH_FILE = os.path.join(os.path.dirname(__file__), "run_orchestrator.py")
 
 
-def _load_latest_actions() -> Tuple[Optional[Dict], List[Dict]]:
+def _load_latest_actions() -> tuple[dict | None, list[dict]]:
     db = ReviewDB()
     latest = db.latest()
     if not latest:
@@ -51,7 +50,7 @@ def _load_latest_actions() -> Tuple[Optional[Dict], List[Dict]]:
     return latest, payload.get("strategy_actions", [])
 
 
-def _patch_target_alloc(source: str, name: str, new_pct: float) -> Tuple[str, bool]:
+def _patch_target_alloc(source: str, name: str, new_pct: float) -> tuple[str, bool]:
     """Find StrategyMeta(name="<name>", ...) and patch target_alloc_pct."""
     # Match the StrategyMeta block for this strategy specifically.
     block_re = re.compile(
@@ -90,7 +89,6 @@ def main():
 
     with open(ORCH_FILE, encoding="utf-8") as f:
         source = f.read()
-    original_source = source
 
     applied = []
     skipped = []

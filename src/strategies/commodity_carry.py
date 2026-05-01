@@ -16,7 +16,6 @@ Inputs from scout:
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -34,11 +33,11 @@ class CommodityCarry(Strategy):
     name = "commodity_carry"
     venue = "coinbase"
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
-        term: Dict = ctx.scout_signals.get("term_structure", {})
+        term: dict = ctx.scout_signals.get("term_structure", {})
         if not term:
             logger.debug(f"[{self.name}] no term_structure signal yet")
             return []
@@ -54,7 +53,7 @@ class CommodityCarry(Strategy):
                      if carry >= ENTRY_CARRY_PCT]
         long_roots = {root for root, _, _ in long_set}
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         per_leg = ctx.target_alloc_usd / max(1, TOP_N)
 
         # Open positions for top-N where we're not already in

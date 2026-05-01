@@ -15,8 +15,7 @@ The momentum table feeds Phase-2 cross-sectional momentum strategy.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, timedelta, UTC
 
 import requests
 
@@ -44,12 +43,12 @@ MOMENTUM_LOOKBACK_DAYS = 30
 class EquitiesScout(ScoutAgent):
     name = "equities_scout"
 
-    def __init__(self, bus=None, universe: Optional[List[str]] = None):
+    def __init__(self, bus=None, universe: list[str] | None = None):
         super().__init__(bus=bus)
         self.universe = universe or DEFAULT_UNIVERSE
 
-    def scan(self) -> List[ScoutSignal]:
-        signals: List[ScoutSignal] = []
+    def scan(self) -> list[ScoutSignal]:
+        signals: list[ScoutSignal] = []
 
         # Earnings calendar (next 7 days)
         earnings = self._fetch_earnings_calendar(days=7)
@@ -71,10 +70,10 @@ class EquitiesScout(ScoutAgent):
 
     # ── Helpers ────────────────────────────────────────────────────────
 
-    def _fetch_earnings_calendar(self, days: int = 7) -> List[Dict]:
+    def _fetch_earnings_calendar(self, days: int = 7) -> list[dict]:
         """Pull from Nasdaq's public earnings calendar."""
-        out: List[Dict] = []
-        today = datetime.now(timezone.utc).date()
+        out: list[dict] = []
+        today = datetime.now(UTC).date()
         for offset in range(days):
             d = (today + timedelta(days=offset)).isoformat()
             try:
@@ -104,14 +103,14 @@ class EquitiesScout(ScoutAgent):
                 logger.warning(f"[{self.name}] earnings {d} failed: {e}")
         return out
 
-    def _fetch_cross_sectional_momentum(self) -> List[Dict]:
+    def _fetch_cross_sectional_momentum(self) -> list[dict]:
         """Compute 30-day return percentile rank across the universe."""
         broker = get_broker("alpaca")
         if broker is None:
             logger.warning(f"[{self.name}] Alpaca adapter not configured")
             return []
 
-        returns: List[Dict] = []
+        returns: list[dict] = []
         for sym in self.universe:
             try:
                 candles = broker.get_candles(

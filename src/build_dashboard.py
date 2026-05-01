@@ -14,9 +14,8 @@ import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # Ensure src/ is on the path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -80,7 +79,7 @@ def make_strategies(granularity: str):
 # ─── Live data ────────────────────────────────────────────────────────────────
 
 
-def load_live_data() -> Dict:
+def load_live_data() -> dict:
     """Pull all live trades + open positions from the bot's SQLite DB."""
     db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
     if not Path(db_path).exists():
@@ -110,7 +109,7 @@ def load_live_data() -> Dict:
     all_trades_sorted = sorted(all_trades, key=lambda t: t["timestamp"])
 
     # Equity curve: only closed (SELL with pnl) trades contribute
-    eq: List[Dict] = []
+    eq: list[dict] = []
     cum = 0.0
     for t in all_trades_sorted:
         if t.get("pnl_usd") is not None:
@@ -119,7 +118,7 @@ def load_live_data() -> Dict:
 
     # Per-strategy summary — include legacy strategies AND the new
     # orchestrator-driven strategies so the dashboard shows all of them.
-    by_strategy: Dict[str, Dict] = {}
+    by_strategy: dict[str, dict] = {}
     all_strategy_names = [
         # ── Production strategies (orchestrator-driven)
         "crypto_funding_carry", "risk_parity_etf", "kalshi_calibration_arb",
@@ -130,7 +129,7 @@ def load_live_data() -> Dict:
     ]
     # Pre-bucket trades by strategy in ONE pass instead of N×len(trades)
     # passes — was a hidden 13×10000 = 130k-iteration hot loop.
-    trades_by_strategy: Dict[str, List[Dict]] = defaultdict(list)
+    trades_by_strategy: dict[str, list[dict]] = defaultdict(list)
     for t in all_trades:
         trades_by_strategy[t.get("strategy") or "<unknown>"].append(t)
     for name in all_strategy_names:
@@ -161,8 +160,8 @@ def load_live_data() -> Dict:
     # dashboard can render a "money on each broker" view.
     # Parallel fetch across venues — three brokers were sequential
     # (~6 blocking HTTP round-trips), now all three run concurrently.
-    by_broker: Dict[str, Dict] = {}
-    open_orders_all: List[Dict] = []
+    by_broker: dict[str, dict] = {}
+    open_orders_all: list[dict] = []
     try:
         from brokers.registry import build_brokers
         brokers = build_brokers()
@@ -228,7 +227,7 @@ def load_live_data() -> Dict:
     # Per-product (per-symbol) P&L breakdown — closes the "is BTC up
     # while ETH bleeds?" gap. Combines realized P&L from closed trades
     # with unrealized P&L from open positions, keyed by product_id.
-    by_product: Dict[str, Dict] = {}
+    by_product: dict[str, dict] = {}
     for t in all_trades:
         sym = t.get("product_id") or "<unknown>"
         b = by_product.setdefault(sym, {
@@ -284,7 +283,7 @@ def load_live_data() -> Dict:
     }
 
 
-def load_orchestrator_state() -> Dict:
+def load_orchestrator_state() -> dict:
     """Pull current strategy pod state + risk snapshot from the orchestrator
     DBs. Returns an empty/default payload if the orchestrator hasn't run yet
     (e.g. on first dashboard build before the new system has cycled)."""
@@ -414,9 +413,9 @@ def load_orchestrator_state() -> Dict:
     return out
 
 
-def load_latest_strategic_review() -> Dict:
+def load_latest_strategic_review() -> dict:
     """Pull the most-recent Opus review from data/strategic_review.db."""
-    out: Dict = {}
+    out: dict = {}
     db_path = os.environ.get("REVIEW_DB_PATH", "data/strategic_review.db")
     if not Path(db_path).exists():
         return out
@@ -455,7 +454,7 @@ def load_latest_strategic_review() -> Dict:
     return out
 
 
-def _empty_summary(label: str) -> Dict:
+def _empty_summary(label: str) -> dict:
     return {
         "label": label,
         "n_trades": 0,
@@ -469,7 +468,7 @@ def _empty_summary(label: str) -> Dict:
     }
 
 
-def _summarize(trades: List[Dict]) -> Dict:
+def _summarize(trades: list[dict]) -> dict:
     """Single source of truth for trade aggregates.
 
     Replaces 4 near-identical aggregation blocks that drifted apart over
@@ -519,14 +518,14 @@ def _summarize(trades: List[Dict]) -> Dict:
     }
 
 
-def _broker_snapshot(venue: str, adapter) -> Dict:
+def _broker_snapshot(venue: str, adapter) -> dict:
     """Pull account + positions + open orders for one broker.
 
     Designed to be called concurrently from a ThreadPoolExecutor — each
     venue is independent. Catches errors per-call so one broker failure
     doesn't poison the whole snapshot.
     """
-    entry: Dict = {
+    entry: dict = {
         "venue": venue,
         "cash_usd": 0.0,
         "buying_power_usd": 0.0,
@@ -595,7 +594,7 @@ def _broker_snapshot(venue: str, adapter) -> Dict:
     if entry["equity_usd"] > 0:
         entry["available_pct"] = entry["cash_usd"] / entry["equity_usd"] * 100
     if not errs:
-        entry["last_ok_at"] = datetime.now(timezone.utc).isoformat()
+        entry["last_ok_at"] = datetime.now(UTC).isoformat()
     else:
         entry["error"] = " | ".join(errs)[:300]
     return entry
@@ -604,13 +603,13 @@ def _broker_snapshot(venue: str, adapter) -> Dict:
 # ─── Backtest data ────────────────────────────────────────────────────────────
 
 
-def run_backtest_window(days: int, candles_by_product: Dict) -> Dict:
+def run_backtest_window(days: int, candles_by_product: dict) -> dict:
     """Run all 3 strategies on each product for the past `days` days."""
     strategies = make_strategies(GRANULARITY)
 
-    by_strategy: Dict[str, Dict] = {}
-    all_trades: List[Dict] = []
-    combined_eq_points: List[Dict] = []
+    by_strategy: dict[str, dict] = {}
+    all_trades: list[dict] = []
+    combined_eq_points: list[dict] = []
 
     cutoff_ts = time.time() - days * 86400
 
@@ -1507,7 +1506,7 @@ activate("live");
 """
 
 
-def render_html(payload: Dict, out_path: Path):
+def render_html(payload: dict, out_path: Path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     json_blob = json.dumps(payload, default=str)
     html = HTML_TEMPLATE.replace("__DATA__", json_blob)
@@ -1538,7 +1537,7 @@ def main():
                 f"${live['summary']['total_pnl_usd']:+.2f} P&L")
 
     logger.info("Fetching historical candles for backtests…")
-    candles_by_product: Dict = {}
+    candles_by_product: dict = {}
     for pid in PRODUCTS:
         try:
             candles = fetch_coinbase_public_history(pid, GRANULARITY, days=max(WINDOWS) + 2)
@@ -1549,7 +1548,7 @@ def main():
             candles_by_product[pid] = None
 
     payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "config": config,
         "live": live,
         "pods": load_orchestrator_state(),
@@ -1619,7 +1618,7 @@ def main():
 
         # Recompute window-level summary now that we've added new strategies
         all_trades = []
-        for sname, st in result["by_strategy"].items():
+        for st in result["by_strategy"].values():
             all_trades.extend(st.get("trades", []))
         closed_all = [t for t in all_trades if t.get("pnl_usd") is not None]
         wins_all = sum(1 for t in closed_all if t["pnl_usd"] > 0)

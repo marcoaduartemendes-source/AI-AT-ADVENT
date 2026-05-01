@@ -7,9 +7,8 @@ defaults aimed at the 15% return / 12% vol / 12% max-DD profile.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 
 class KillSwitchState(str, Enum):
@@ -82,9 +81,9 @@ class RiskConfig:
     # Per-broker overrides (None = use max_trade_usd above).
     # Used to cap small live tests on one venue (e.g. $50 on Coinbase)
     # without crippling Alpaca paper trading at the same time.
-    max_trade_usd_coinbase: Optional[float] = None
-    max_trade_usd_alpaca: Optional[float] = None
-    max_trade_usd_kalshi: Optional[float] = None
+    max_trade_usd_coinbase: float | None = None
+    max_trade_usd_alpaca: float | None = None
+    max_trade_usd_kalshi: float | None = None
 
     def cap_for_venue(self, venue: str) -> float:
         per_venue = {
@@ -99,10 +98,10 @@ class RiskConfig:
     """After KILL fires, wait this long before allowing manual restart."""
 
     @classmethod
-    def from_env(cls) -> "RiskConfig":
+    def from_env(cls) -> RiskConfig:
         """Build config from env vars. Repo workflow can override any field
         by setting an env var with the corresponding uppercase name."""
-        def _opt_envf(name: str) -> Optional[float]:
+        def _opt_envf(name: str) -> float | None:
             v = os.environ.get(name)
             if v is None or v == "":
                 return None

@@ -13,10 +13,7 @@ Symbol naming follows Coinbase's own product_id (e.g. "BTC-USD",
 from __future__ import annotations
 
 import os
-import time
-import uuid
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, UTC
 
 from trading.coinbase_client import CoinbaseClient
 from trading.market_data import (
@@ -48,7 +45,7 @@ class CoinbaseAdapter(BrokerAdapter):
         self.api_secret = api_secret or os.environ.get("COINBASE_API_SECRET", "")
         self.client = CoinbaseClient(self.api_key, self.api_secret)
         self.is_paper = False  # Coinbase has no paper environment for trading
-        self._product_cache: Dict[str, Dict] = {}
+        self._product_cache: dict[str, dict] = {}
 
     # ── Account ──────────────────────────────────────────────────────────
 
@@ -82,9 +79,9 @@ class CoinbaseAdapter(BrokerAdapter):
             raw={"accounts": accts},
         )
 
-    def get_positions(self) -> List[Position]:
+    def get_positions(self) -> list[Position]:
         accts = self.client.get_accounts()
-        out: List[Position] = []
+        out: list[Position] = []
         for a in accts:
             ccy = a.get("currency")
             try:
@@ -124,23 +121,23 @@ class CoinbaseAdapter(BrokerAdapter):
             venue=self.venue, symbol=symbol,
             bid=bid, ask=ask,
             last=(bid + ask) / 2 if (bid and ask) else None,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
-    ) -> List[Candle]:
+    ) -> list[Candle]:
         cached = self._get_cached_candles(symbol, granularity, num_candles)
         if cached is not None:
             return cached
         if granularity not in GRANULARITY_SECONDS:
             raise BrokerError(f"Coinbase granularity not supported: {granularity}")
         arr = fetch_candles(self.client, symbol, granularity, num_candles)
-        out: List[Candle] = []
+        out: list[Candle] = []
         for row in arr:
             ts, low, high, open_, close, vol = row
             out.append(Candle(
-                timestamp=datetime.fromtimestamp(float(ts), tz=timezone.utc),
+                timestamp=datetime.fromtimestamp(float(ts), tz=UTC),
                 open=float(open_), high=float(high),
                 low=float(low), close=float(close),
                 volume=float(vol),
@@ -155,10 +152,10 @@ class CoinbaseAdapter(BrokerAdapter):
         symbol: str,
         side: OrderSide,
         type: OrderType,
-        quantity: Optional[float] = None,
-        notional_usd: Optional[float] = None,
-        limit_price: Optional[float] = None,
-        client_order_id: Optional[str] = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+        limit_price: float | None = None,
+        client_order_id: str | None = None,
     ) -> Order:
         # The existing CoinbaseClient supports MARKET buys (quote_size = USD)
         # and MARKET sells (base_size = quantity). Limit orders not yet wired
@@ -191,7 +188,7 @@ class CoinbaseAdapter(BrokerAdapter):
             status=OrderStatus.PENDING,
             filled_quantity=0.0,
             filled_avg_price=None,
-            submitted_at=datetime.now(timezone.utc),
+            submitted_at=datetime.now(UTC),
             raw=res,
         )
 
@@ -226,7 +223,7 @@ class CoinbaseAdapter(BrokerAdapter):
 
     # ── Capabilities ─────────────────────────────────────────────────────
 
-    def list_supported_asset_classes(self) -> List[AssetClass]:
+    def list_supported_asset_classes(self) -> list[AssetClass]:
         return [
             AssetClass.CRYPTO_SPOT,
             AssetClass.CRYPTO_PERP,
@@ -236,8 +233,8 @@ class CoinbaseAdapter(BrokerAdapter):
         ]
 
     def list_tradable_symbols(
-        self, asset_class: Optional[AssetClass] = None
-    ) -> List[str]:
+        self, asset_class: AssetClass | None = None
+    ) -> list[str]:
         # Curated default set; full universe is large.
         if asset_class in (None, AssetClass.CRYPTO_SPOT):
             return ["BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "DOGE-USD",
@@ -246,7 +243,7 @@ class CoinbaseAdapter(BrokerAdapter):
 
     # ── Internal ─────────────────────────────────────────────────────────
 
-    def _safe_price(self, symbol: str) -> Optional[float]:
+    def _safe_price(self, symbol: str) -> float | None:
         try:
             return get_current_price(self.client, symbol)
         except Exception:

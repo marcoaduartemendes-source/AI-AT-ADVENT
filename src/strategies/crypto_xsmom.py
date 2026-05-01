@@ -13,9 +13,7 @@ long-only version captures most of the documented spread.
 from __future__ import annotations
 
 import logging
-from typing import List
 
-import numpy as np
 
 from brokers.base import OrderSide, OrderType
 from common import cached_get
@@ -42,7 +40,7 @@ class CryptoXSMom(Strategy):
     name = "crypto_xsmom"
     venue = "coinbase"
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
@@ -64,7 +62,7 @@ class CryptoXSMom(Strategy):
         winners = {sym for sym, _ in returns[:top_n]}
 
         per_leg = ctx.target_alloc_usd / max(top_n, 1)
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
 
         # Open positions for new winners
         for sym in winners:

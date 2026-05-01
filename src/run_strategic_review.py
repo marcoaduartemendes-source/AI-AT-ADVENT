@@ -86,7 +86,7 @@ def main():
             "model_used": result.model_used,
         }, indent=2, default=str))
     else:
-        print(f"\n=== Strategic Review ===")
+        print("\n=== Strategic Review ===")
         print(f"  Health:    {result.overall_health}")
         print(f"  Summary:   {result.summary}")
         print(f"  Risk mult: {result.risk_multiplier_rec:.2f} ({result.risk_multiplier_reason})")

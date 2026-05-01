@@ -18,11 +18,9 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import List
 
 import numpy as np
 
-from brokers.base import OrderSide, OrderType
 from scouts.signal_bus import SignalBus
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
 
@@ -38,11 +36,11 @@ class VolManagedOverlay(Strategy):
     name = "vol_managed_overlay"
     venue = "alpaca"
 
-    def __init__(self, broker, bus: "SignalBus | None" = None):
+    def __init__(self, broker, bus: SignalBus | None = None):
         super().__init__(broker)
         self._bus = bus or SignalBus()
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         # Compute scalers and publish to bus — emits zero TradeProposals.
         scalers = {}
 

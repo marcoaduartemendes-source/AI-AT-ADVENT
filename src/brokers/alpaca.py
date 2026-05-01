@@ -11,8 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, UTC
 
 import requests
 
@@ -74,7 +73,7 @@ class AlpacaAdapter(BrokerAdapter):
 
     # ── HTTP helpers ─────────────────────────────────────────────────────
 
-    def _get(self, path: str, *, on_data: bool = False, params: Optional[Dict] = None):
+    def _get(self, path: str, *, on_data: bool = False, params: dict | None = None):
         base = self.data_endpoint if on_data else self.endpoint
         try:
             r = self._session.get(f"{base}{path}", params=params, timeout=15)
@@ -84,7 +83,7 @@ class AlpacaAdapter(BrokerAdapter):
             raise BrokerError(f"Alpaca {path} HTTP {r.status_code}: {r.text[:200]}")
         return r.json()
 
-    def _post(self, path: str, body: Dict) -> Dict:
+    def _post(self, path: str, body: dict) -> dict:
         try:
             r = self._session.post(f"{self.endpoint}{path}", json=body, timeout=15)
         except requests.RequestException as e:
@@ -111,9 +110,9 @@ class AlpacaAdapter(BrokerAdapter):
             raw=d,
         )
 
-    def get_positions(self) -> List[Position]:
+    def get_positions(self) -> list[Position]:
         rows = self._get("/positions")
-        out: List[Position] = []
+        out: list[Position] = []
         for p in rows:
             sym = p["symbol"]
             qty = float(p.get("qty", 0))
@@ -150,12 +149,12 @@ class AlpacaAdapter(BrokerAdapter):
             bid=float(q.get("bp")) if q.get("bp") else None,
             ask=float(q.get("ap")) if q.get("ap") else None,
             last=None,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
-    ) -> List[Candle]:
+    ) -> list[Candle]:
         cached = self._get_cached_candles(symbol, granularity, num_candles)
         if cached is not None:
             return cached
@@ -171,7 +170,7 @@ class AlpacaAdapter(BrokerAdapter):
             "1Hour": 3600, "2Hour": 7200, "4Hour": 14400,
             "1Day": 86400, "1Week": 604800,
         }.get(tf, 86400)
-        start = (datetime.now(timezone.utc) -
+        start = (datetime.now(UTC) -
                   timedelta(seconds=seconds_per_bar * num_candles * 2))
         params = {
             "timeframe": tf,
@@ -182,7 +181,7 @@ class AlpacaAdapter(BrokerAdapter):
         }
         d = self._get(f"/stocks/{symbol}/bars", on_data=True, params=params)
         bars = d.get("bars", [])
-        out: List[Candle] = []
+        out: list[Candle] = []
         for b in bars:
             out.append(Candle(
                 timestamp=datetime.fromisoformat(b["t"].replace("Z", "+00:00")),
@@ -200,12 +199,12 @@ class AlpacaAdapter(BrokerAdapter):
         symbol: str,
         side: OrderSide,
         type: OrderType,
-        quantity: Optional[float] = None,
-        notional_usd: Optional[float] = None,
-        limit_price: Optional[float] = None,
-        client_order_id: Optional[str] = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+        limit_price: float | None = None,
+        client_order_id: str | None = None,
     ) -> Order:
-        body: Dict = {
+        body: dict = {
             "symbol": symbol,
             "side": side.value.lower(),
             "type": "market" if type == OrderType.MARKET else "limit",
@@ -231,7 +230,7 @@ class AlpacaAdapter(BrokerAdapter):
         d = self._get(f"/orders/{order_id}")
         return _parse_order(d, self.venue)
 
-    def get_open_orders(self) -> List[Order]:
+    def get_open_orders(self) -> list[Order]:
         """Open + pending orders. Strategies subtract pending notional from
         their buying intent so they don't double-fire across cycles."""
         try:
@@ -252,7 +251,7 @@ class AlpacaAdapter(BrokerAdapter):
         except Exception as e:
             logger.warning(f"cancel_stale_orders: list failed — {e}")
             return 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         cancelled = 0
         for o in orders:
             if not o.submitted_at:
@@ -268,12 +267,12 @@ class AlpacaAdapter(BrokerAdapter):
 
     # ── Capabilities ─────────────────────────────────────────────────────
 
-    def list_supported_asset_classes(self) -> List[AssetClass]:
+    def list_supported_asset_classes(self) -> list[AssetClass]:
         return [AssetClass.EQUITY, AssetClass.ETF]
 
     def list_tradable_symbols(
-        self, asset_class: Optional[AssetClass] = None
-    ) -> List[str]:
+        self, asset_class: AssetClass | None = None
+    ) -> list[str]:
         # Alpaca has ~10k tradable assets; we only return a small curated set
         # by default. Strategies that need the full universe should hit the
         # /assets endpoint directly.
@@ -288,7 +287,7 @@ class AlpacaAdapter(BrokerAdapter):
 # ─── Helpers ──────────────────────────────────────────────────────────────
 
 
-def _parse_order(d: Dict, venue: str) -> Order:
+def _parse_order(d: dict, venue: str) -> Order:
     status_map = {
         "new": OrderStatus.OPEN,
         "accepted": OrderStatus.OPEN,

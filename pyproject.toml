@@ -1,0 +1,28 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Start lenient; tighten after the codebase is clean. The signal we
+# want NOW is unused imports, undefined names, and obvious bugs —
+# not style purity.
+select = [
+    "E4",     # imports
+    "E7",     # statements
+    "E9",     # syntax errors
+    "F",      # pyflakes (undefined names, unused imports)
+    "B",      # flake8-bugbear (likely-bug patterns)
+    "UP",     # pyupgrade (deprecated syntax)
+]
+ignore = [
+    "E501",   # line too long — let formatter handle
+    "E701",   # multiple statements on one line — used for `def foo(): ...` stubs
+    "E402",   # module-level import not at top — we lazy-import to avoid
+              # startup cycles (e.g. brokers.registry inside dashboard)
+    "B008",   # Function call in default arg (we use field(default_factory=…))
+    "UP042",  # str + Enum is fine; StrEnum migration is a separate cleanup
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]   # asserts are fine in tests

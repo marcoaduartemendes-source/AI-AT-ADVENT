@@ -11,23 +11,23 @@ public market data — never for authenticated calls.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import requests
 
 # (url, frozenset(params.items())) -> (expires_at, response_json)
-_CACHE: Dict[Tuple[str, frozenset], Tuple[float, Any]] = {}
+_CACHE: dict[tuple[str, frozenset], tuple[float, Any]] = {}
 _DEFAULT_TTL = 30.0
 
 
 def cached_get(
     url: str,
     *,
-    params: Optional[Dict] = None,
-    headers: Optional[Dict] = None,
+    params: dict | None = None,
+    headers: dict | None = None,
     timeout: float = 15.0,
     ttl_seconds: float = _DEFAULT_TTL,
-) -> Optional[Dict]:
+) -> dict | None:
     """Cached GET returning parsed JSON. Returns None on HTTP error.
 
     Bypasses cache (still issues the request) when ttl_seconds <= 0.

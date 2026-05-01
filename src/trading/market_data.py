@@ -1,5 +1,4 @@
 import time
-from typing import Optional
 
 import numpy as np
 
@@ -226,7 +225,7 @@ def bandwidth(upper: np.ndarray, lower: np.ndarray, mid: np.ndarray) -> np.ndarr
     return np.where(mid > 0, (upper - lower) / mid, np.nan)
 
 
-def get_current_price(client: CoinbaseClient, product_id: str) -> Optional[float]:
+def get_current_price(client: CoinbaseClient, product_id: str) -> float | None:
     try:
         data = client.get_best_bid_ask([product_id])
         for pb in data.get("pricebooks", []):

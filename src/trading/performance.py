@@ -3,7 +3,6 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 class PerformanceTracker:
     """Tracks all trades in SQLite and computes strategy metrics."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
         )
@@ -109,7 +108,7 @@ class PerformanceTracker:
 
     # ── Fill backfill (Phase 0 — fill polling) ───────────────────────────────
 
-    def get_unfilled_trades(self, max_age_hours: int = 48) -> List[Dict]:
+    def get_unfilled_trades(self, max_age_hours: int = 48) -> list[dict]:
         """Return trade rows where the broker hadn't reported a fill at
         record-time (price=0 or NULL), still within the polling window.
 
@@ -138,7 +137,7 @@ class PerformanceTracker:
 
     def update_trade_fill(
         self, trade_id: int, price: float, quantity: float,
-        amount_usd: float, pnl_usd: Optional[float],
+        amount_usd: float, pnl_usd: float | None,
     ) -> None:
         """Backfill a trade row with real fill data once the broker
         reports the order as filled. Sets price, quantity, amount_usd,
@@ -158,7 +157,7 @@ class PerformanceTracker:
 
     # ── Position persistence ─────────────────────────────────────────────────
 
-    def save_positions(self, positions: Dict):
+    def save_positions(self, positions: dict):
         """Persist open positions to SQLite so they survive between bot restarts."""
         with self._conn() as conn:
             conn.execute("DELETE FROM open_positions")
@@ -173,11 +172,11 @@ class PerformanceTracker:
                          pos.entry_time.isoformat()),
                     )
 
-    def load_positions(self) -> Dict:
+    def load_positions(self) -> dict:
         """Reload persisted positions on startup."""
         from datetime import datetime
         from .portfolio import Position
-        positions: Dict = {}
+        positions: dict = {}
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM open_positions").fetchall()
         for r in rows:
@@ -193,7 +192,7 @@ class PerformanceTracker:
 
     # ── Metrics ──────────────────────────────────────────────────────────────
 
-    def get_metrics(self, strategy: Optional[str] = None) -> Dict:
+    def get_metrics(self, strategy: str | None = None) -> dict:
         with self._conn() as conn:
             if strategy:
                 rows = conn.execute(
@@ -245,7 +244,7 @@ class PerformanceTracker:
             "max_drawdown": max_dd,
         }
 
-    def get_recent_trades(self, strategy: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    def get_recent_trades(self, strategy: str | None = None, limit: int = 20) -> list[dict]:
         with self._conn() as conn:
             if strategy:
                 rows = conn.execute(
@@ -260,7 +259,7 @@ class PerformanceTracker:
 
     # ── Dashboard ────────────────────────────────────────────────────────────
 
-    def print_dashboard(self, strategies: List[str]):
+    def print_dashboard(self, strategies: list[str]):
         W = 62
         print("\n" + "═" * W)
         print("  CRYPTO TRADING DASHBOARD  ·  " + datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"))
@@ -288,7 +287,7 @@ class PerformanceTracker:
               f"(win rate {total['win_rate'] * 100:.1f}%)")
         print("═" * W + "\n")
 
-    def save_snapshot(self, strategies: List[str]):
+    def save_snapshot(self, strategies: list[str]):
         for name in strategies:
             m = self.get_metrics(name)
             with self._conn() as conn:

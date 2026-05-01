@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from datetime import datetime, UTC
 
 import numpy as np
 import requests
@@ -31,14 +30,14 @@ class BacktestTrade:
     strategy: str
     product_id: str
     open_time: datetime
-    close_time: Optional[datetime]
+    close_time: datetime | None
     entry_price: float
-    exit_price: Optional[float]
+    exit_price: float | None
     quantity: float
     amount_usd: float
-    pnl_usd: Optional[float]
-    return_pct: Optional[float]
-    exit_reason: Optional[str]  # 'signal' | 'stop_loss' | 'take_profit' | 'open'
+    pnl_usd: float | None
+    return_pct: float | None
+    exit_reason: str | None  # 'signal' | 'stop_loss' | 'take_profit' | 'open'
 
 
 @dataclass
@@ -46,10 +45,10 @@ class BacktestResult:
     strategy: str
     product_id: str
     window_days: int
-    trades: List[BacktestTrade] = field(default_factory=list)
-    equity_curve: List[Dict] = field(default_factory=list)  # [{t, pnl_cumulative}]
+    trades: list[BacktestTrade] = field(default_factory=list)
+    equity_curve: list[dict] = field(default_factory=list)  # [{t, pnl_cumulative}]
 
-    def summary(self) -> Dict:
+    def summary(self) -> dict:
         closed = [t for t in self.trades if t.pnl_usd is not None]
         wins = sum(1 for t in closed if t.pnl_usd > 0)
         losses = len(closed) - wins
@@ -91,7 +90,7 @@ def fetch_coinbase_public_history(
 
     end = int(time.time())
     earliest = end - days * 86400
-    out: List[List[float]] = []
+    out: list[list[float]] = []
 
     cursor_end = end
     while cursor_end > earliest:
@@ -160,7 +159,7 @@ def backtest_strategy(
     min_confidence: float = 0.6,
     fee_bps: float = DEFAULT_FEE_BPS,
     slippage_bps: float = DEFAULT_SLIPPAGE_BPS,
-    lookback: Optional[int] = None,
+    lookback: int | None = None,
 ) -> BacktestResult:
     result = BacktestResult(
         strategy=strategy.name, product_id=product_id, window_days=window_days
@@ -171,22 +170,22 @@ def backtest_strategy(
     look = lookback or strategy.lookback
     fee_rate = fee_bps / 10000.0
     slip_rate = slippage_bps / 10000.0
-    open_pos: Optional[BacktestTrade] = None
+    open_pos: BacktestTrade | None = None
     last_trade_ts: float = 0.0
     cum_pnl = 0.0
 
     for i in range(look, len(candles)):
         bar = candles[i]
         ts, low, high, open_, close, vol = bar
-        bar_time = datetime.fromtimestamp(ts, tz=timezone.utc)
+        bar_time = datetime.fromtimestamp(ts, tz=UTC)
         window = candles[i - look + 1: i + 1]
 
         # ─ Risk checks against open position FIRST (use intra-bar high/low) ─
         if open_pos is not None:
             stop_price = open_pos.entry_price * (1 - stop_loss_pct)
             take_price = open_pos.entry_price * (1 + take_profit_pct)
-            exit_price: Optional[float] = None
-            exit_reason: Optional[str] = None
+            exit_price: float | None = None
+            exit_reason: str | None = None
 
             # Conservative: if both stop and take fired within same bar, assume stop fired first
             if low <= stop_price:
@@ -273,7 +272,7 @@ def backtest_strategy(
     return result
 
 
-def trade_to_dict(t: BacktestTrade) -> Dict:
+def trade_to_dict(t: BacktestTrade) -> dict:
     d = asdict(t)
     d["open_time"] = t.open_time.isoformat() if t.open_time else None
     d["close_time"] = t.close_time.isoformat() if t.close_time else None

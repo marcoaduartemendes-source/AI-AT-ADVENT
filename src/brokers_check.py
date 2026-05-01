@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import sys
-from typing import Dict
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -33,7 +32,7 @@ def run(as_json: bool = False) -> int:
         print(json.dumps({"error": msg}) if as_json else msg)
         return 1
 
-    results: Dict[str, Dict] = {}
+    results: dict[str, dict] = {}
     overall_ok = True
     for name, adapter in brokers.items():
         h = adapter.healthcheck()

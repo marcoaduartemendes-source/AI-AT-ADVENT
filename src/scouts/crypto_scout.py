@@ -14,9 +14,7 @@ spot quotes use the same public catalog we used for the dashboard backtest.
 from __future__ import annotations
 
 import logging
-import time
-from datetime import datetime, timezone
-from typing import Dict, List
+from datetime import datetime, UTC
 
 from common import cached_get
 
@@ -38,8 +36,8 @@ COINBASE_PUBLIC = "https://api.coinbase.com/api/v3/brokerage/market"
 class CryptoScout(ScoutAgent):
     name = "crypto_scout"
 
-    def scan(self) -> List[ScoutSignal]:
-        signals: List[ScoutSignal] = []
+    def scan(self) -> list[ScoutSignal]:
+        signals: list[ScoutSignal] = []
         funding = self._fetch_funding_rates()
         if funding:
             signals.append(ScoutSignal(
@@ -58,11 +56,11 @@ class CryptoScout(ScoutAgent):
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
-    def _fetch_funding_rates(self) -> Dict:
+    def _fetch_funding_rates(self) -> dict:
         """Fetch each perp's product detail; product payload includes
         future_product_details with the latest funding-rate fields when the
         instrument is a perpetual."""
-        out: Dict = {}
+        out: dict = {}
         for spot_sym, perp_sym in PAIRS:
             data = cached_get(f"{COINBASE_PUBLIC}/products/{perp_sym}",
                                 ttl_seconds=60)
@@ -88,14 +86,14 @@ class CryptoScout(ScoutAgent):
                     "perp_id": perp_sym, "spot_id": spot_sym,
                     "raw_rate": rate, "apr": apr,
                     "apr_bps": round(apr * 10000, 1),
-                    "as_of": datetime.now(timezone.utc).isoformat(),
+                    "as_of": datetime.now(UTC).isoformat(),
                 }
             except Exception as e:
                 logger.warning(f"[{self.name}] {perp_sym} fetch failed: {e}")
         return out
 
-    def _fetch_spot_changes(self) -> Dict:
-        out: Dict = {}
+    def _fetch_spot_changes(self) -> dict:
+        out: dict = {}
         for spot_sym, _ in PAIRS:
             d = cached_get(f"{COINBASE_PUBLIC}/products/{spot_sym}",
                             ttl_seconds=60)

@@ -9,7 +9,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from brokers.base import BrokerAdapter, OrderSide, OrderType
 
@@ -23,14 +22,14 @@ class TradeProposal:
     symbol: str
     side: OrderSide
     order_type: OrderType
-    notional_usd: Optional[float] = None
-    quantity: Optional[float] = None
-    limit_price: Optional[float] = None
+    notional_usd: float | None = None
+    quantity: float | None = None
+    limit_price: float | None = None
     confidence: float = 0.6             # 0.0–1.0
-    expected_return_pct: Optional[float] = None
+    expected_return_pct: float | None = None
     reason: str = ""                     # logged + dashboard
     is_closing: bool = False             # True when reducing existing position
-    metadata: Dict = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -42,14 +41,14 @@ class StrategyContext:
     target_alloc_pct: float              # current target from MetaAllocator
     target_alloc_usd: float
     risk_multiplier: float               # informational; risk layer applies sizing
-    open_positions: Dict                 # {symbol: position_dict}
-    scout_signals: Dict                  # {scout_name: signal_payload}
+    open_positions: dict                 # {symbol: position_dict}
+    scout_signals: dict                  # {scout_name: signal_payload}
     # Pending broker-side orders that haven't filled yet — strategies must
     # subtract this from their buying intent or they over-trade across
     # cycles before fills land.
-    pending_orders: Dict = field(default_factory=dict)
+    pending_orders: dict = field(default_factory=dict)
     # ^^ {symbol: {"buy_notional_usd", "sell_qty"}}
-    extra: Dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
 
 
 class Strategy(ABC):
@@ -62,16 +61,16 @@ class Strategy(ABC):
         self.broker = broker
 
     @abstractmethod
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         """Return proposals for this cycle. Empty list = no signals."""
 
-    def on_fill(self, proposal: TradeProposal, fill: Dict) -> None:
-        """Hook after an order fills. Default: no-op."""
+    def on_fill(self, proposal: TradeProposal, fill: dict) -> None:  # noqa: B027
+        """Hook after an order fills. Default: no-op (subclasses override)."""
 
-    def on_emergency_close(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def on_emergency_close(self, ctx: StrategyContext) -> list[TradeProposal]:
         """Called when KILL switch fires. Default: close every open position
         owned by this strategy at market."""
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         for symbol, pos in ctx.open_positions.items():
             qty = pos.get("quantity", 0)
             if qty <= 0:

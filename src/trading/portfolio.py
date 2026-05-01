@@ -3,7 +3,6 @@ import os
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from .coinbase_client import CoinbaseClient
 from .strategies.base import Signal, SignalType
@@ -38,7 +37,7 @@ class TradeRecord:
     quantity: float
     price: float
     order_id: str
-    pnl_usd: Optional[float] = None
+    pnl_usd: float | None = None
     dry_run: bool = False
 
 
@@ -62,10 +61,10 @@ class PortfolioManager:
         self.max_open_positions = max_open_positions
 
         # positions[strategy][product_id] = Position
-        self.positions: Dict[str, Dict[str, Position]] = {}
+        self.positions: dict[str, dict[str, Position]] = {}
         # last_trade_time[strategy][product_id] = unix timestamp
-        self.last_trade_time: Dict[str, Dict[str, float]] = {}
-        self.trade_history: List[TradeRecord] = []
+        self.last_trade_time: dict[str, dict[str, float]] = {}
+        self.trade_history: list[TradeRecord] = []
         self._tracker = None  # injected after construction
 
     def attach_tracker(self, tracker) -> None:
@@ -79,10 +78,10 @@ class PortfolioManager:
 
     # ── Internal helpers ─────────────────────────────────────────────────────
 
-    def _get_position(self, strategy: str, product_id: str) -> Optional[Position]:
+    def _get_position(self, strategy: str, product_id: str) -> Position | None:
         return self.positions.get(strategy, {}).get(product_id)
 
-    def _set_position(self, strategy: str, product_id: str, pos: Optional[Position]):
+    def _set_position(self, strategy: str, product_id: str, pos: Position | None):
         self.positions.setdefault(strategy, {})
         if pos is None:
             self.positions[strategy].pop(product_id, None)
@@ -103,13 +102,13 @@ class PortfolioManager:
 
     # ── Risk management ──────────────────────────────────────────────────────
 
-    def check_stops(self, current_prices: Dict[str, float]) -> List["TradeRecord"]:
+    def check_stops(self, current_prices: dict[str, float]) -> list["TradeRecord"]:
         """Force-close any position whose live price hit stop-loss or take-profit.
 
         current_prices: {product_id: latest_price}
         Returns list of TradeRecords for any forced exits.
         """
-        forced_exits: List[TradeRecord] = []
+        forced_exits: list[TradeRecord] = []
         # Snapshot to avoid mutating dict during iteration
         for strategy, prod_map in list(self.positions.items()):
             for product_id, pos in list(prod_map.items()):
@@ -146,7 +145,7 @@ class PortfolioManager:
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def process_signal(self, signal: Signal) -> Optional[TradeRecord]:
+    def process_signal(self, signal: Signal) -> TradeRecord | None:
         strategy, product_id = signal.strategy_name, signal.product_id
 
         if signal.signal == SignalType.HOLD:
@@ -185,7 +184,7 @@ class PortfolioManager:
 
         return None
 
-    def _execute_buy(self, signal: Signal) -> Optional[TradeRecord]:
+    def _execute_buy(self, signal: Signal) -> TradeRecord | None:
         strategy, product_id = signal.strategy_name, signal.product_id
         amount_usd = self.max_trade_usd
         price = signal.price
@@ -240,7 +239,7 @@ class PortfolioManager:
         self.trade_history.append(record)
         return record
 
-    def _execute_sell(self, signal: Signal, position: Position) -> Optional[TradeRecord]:
+    def _execute_sell(self, signal: Signal, position: Position) -> TradeRecord | None:
         strategy, product_id = signal.strategy_name, signal.product_id
         price = signal.price
         quantity = position.quantity
@@ -290,8 +289,8 @@ class PortfolioManager:
         self.trade_history.append(record)
         return record
 
-    def get_open_positions(self) -> Dict:
-        out: Dict = {}
+    def get_open_positions(self) -> dict:
+        out: dict = {}
         for strat, pos_map in self.positions.items():
             for pid, pos in pos_map.items():
                 out.setdefault(strat, {})[pid] = {

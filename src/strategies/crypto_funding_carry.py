@@ -21,7 +21,6 @@ gating can be exercised end-to-end.
 from __future__ import annotations
 
 import logging
-from typing import List
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -54,7 +53,7 @@ class CryptoFundingCarry(Strategy):
         self.entry_apr_bps = entry_apr_bps
         self.exit_apr_bps = exit_apr_bps
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
@@ -65,7 +64,7 @@ class CryptoFundingCarry(Strategy):
             logger.debug(f"[{self.name}] no funding-rate signals from scout yet")
             return []
 
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
         per_leg_usd = ctx.target_alloc_usd / 2  # half spot, half perp
 
         for spot_sym, perp_sym in self.pairs:

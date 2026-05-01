@@ -14,17 +14,15 @@ encode the invariants that should never break again:
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
-import pytest
 
 
 def _make_registry(tmp_path, strategies):
     """Build an in-memory registry with the given strategies.
     `strategies` is a list of (name, target_pct, min_pct, max_pct)."""
     from allocator.lifecycle import (
-        StrategyMeta, StrategyRegistry, StrategyState
+        StrategyMeta, StrategyRegistry
     )
     db = tmp_path / "alloc.db"
     reg = StrategyRegistry(str(db))

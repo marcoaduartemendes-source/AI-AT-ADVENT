@@ -22,7 +22,6 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Dict, Tuple
 
 
 @dataclass
@@ -33,7 +32,7 @@ class _Lot:
 
 def recompute_realized_pnl_fifo(
     db_path: str,
-) -> Tuple[float, float, Dict[str, float]]:
+) -> tuple[float, float, dict[str, float]]:
     """Re-derive realized PnL from the raw trade ledger via FIFO match.
 
     Returns (db_total, recomputed_total, per_strategy_drift) where:
@@ -74,8 +73,8 @@ def recompute_realized_pnl_fifo(
         conn.close()
 
     # FIFO queue per (strategy, product_id)
-    books: Dict[Tuple[str, str], "deque[_Lot]"] = defaultdict(deque)
-    realized: Dict[str, float] = defaultdict(float)
+    books: dict[tuple[str, str], deque[_Lot]] = defaultdict(deque)
+    realized: dict[str, float] = defaultdict(float)
     for r in rows:
         key = (r["strategy"], r["product_id"])
         qty = float(r["quantity"] or 0)
@@ -105,7 +104,7 @@ def recompute_realized_pnl_fifo(
 
     # Per-strategy drift for the alert message
     db_by_strat = {r["strategy"]: float(r["s"] or 0) for r in all_with_pnl}
-    drift: Dict[str, float] = {}
+    drift: dict[str, float] = {}
     all_strategies = set(db_by_strat) | set(realized)
     for s in all_strategies:
         d = db_by_strat.get(s, 0) - realized.get(s, 0)

@@ -19,9 +19,9 @@ import os
 import sqlite3
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from datetime import datetime, UTC
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,19 +32,19 @@ class SignalRow:
     scout: str                 # which scout produced it
     venue: str                 # e.g. "coinbase", "alpaca", "kalshi", "macro"
     signal_type: str           # e.g. "funding_rates", "mispriced", "vix_regime"
-    payload: Dict              # arbitrary JSON
+    payload: dict              # arbitrary JSON
     ttl_seconds: int
     created_at: datetime
 
     def is_fresh(self) -> bool:
-        age = (datetime.now(timezone.utc) - self.created_at).total_seconds()
+        age = (datetime.now(UTC) - self.created_at).total_seconds()
         return age <= self.ttl_seconds
 
 
 class SignalBus:
     """SQLite-backed shared bus."""
 
-    def __init__(self, db_path: Optional[str] = None,
+    def __init__(self, db_path: str | None = None,
                   default_ttl_seconds: int = 24 * 3600):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("SIGNAL_BUS_DB", "data/signal_bus.db")
@@ -79,9 +79,9 @@ class SignalBus:
     # ── Publish ─────────────────────────────────────────────────────────
 
     def publish(self, *, scout: str, venue: str, signal_type: str,
-                 payload: Dict, ttl_seconds: Optional[int] = None) -> int:
+                 payload: dict, ttl_seconds: int | None = None) -> int:
         """Write one signal row. Returns the inserted id."""
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         ttl = ttl_seconds if ttl_seconds is not None else self.default_ttl
         with self._conn() as c:
             cur = c.execute(
@@ -94,13 +94,13 @@ class SignalBus:
 
     # ── Query ───────────────────────────────────────────────────────────
 
-    def latest(self, *, venue: Optional[str] = None,
-                signal_type: Optional[str] = None,
-                limit: int = 50) -> List[SignalRow]:
+    def latest(self, *, venue: str | None = None,
+                signal_type: str | None = None,
+                limit: int = 50) -> list[SignalRow]:
         """Return most-recent signals (fresh-first, includes stale)."""
         sql = "SELECT * FROM signals"
         clauses = []
-        params: List[Any] = []
+        params: list[Any] = []
         if venue:
             clauses.append("venue=?")
             params.append(venue)
@@ -116,13 +116,13 @@ class SignalBus:
             rows = c.execute(sql, params).fetchall()
         return [self._row_to_signal(r) for r in rows]
 
-    def get_fresh_for_strategy(self, venue: str) -> Dict[str, Any]:
+    def get_fresh_for_strategy(self, venue: str) -> dict[str, Any]:
         """Return a payload-shaped dict ready for StrategyContext.scout_signals.
 
         Groups latest fresh signal of each signal_type for the given venue,
         plus the macro signals (which apply to all venues).
         """
-        out: Dict[str, Any] = {}
+        out: dict[str, Any] = {}
         # Per-venue signals
         for row in self.latest(venue=venue, limit=200):
             if not row.is_fresh():

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import List
 
 import numpy as np
 
@@ -41,13 +40,13 @@ class TSMomETF(Strategy):
     def __init__(self, broker):
         super().__init__(broker)
 
-    def compute(self, ctx: StrategyContext) -> List[TradeProposal]:
+    def compute(self, ctx: StrategyContext) -> list[TradeProposal]:
         if ctx.target_alloc_usd <= 0:
             return []
 
         # Per-leg dollar budget
         per_leg = ctx.target_alloc_usd / len(UNIVERSE)
-        proposals: List[TradeProposal] = []
+        proposals: list[TradeProposal] = []
 
         for symbol in UNIVERSE:
             try:

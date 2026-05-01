@@ -10,15 +10,10 @@ and run a full cycle. Asserts cover the contract:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import List
-from unittest.mock import MagicMock
 
-import pytest
 
 from brokers.base import OrderSide, OrderType
-from strategy_engine.base import Strategy, StrategyContext, TradeProposal
+from strategy_engine.base import Strategy, TradeProposal
 from tests.mock_broker import MockBroker, MockPosition
 
 
@@ -31,7 +26,7 @@ class _DummyStrategy(Strategy):
     name = "_dummy"
     venue = "alpaca"
 
-    def __init__(self, broker, proposals: List[TradeProposal]):
+    def __init__(self, broker, proposals: list[TradeProposal]):
         super().__init__(broker)
         self._proposals = proposals
 
@@ -46,7 +41,8 @@ def _make_orchestrator(brokers, strategies, *, dry_run=False):
     from risk.manager import RiskManager, EquitySnapshotDB
     from allocator.lifecycle import StrategyRegistry, StrategyMeta
     from allocator.allocator import MetaAllocator
-    import tempfile, os
+    import tempfile
+    import os
     tmp = tempfile.mkdtemp()
     risk_db = EquitySnapshotDB(os.path.join(tmp, "risk.db"))
     reg = StrategyRegistry(os.path.join(tmp, "alloc.db"))
