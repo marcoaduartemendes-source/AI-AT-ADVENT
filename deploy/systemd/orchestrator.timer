@@ -1,0 +1,18 @@
+[Unit]
+Description=AI-AT-ADVENT trading orchestrator (5-min cadence)
+Requires=orchestrator.service
+
+[Timer]
+# Fire every 5 minutes, aligned to the wall clock so cycles land
+# at HH:00, HH:05, HH:10, ... — easier to correlate with broker logs.
+OnCalendar=*:0/5
+# Persistent=true means: if the box was off when a tick was due,
+# fire one as soon as it boots. Catches up after reboots.
+Persistent=true
+# Cron has 0–60s jitter on shared GH runners; we want sub-second
+# alignment for cleaner cycle math.
+AccuracySec=1s
+Unit=orchestrator.service
+
+[Install]
+WantedBy=timers.target

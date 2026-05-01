@@ -1,0 +1,12 @@
+[Unit]
+Description=AI-AT-ADVENT dashboard rebuild (every 15 min)
+Requires=dashboard.service
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+AccuracySec=10s
+Unit=dashboard.service
+
+[Install]
+WantedBy=timers.target

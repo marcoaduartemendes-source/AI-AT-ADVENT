@@ -1,0 +1,12 @@
+[Unit]
+Description=AI-AT-ADVENT scout sweep (every 30 min)
+Requires=scouts.service
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+AccuracySec=10s
+Unit=scouts.service
+
+[Install]
+WantedBy=timers.target

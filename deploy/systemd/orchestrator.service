@@ -1,0 +1,43 @@
+[Unit]
+Description=AI-AT-ADVENT trading orchestrator (one cycle)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+# Don't start before the network is fully online — broker APIs need DNS.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+EnvironmentFile=/etc/aaa.env
+# Belt and suspenders — one cycle should never need 4 minutes
+TimeoutStartSec=240
+ExecStart=/opt/ai-at-advent/.venv/bin/python src/run_orchestrator.py --once
+
+# Hardening: the trading bot doesn't need any of these capabilities.
+# Reduce blast radius if the process is ever compromised.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+# Allow writing only to /opt/ai-at-advent/data (the SQLite state)
+ReadWritePaths=/opt/ai-at-advent/data /opt/ai-at-advent/docs
+
+# Restart on transient failure but only a few times — if 3
+# consecutive cycles fail, leave it stopped so the user notices
+# in journalctl rather than masking an outage with retries.
+Restart=on-failure
+RestartSec=30
+StartLimitBurst=3
+StartLimitIntervalSec=900
+
+[Install]
+WantedBy=multi-user.target

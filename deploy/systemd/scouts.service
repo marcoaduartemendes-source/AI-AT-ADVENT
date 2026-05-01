@@ -1,0 +1,24 @@
+[Unit]
+Description=AI-AT-ADVENT scout sweep
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+EnvironmentFile=/etc/aaa.env
+TimeoutStartSec=240
+ExecStart=/opt/ai-at-advent/.venv/bin/python src/run_scouts.py --vacuum
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/ai-at-advent/data
+
+Restart=on-failure
+RestartSec=60
+StartLimitBurst=3
+StartLimitIntervalSec=1800
