@@ -128,26 +128,55 @@ def load_live_data() -> Dict:
         "Momentum", "MeanReversion", "VolatilityBreakout",
     ]
     for name in all_strategy_names:
-        m = tracker.get_metrics(name)
+        # IMPORTANT: recompute aggregates from the *sanitized* in-memory
+        # list, NOT tracker.get_metrics() — the latter queries the DB
+        # directly and would re-include trades whose pnl_usd was a
+        # phantom-loss artifact of recording at submission time
+        # (price=0). The sanitization above already nulled those out
+        # in `all_trades`; we must aggregate from there to stay
+        # consistent with what the dashboard displays per-trade.
         strat_trades = [t for t in all_trades if t["strategy"] == name]
+        closed = [t for t in strat_trades if t.get("pnl_usd") is not None]
+        wins = sum(1 for t in closed if t["pnl_usd"] > 0)
+        losses_n = len(closed) - wins
+        total_pnl = sum(t["pnl_usd"] for t in closed)
+        avg_pnl = (total_pnl / len(closed)) if closed else 0.0
         entry_volume = sum(
             t["amount_usd"] for t in strat_trades if t["side"] == "BUY"
         )
+        # Sharpe + max-drawdown only make sense for ≥3 closed trades.
+        sharpe = 0.0
+        max_dd = 0.0
+        if len(closed) >= 3:
+            pnls = [t["pnl_usd"] for t in closed]
+            mu = sum(pnls) / len(pnls)
+            var = sum((p - mu) ** 2 for p in pnls) / max(len(pnls) - 1, 1)
+            std = var ** 0.5
+            sharpe = (mu / std * (len(pnls) ** 0.5)) if std > 0 else 0.0
+            cum = 0.0
+            peak = 0.0
+            for p in pnls:
+                cum += p
+                if cum > peak:
+                    peak = cum
+                dd = peak - cum
+                if dd > max_dd:
+                    max_dd = dd
         by_strategy[name] = {
             "summary": {
                 "strategy": name,
-                "n_trades": m["closed_trades"],
-                "wins": m["wins"],
-                "losses": m["losses"],
-                "win_rate": m["win_rate"],
-                "total_pnl_usd": m["total_pnl"],
+                "n_trades": len(closed),
+                "wins": wins,
+                "losses": losses_n,
+                "win_rate": (wins / len(closed)) if closed else 0.0,
+                "total_pnl_usd": total_pnl,
                 "entry_volume_usd": entry_volume,
                 "return_on_volume_pct": (
-                    m["total_pnl"] / entry_volume * 100 if entry_volume > 0 else 0.0
+                    total_pnl / entry_volume * 100 if entry_volume > 0 else 0.0
                 ),
-                "avg_pnl_usd": m["avg_pnl"],
-                "sharpe": m["sharpe"],
-                "max_drawdown": m["max_drawdown"],
+                "avg_pnl_usd": avg_pnl,
+                "sharpe": sharpe,
+                "max_drawdown": max_dd,
             },
             "trades": strat_trades,
         }

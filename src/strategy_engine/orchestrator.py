@@ -101,6 +101,29 @@ class Orchestrator:
             logger.warning(f"PerformanceTracker init failed: {e}")
             self._tracker = None
 
+        # ── One-time PnL sanitation ─────────────────────────────────────
+        # Trades recorded before commit fc9640f had pnl_usd computed with
+        # price=0 (orders captured at submission, before fill). That
+        # produced phantom losses like (0 − $85) × 67 = −$5,746. Null
+        # those rows out at the DB level so every consumer (dashboard,
+        # strategic reviewer, allocator metrics) sees consistent state.
+        # Idempotent — only touches rows where price=0 AND pnl_usd != NULL.
+        if self._tracker is not None:
+            try:
+                import sqlite3 as _sql
+                conn = _sql.connect(self._tracker.db_path)
+                cur = conn.execute(
+                    "UPDATE trades SET pnl_usd = NULL "
+                    "WHERE pnl_usd IS NOT NULL AND (price IS NULL OR price = 0)"
+                )
+                if cur.rowcount > 0:
+                    logger.info(f"PnL migration: nulled {cur.rowcount} "
+                                f"phantom-loss row(s) (price=0)")
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.warning(f"PnL migration skipped: {e}")
+
     # ── One cycle ----------------------------------------------------------
 
     def run_cycle(self, scout_signals: Optional[Dict] = None) -> CycleReport:
