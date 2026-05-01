@@ -119,6 +119,36 @@ class BrokerAdapter(ABC):
     venue: str          # short identifier, e.g. "coinbase", "alpaca", "kalshi"
     is_paper: bool      # paper/sandbox vs live
 
+    # Per-instance candle cache. Multiple strategies often request the
+    # same (symbol, granularity, num_candles) within one orchestrator
+    # cycle (e.g. tsmom_etf and risk_parity_etf both want SPY daily
+    # bars). Cache TTL is short so we stay fresh across cycles but
+    # de-dupe within a cycle.
+    _CANDLE_CACHE_TTL_SECONDS = 60.0
+
+    def _get_cached_candles(
+        self, symbol: str, granularity: str, num_candles: int
+    ) -> Optional[List["Candle"]]:
+        cache = getattr(self, "_candle_cache", None)
+        if cache is None:
+            return None
+        import time as _t
+        entry = cache.get((symbol, granularity, num_candles))
+        if entry and entry[0] > _t.time():
+            return entry[1]
+        return None
+
+    def _put_cached_candles(
+        self, symbol: str, granularity: str, num_candles: int,
+        candles: List["Candle"],
+    ) -> None:
+        if not hasattr(self, "_candle_cache"):
+            self._candle_cache = {}
+        import time as _t
+        self._candle_cache[(symbol, granularity, num_candles)] = (
+            _t.time() + self._CANDLE_CACHE_TTL_SECONDS, candles,
+        )
+
     # ── Account -----------------------------------------------------------
     @abstractmethod
     def get_account(self) -> Account: ...

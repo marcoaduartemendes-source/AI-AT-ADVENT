@@ -19,7 +19,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import List
 
-import requests
+from common import cached_get
 
 from .base import ScoutAgent, ScoutSignal
 
@@ -60,28 +60,27 @@ class MacroScout(ScoutAgent):
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _fetch_vix_yahoo(self) -> float | None:
-        """Yahoo Finance v8 chart endpoint — no auth, returns last quote."""
-        try:
-            r = requests.get(
-                "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX",
-                params={"interval": "1d", "range": "5d"},
-                headers={"User-Agent": "Mozilla/5.0 (compatible; MacroScout/1.0)"},
-                timeout=15,
-            )
-            if r.status_code != 200:
-                logger.warning(f"[{self.name}] VIX fetch HTTP {r.status_code}")
-                return None
-            data = r.json()
-            result = data.get("chart", {}).get("result", [])
-            if not result:
-                return None
-            quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
-            closes = quotes.get("close") or []
-            for v in reversed(closes):
-                if v is not None:
+        """Yahoo Finance v8 chart endpoint — no auth, returns last quote.
+        Cached 5 min — VIX updates intraday but doesn't move every minute."""
+        data = cached_get(
+            "https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX",
+            params={"interval": "1d", "range": "5d"},
+            headers={"User-Agent": "Mozilla/5.0 (compatible; MacroScout/1.0)"},
+            ttl_seconds=300,
+        )
+        if not data:
+            return None
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None
+        quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+        closes = quotes.get("close") or []
+        for v in reversed(closes):
+            if v is not None:
+                try:
                     return float(v)
-        except Exception as e:
-            logger.warning(f"[{self.name}] VIX fetch failed: {e}")
+                except (TypeError, ValueError):
+                    continue
         return None
 
     @staticmethod

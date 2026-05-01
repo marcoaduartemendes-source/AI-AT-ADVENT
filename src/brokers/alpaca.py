@@ -150,6 +150,9 @@ class AlpacaAdapter(BrokerAdapter):
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
     ) -> List[Candle]:
+        cached = self._get_cached_candles(symbol, granularity, num_candles)
+        if cached is not None:
+            return cached
         tf = _GRANULARITY_TO_ALPACA.get(granularity)
         if tf is None:
             raise BrokerError(f"Alpaca granularity not supported: {granularity}")
@@ -181,6 +184,7 @@ class AlpacaAdapter(BrokerAdapter):
                 low=float(b["l"]), close=float(b["c"]),
                 volume=float(b.get("v", 0)),
             ))
+        self._put_cached_candles(symbol, granularity, num_candles, out)
         return out
 
     # ── Orders ───────────────────────────────────────────────────────────
@@ -232,6 +236,29 @@ class AlpacaAdapter(BrokerAdapter):
 
     def cancel_order(self, order_id: str) -> None:
         self._delete(f"/orders/{order_id}")
+
+    def cancel_stale_orders(self, max_age_seconds: int = 1800) -> int:
+        """Cancel any open order older than max_age_seconds. Returns count
+        cancelled. Used by the orchestrator at the top of each cycle to
+        keep the pending-order queue from growing unbounded."""
+        try:
+            orders = self.get_open_orders()
+        except Exception as e:
+            logger.warning(f"cancel_stale_orders: list failed — {e}")
+            return 0
+        now = datetime.now(timezone.utc)
+        cancelled = 0
+        for o in orders:
+            if not o.submitted_at:
+                continue
+            age = (now - o.submitted_at).total_seconds()
+            if age >= max_age_seconds:
+                try:
+                    self.cancel_order(o.order_id)
+                    cancelled += 1
+                except Exception as e:
+                    logger.debug(f"cancel {o.order_id} failed: {e}")
+        return cancelled
 
     # ── Capabilities ─────────────────────────────────────────────────────
 

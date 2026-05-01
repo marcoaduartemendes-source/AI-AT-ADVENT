@@ -16,9 +16,9 @@ import logging
 from typing import List
 
 import numpy as np
-import requests
 
 from brokers.base import OrderSide, OrderType
+from common import cached_get
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
 
 logger = logging.getLogger(__name__)
@@ -113,10 +113,10 @@ class CryptoXSMom(Strategy):
         return (closes[-1] - closes[0]) / closes[0]
 
     def _latest_price(self, symbol: str):
+        data = cached_get(f"{PUBLIC_PRODUCTS}/{symbol}", ttl_seconds=30)
+        if not data:
+            return None
         try:
-            r = requests.get(f"{PUBLIC_PRODUCTS}/{symbol}", timeout=10)
-            if r.status_code != 200:
-                return None
-            return float(r.json().get("price") or 0) or None
-        except Exception:
+            return float(data.get("price") or 0) or None
+        except (TypeError, ValueError):
             return None

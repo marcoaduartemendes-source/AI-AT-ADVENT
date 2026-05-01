@@ -17,6 +17,7 @@ Designed to be called once per cycle from the workflow (e.g. every 5 min).
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -98,6 +99,20 @@ class Orchestrator:
         # Cache pending orders per venue for the whole cycle so we don't
         # re-query the broker dozens of times.
         self._pending_cache: Dict[str, Dict] = {}
+
+        # Cancel pending orders older than the configured threshold.
+        # Prevents a backlog of stale orders from blocking new ones.
+        stale_threshold = int(os.environ.get("STALE_ORDER_SECONDS", "1800"))
+        for vname, adapter in self.brokers.items():
+            if not hasattr(adapter, "cancel_stale_orders"):
+                continue
+            try:
+                n = adapter.cancel_stale_orders(stale_threshold)
+                if n:
+                    logger.info(f"[{vname}] cancelled {n} stale order(s) "
+                                f"(>{stale_threshold}s old)")
+            except Exception as e:
+                logger.debug(f"[{vname}] cancel_stale_orders: {e}")
         # If no scout_signals dict was passed in, hydrate from the bus
         if scout_signals is None:
             try:

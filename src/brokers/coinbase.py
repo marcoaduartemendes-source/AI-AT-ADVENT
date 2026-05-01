@@ -130,6 +130,9 @@ class CoinbaseAdapter(BrokerAdapter):
     def get_candles(
         self, symbol: str, granularity: str, num_candles: int = 100
     ) -> List[Candle]:
+        cached = self._get_cached_candles(symbol, granularity, num_candles)
+        if cached is not None:
+            return cached
         if granularity not in GRANULARITY_SECONDS:
             raise BrokerError(f"Coinbase granularity not supported: {granularity}")
         arr = fetch_candles(self.client, symbol, granularity, num_candles)
@@ -142,6 +145,7 @@ class CoinbaseAdapter(BrokerAdapter):
                 low=float(low), close=float(close),
                 volume=float(vol),
             ))
+        self._put_cached_candles(symbol, granularity, num_candles, out)
         return out
 
     # ── Orders ───────────────────────────────────────────────────────────

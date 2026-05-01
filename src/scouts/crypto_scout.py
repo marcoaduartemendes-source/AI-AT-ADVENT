@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List
 
-import requests
+from common import cached_get
 
 from .base import ScoutAgent, ScoutSignal
 
@@ -64,13 +64,11 @@ class CryptoScout(ScoutAgent):
         instrument is a perpetual."""
         out: Dict = {}
         for spot_sym, perp_sym in PAIRS:
+            data = cached_get(f"{COINBASE_PUBLIC}/products/{perp_sym}",
+                                ttl_seconds=60)
+            if not data:
+                continue
             try:
-                r = requests.get(
-                    f"{COINBASE_PUBLIC}/products/{perp_sym}", timeout=15)
-                if r.status_code != 200:
-                    logger.debug(f"[{self.name}] {perp_sym} HTTP {r.status_code}")
-                    continue
-                data = r.json()
                 # Newer Coinbase responses include `perpetual_details` with
                 # `funding_rate` (per-period) and `funding_rate_24h_avg`.
                 perp = (data.get("future_product_details", {}) or {}) \
@@ -99,20 +97,19 @@ class CryptoScout(ScoutAgent):
     def _fetch_spot_changes(self) -> Dict:
         out: Dict = {}
         for spot_sym, _ in PAIRS:
+            d = cached_get(f"{COINBASE_PUBLIC}/products/{spot_sym}",
+                            ttl_seconds=60)
+            if not d:
+                continue
+            pct = d.get("price_percentage_change_24h")
+            if pct is None:
+                continue
             try:
-                r = requests.get(
-                    f"{COINBASE_PUBLIC}/products/{spot_sym}", timeout=15)
-                if r.status_code != 200:
-                    continue
-                d = r.json()
-                pct = d.get("price_percentage_change_24h")
-                if pct is None:
-                    continue
                 out[spot_sym] = {
                     "pct_change_24h": float(pct),
                     "price": float(d.get("price", 0) or 0),
                     "volume_24h": float(d.get("volume_24h", 0) or 0),
                 }
-            except Exception as e:
-                logger.warning(f"[{self.name}] {spot_sym} fetch failed: {e}")
+            except (TypeError, ValueError):
+                continue
         return out
