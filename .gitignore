@@ -13,5 +13,8 @@ env/
 !.env.example
 *.log
 .DS_Store
-data/
+# Repo-root /data/ is the runtime SQLite cache; don't commit it.
+# Anchored with a leading slash so `src/backtests/data/` (the
+# Polygon/FMP API wrapper modules) is NOT excluded by this rule.
+/data/
 *.db

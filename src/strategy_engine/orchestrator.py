@@ -180,6 +180,16 @@ class Orchestrator:
         from risk.policies import KillSwitchState
         if state.kill_switch == KillSwitchState.KILL:
             logger.warning("KILL switch active — emergency closing all positions")
+            try:
+                from common.alerts import alert
+                alert(
+                    f"🚨 KILL switch fired — drawdown {state.drawdown_pct*100:.1f}%, "
+                    f"equity ${state.equity_usd:,.2f}. "
+                    f"Closing all positions.",
+                    severity="critical",
+                )
+            except Exception as e:
+                logger.debug(f"alert dispatch failed: {e}")
             self._emergency_close_all(report, state)
             return report
 
@@ -615,6 +625,21 @@ class Orchestrator:
                 f"FIFO recompute ${recomputed_total:+.2f} "
                 f"(drift ${drift:.2f}) — strategies: {per_strategy_drift}"
             )
+            # Drift > $1 means our P&L is wrong somewhere — page the
+            # human. Severity escalates by magnitude so a 5-cent drift
+            # doesn't ping the same channel as a $1k drift.
+            try:
+                from common.alerts import alert
+                sev = ("critical" if drift > 100 else
+                       "warning" if drift > 10 else "info")
+                alert(
+                    f"PnL drift ${drift:.2f}: DB ${db_total:+.2f} "
+                    f"vs FIFO ${recomputed_total:+.2f}. "
+                    f"Per-strategy: {per_strategy_drift}",
+                    severity=sev,
+                )
+            except Exception as e:
+                logger.debug(f"alert dispatch failed: {e}")
         else:
             logger.debug(
                 f"PnL sanity OK: DB ${db_total:+.2f} == "

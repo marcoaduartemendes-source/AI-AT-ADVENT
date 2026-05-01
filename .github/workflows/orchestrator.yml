@@ -66,4 +66,8 @@ jobs:
           KILL_DD_PCT:             ${{ vars.KILL_DD_PCT || '0.15' }}
           CRITICAL_DD_PCT:         ${{ vars.CRITICAL_DD_PCT || '0.10' }}
           WARNING_DD_PCT:          ${{ vars.WARNING_DD_PCT || '0.05' }}
+          # Out-of-band alerts on KILL switch + PnL drift. Optional —
+          # silently logs to stdout if neither secret is set.
+          ALERT_WEBHOOK_URL:       ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_TYPE:      ${{ vars.ALERT_WEBHOOK_TYPE }}
         run: python src/run_orchestrator.py --once
