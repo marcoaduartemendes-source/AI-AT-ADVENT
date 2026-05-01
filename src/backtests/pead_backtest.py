@@ -25,8 +25,13 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from .data.polygon import DailyBar, EarningsRecord, PolygonClient, PolygonError
+from .data.fmp import FMPError, get_data_client
+from .data.polygon import PolygonError
 from .runner import BacktestSummary, _FEE_RATE
+
+# Both vendors raise their own error class; we catch the union so
+# either path produces the same "skip + record reason" behavior.
+_DataError = (PolygonError, FMPError)
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +103,7 @@ def backtest_pead(
     window_days: int,
     *,
     universe: list[str] | None = None,
-    polygon: PolygonClient | None = None,
+    polygon=None,
 ) -> BacktestSummary:
     """Run the PEAD backtest over the last `window_days` calendar days.
 
@@ -109,22 +114,26 @@ def backtest_pead(
         window become candidate entries.
     universe : list[str] | None
         Tickers to scan. Default: PEAD_UNIVERSE.
-    polygon : PolygonClient | None
-        Inject a pre-built client (useful for tests). Otherwise creates
-        a default client which reads POLYGON_API_KEY from env.
+    polygon : data client | None
+        Inject a pre-built client (useful for tests). Otherwise auto-
+        selects the configured vendor: FMP_API_KEY first (cheaper
+        tier covers EPS estimates), then POLYGON_API_KEY as fallback.
+        Parameter name kept as `polygon=` for backward compatibility
+        but accepts any client matching that surface (FMP also works).
 
     Returns
     -------
     BacktestSummary
         Same shape the dashboard already consumes. `note` contains the
-        skip reason if the API key isn't configured.
+        skip reason if no API key is configured.
     """
-    polygon = polygon or PolygonClient()
-    if not polygon.is_configured():
+    client = polygon if polygon is not None else get_data_client()
+    if not client.is_configured():
         return BacktestSummary(
             strategy="pead",
             window_days=window_days,
-            note="POLYGON_API_KEY not set — set the GH secret to enable",
+            note=("FMP_API_KEY (or POLYGON_API_KEY) not set — "
+                  "set the GH secret to enable"),
         )
 
     universe = universe or PEAD_UNIVERSE
@@ -145,8 +154,8 @@ def backtest_pead(
 
     for ticker in universe:
         try:
-            earnings = polygon.recent_earnings(ticker, limit=8)
-        except PolygonError as e:
+            earnings = client.recent_earnings(ticker, limit=8)
+        except _DataError as e:
             logger.warning(f"pead: earnings fetch failed for {ticker}: {e}")
             skipped["fetch_error"] += 1
             continue
@@ -162,10 +171,10 @@ def backtest_pead(
             continue
 
         try:
-            bars = polygon.daily_bars(
+            bars = client.daily_bars(
                 ticker, price_lookback_start, price_lookback_end,
             )
-        except PolygonError as e:
+        except _DataError as e:
             logger.warning(f"pead: bars fetch failed for {ticker}: {e}")
             skipped["fetch_error"] += 1
             continue
@@ -268,7 +277,7 @@ def _summarize(trades: list[_PEADTrade], window_days: int) -> BacktestSummary:
 
     equity_curve: list[dict] = []
     cum = 0.0
-    for t, pnl in zip(sorted(trades, key=lambda x: x.exit_date), pnls):
+    for t, pnl in zip(sorted(trades, key=lambda x: x.exit_date), pnls, strict=False):
         cum += pnl
         equity_curve.append({
             "t": t.exit_date.isoformat(), "pnl_cumulative": cum,

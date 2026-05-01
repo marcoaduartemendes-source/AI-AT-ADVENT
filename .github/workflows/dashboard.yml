@@ -94,9 +94,12 @@ jobs:
           KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
-          # Polygon.io for PEAD + commodity backtests. Optional —
-          # backtests gracefully skip with note="POLYGON_API_KEY not
-          # set" if the secret isn't configured.
+          # Historical-data vendor for PEAD + commodity backtests.
+          # FMP is preferred (cheapest tier with EPS estimates);
+          # Polygon (now Massive) used as a fallback if both are set.
+          # Both optional — backtests gracefully skip if neither is
+          # configured.
+          FMP_API_KEY:         ${{ secrets.FMP_API_KEY }}
           POLYGON_API_KEY:     ${{ secrets.POLYGON_API_KEY }}
         run: python src/build_dashboard.py
 
