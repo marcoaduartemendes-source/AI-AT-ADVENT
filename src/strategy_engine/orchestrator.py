@@ -416,11 +416,51 @@ class Orchestrator:
                         f"status={order.status.value}")
             strategy.on_fill(proposal, {"order_id": order.order_id,
                                           "status": order.status.value})
+            # Register the just-placed order in the per-cycle pending
+            # cache so subsequent proposals in the SAME cycle see it.
+            # Without this, two strategies firing opposite-side orders
+            # on the same symbol within a single cycle (e.g.
+            # risk_parity_etf BUY SPY then tsmom_etf SELL SPY) trip
+            # Alpaca's wash-trade rule because the broker sees two
+            # opposite-side market orders for one symbol back-to-back.
+            self._mark_pending_intracycle(proposal, order, decision)
             # Record the trade so the dashboard can render it.
             self._record_trade(proposal, order, decision)
         except Exception as e:
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
+
+    def _mark_pending_intracycle(self, proposal: TradeProposal, order, decision) -> None:
+        """After a successful place_order, push the order into
+        _pending_cache[venue][symbol] so the wash-trade guard fires
+        for any later proposal in the SAME cycle on the same symbol.
+
+        Alpaca rejects opposite-side market orders for the same symbol
+        within seconds of each other (`reject_reason: "opposite side
+        market/stop order exists"`). The per-cycle broker snapshot
+        was taken before the cycle started, so it doesn't know about
+        orders we just placed — without this hook, two strategies
+        with opposing views (risk_parity buying / tsmom selling)
+        will trip Alpaca every cycle."""
+        cache = getattr(self, "_pending_cache", None)
+        if cache is None:
+            return
+        venue = proposal.venue
+        sym = proposal.symbol
+        venue_map = cache.setdefault(venue, {})
+        entry = venue_map.setdefault(sym, {
+            "buy_notional_usd": 0.0,
+            "sell_qty": 0.0,
+            "n_pending": 0,
+        })
+        entry["n_pending"] += 1
+        if proposal.side == OrderSide.BUY:
+            notional = decision.approved_notional_usd or proposal.notional_usd or 0.0
+            if not notional and proposal.quantity and proposal.limit_price:
+                notional = proposal.quantity * proposal.limit_price
+            entry["buy_notional_usd"] += float(notional or 0)
+        else:
+            entry["sell_qty"] += float(proposal.quantity or 0)
 
     def _record_trade(self, proposal: TradeProposal, order, decision) -> None:
         """Persist an executed trade to trading_performance.db so the
