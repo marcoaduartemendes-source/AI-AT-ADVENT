@@ -1,0 +1,60 @@
+name: Strategic Review (weekly)
+
+# Calls Claude Opus 4.7 once per week with the book's full data and
+# persists structured recommendations. Recommendations are NEVER applied
+# automatically — the user reviews them on the dashboard.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"      # Mondays at 13:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: strategic-review
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore state databases
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/risk_state.db
+            data/allocator.db
+            data/signal_bus.db
+            data/trading_performance.db
+            data/strategic_review.db
+          key: orchestrator-state-${{ github.run_number }}-review
+          restore-keys: orchestrator-state-
+
+      - name: Restore review database (fallback if no orchestrator-state hit)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/strategic_review.db
+          key: strategic-review-readonly-placeholder
+          restore-keys: strategic-review-
+
+      - run: mkdir -p data
+
+      - name: Run strategic review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python src/run_strategic_review.py
+
+      - name: Save review database
+        uses: actions/cache/save@v4
+        with:
+          path: data/strategic_review.db
+          key: strategic-review-${{ github.run_number }}

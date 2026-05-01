@@ -229,13 +229,25 @@ def main():
 
     dry_default = os.environ.get("DRY_RUN", "true").lower() != "false"
     dry_run = dry_default and not args.live
+
+    def _per_broker_flag(envvar: str):
+        v = os.environ.get(envvar)
+        if v is None:
+            return None
+        return v.lower() != "false"
+
     orchestrator = Orchestrator(
         brokers=brokers,
         registry=registry,
         risk_manager=risk_manager,
         allocator=allocator,
         strategies=strategies,
-        config=OrchestratorConfig(dry_run=dry_run),
+        config=OrchestratorConfig(
+            dry_run=dry_run,
+            dry_run_coinbase=_per_broker_flag("DRY_RUN_COINBASE"),
+            dry_run_alpaca=_per_broker_flag("DRY_RUN_ALPACA"),
+            dry_run_kalshi=_per_broker_flag("DRY_RUN_KALSHI"),
+        ),
     )
 
     # ── Status mode: print state and exit

@@ -37,7 +37,24 @@ logger = logging.getLogger(__name__)
 class OrchestratorConfig:
     rebalance_cadence_hours: int = 168        # weekly
     cycle_label: str = ""                     # for logging
-    dry_run: bool = True
+    dry_run: bool = True                      # global default
+    # Per-broker overrides; None means "use global dry_run".
+    # Use cases:
+    #   • Alpaca paper account is itself a sandbox, so flipping
+    #     dry_run_alpaca=False is safe (no real money).
+    #   • Coinbase/Kalshi go live with real money — keep True until
+    #     manually flipped.
+    dry_run_coinbase: Optional[bool] = None
+    dry_run_alpaca: Optional[bool] = None
+    dry_run_kalshi: Optional[bool] = None
+
+    def is_dry(self, venue: str) -> bool:
+        per_broker = {
+            "coinbase": self.dry_run_coinbase,
+            "alpaca":   self.dry_run_alpaca,
+            "kalshi":   self.dry_run_kalshi,
+        }.get(venue)
+        return self.dry_run if per_broker is None else per_broker
 
 
 @dataclass
@@ -226,10 +243,11 @@ class Orchestrator:
         report.proposals_approved += 1
 
         # 5) Execute
-        if self.cfg.dry_run:
-            logger.info(f"[{proposal.strategy}] DRY {proposal.side.value} "
-                        f"{proposal.symbol} ${decision.approved_notional_usd:.2f} "
-                        f"({proposal.reason})")
+        venue_dry = self.cfg.is_dry(proposal.venue)
+        if venue_dry:
+            logger.info(f"[{proposal.strategy}] DRY[{proposal.venue}] "
+                        f"{proposal.side.value} {proposal.symbol} "
+                        f"${decision.approved_notional_usd:.2f} ({proposal.reason})")
             return
 
         adapter = self.brokers.get(proposal.venue)

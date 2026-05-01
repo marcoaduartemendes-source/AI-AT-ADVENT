@@ -237,6 +237,47 @@ def load_orchestrator_state() -> Dict:
     return out
 
 
+def load_latest_strategic_review() -> Dict:
+    """Pull the most-recent Opus review from data/strategic_review.db."""
+    out: Dict = {}
+    db_path = os.environ.get("REVIEW_DB_PATH", "data/strategic_review.db")
+    if not Path(db_path).exists():
+        return out
+    try:
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM reviews ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        history = conn.execute(
+            "SELECT id, timestamp, overall_health, summary FROM reviews "
+            "ORDER BY id DESC LIMIT 10"
+        ).fetchall()
+        conn.close()
+        if row:
+            payload = {}
+            try:
+                payload = json.loads(row["payload_json"])
+            except Exception:
+                pass
+            out = {
+                "timestamp": row["timestamp"],
+                "overall_health": row["overall_health"],
+                "summary": row["summary"],
+                "risk_multiplier_rec": row["risk_mult_rec"],
+                "risk_multiplier_reason": row["risk_mult_reason"],
+                "model_used": row["model_used"],
+                "cost_usd": row["cost_usd"],
+                "strategy_actions": payload.get("strategy_actions", []),
+                "investigate": payload.get("investigate", []),
+                "history": [dict(r) for r in history],
+            }
+    except Exception as exc:
+        logger.warning(f"Could not load strategic review: {exc}")
+    return out
+
+
 def _empty_summary(label: str) -> Dict:
     return {
         "label": label,
@@ -431,6 +472,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </div>
 </header>
 <div id="pods-banner"></div>
+<div id="strategic-review-banner"></div>
 <div id="strategy-pnl-overview"></div>
 <div class="tabs" id="tabs"></div>
 <div id="panels"></div>
@@ -726,6 +768,63 @@ function renderPods() {
 
 renderPods();
 
+function renderStrategicReview() {
+  const wrap = document.getElementById("strategic-review-banner");
+  const r = DATA.strategic_review || {};
+  if (!r.timestamp) { wrap.innerHTML = ""; return; }
+
+  const colors = {GREEN: "#3fb950", YELLOW: "#d4a64c", RED: "#f85149"};
+  const color = colors[r.overall_health] || "#7d8590";
+
+  let html = `<div class="panel-wrap" style="padding-top: 12px;">`;
+  html += `<div class="panel" style="border-left: 4px solid ${color};">`;
+  html += `<h2 style="margin-bottom: 4px;">Strategic Review · ${r.overall_health || "—"}</h2>`;
+  html += `<div class="meta" style="margin-bottom: 10px;">`;
+  html += `${fmtTime(r.timestamp)} · `;
+  html += `${r.model_used || "—"} · `;
+  html += `risk multiplier rec: <strong>${r.risk_multiplier_rec ? r.risk_multiplier_rec.toFixed(2) : "1.00"}x</strong>`;
+  if (r.cost_usd != null) html += ` · cost \$${r.cost_usd.toFixed(4)}`;
+  html += `</div>`;
+
+  if (r.summary) {
+    html += `<p style="font-size: 14px; line-height: 1.5; margin: 0 0 12px 0;">${r.summary}</p>`;
+  }
+  if (r.risk_multiplier_reason) {
+    html += `<p style="font-size: 13px; color: var(--muted); margin: 0 0 12px 0;">Risk multiplier rationale: ${r.risk_multiplier_reason}</p>`;
+  }
+
+  if (r.strategy_actions && r.strategy_actions.length) {
+    html += `<details${r.overall_health === "RED" ? " open" : ""}>`;
+    html += `<summary style="font-size: 13px;">${r.strategy_actions.length} strategy action(s) — click to expand</summary>`;
+    html += `<table style="margin-top: 10px;"><thead><tr>
+      <th>Strategy</th><th>Action</th><th class="num">Target %</th><th class="num">Conf</th><th>Reason</th></tr></thead><tbody>`;
+    r.strategy_actions.forEach(a => {
+      const tgt = (a.target_alloc_pct != null) ? (a.target_alloc_pct * 100).toFixed(1) + "%" : "—";
+      const actClass = ({
+        FREEZE: "neg", RETIRE: "neg", DECREASE: "neg",
+        ACTIVATE: "pos", INCREASE: "pos",
+      })[a.action] || "";
+      html += `<tr><td><strong>${a.strategy || ""}</strong></td>
+        <td><span class="pill" style="background: rgba(125,133,144,0.15); color: var(--text);">${a.action || "—"}</span></td>
+        <td class="num">${tgt}</td>
+        <td class="num">${a.confidence != null ? a.confidence.toFixed(2) : "—"}</td>
+        <td style="font-size: 12px;">${a.reason || ""}</td></tr>`;
+    });
+    html += `</tbody></table></details>`;
+  }
+
+  if (r.investigate && r.investigate.length) {
+    html += `<details style="margin-top: 8px;"><summary style="font-size: 13px;">Items to investigate (${r.investigate.length})</summary><ul style="margin: 8px 0; padding-left: 20px; font-size: 13px; color: var(--text);">`;
+    r.investigate.forEach(item => { html += `<li>${item}</li>`; });
+    html += `</ul></details>`;
+  }
+
+  html += `</div></div>`;
+  wrap.innerHTML = html;
+}
+
+renderStrategicReview();
+
 function renderStrategyPnLOverview() {
   // Always-visible banner: each strategy's lifetime LIVE P&L (real trades only)
   const wrap = document.getElementById("strategy-pnl-overview");
@@ -820,6 +919,7 @@ def main():
         "config": config,
         "live": live,
         "pods": load_orchestrator_state(),
+        "strategic_review": load_latest_strategic_review(),
     }
     for days in WINDOWS:
         logger.info(f"Running {days}-day backtest…")

@@ -139,12 +139,6 @@ class MetaAllocator:
             weights[n] = max(meta.min_alloc_pct,
                              min(meta.max_alloc_pct, weights[n]))
 
-        # Renormalize so we don't allocate >100% to active strategies
-        total = sum(weights.values())
-        if total > 1.0:
-            scale = 1.0 / total
-            weights = {k: v * scale for k, v in weights.items()}
-
         # 3) Apply max-weekly-delta clamp
         # On first allocation for a freshly-registered strategy there is no
         # prior weight; start from the configured baseline so the strategy
@@ -160,6 +154,26 @@ class MetaAllocator:
             elif delta < -self.cfg.max_weekly_delta_pct:
                 weights[n] = prev_pct - self.cfg.max_weekly_delta_pct
             weights[n] = max(0.0, weights[n])
+
+        # 4) Final normalization — sums to <= 100% no matter what.
+        # The floor/ceiling and weekly-delta clamps can push the total above
+        # 1.0 when many strategies bump up to their min_alloc_pct floor at
+        # once. We renormalize at the end (after all per-strategy bumps) and
+        # respect each strategy's max_alloc_pct ceiling on the way down.
+        for _ in range(3):  # converge in a couple of passes
+            total = sum(weights.values())
+            if total <= 1.0 + 1e-9:
+                break
+            scale = 1.0 / total
+            for n in list(weights.keys()):
+                meta = self.registry.meta(n)
+                weights[n] = max(meta.min_alloc_pct if total > 1.0 else 0.0,
+                                  min(meta.max_alloc_pct, weights[n] * scale))
+        # Hard cap: if floors still push above 100%, scale floors proportionally
+        total = sum(weights.values())
+        if total > 1.0:
+            scale = 1.0 / total
+            weights = {k: v * scale for k, v in weights.items()}
 
         # 4) Build decisions including FROZEN/RETIRED (target = 0)
         total_active_pct = 0.0
