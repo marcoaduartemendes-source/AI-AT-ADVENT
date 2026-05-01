@@ -327,6 +327,43 @@ class Orchestrator:
             report.proposals_rejected += 1
             return
 
+        # SELL-quantity guard: clamp SELL orders to qty_available so we
+        # don't request more than the broker permits (HTTP 403
+        # "insufficient qty available for order").
+        if proposal.side == OrderSide.SELL:
+            cached = self.risk.cached_positions(proposal.venue)
+            for pos in cached:
+                if pos.symbol != proposal.symbol:
+                    continue
+                avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
+                                if pos.raw else pos.quantity)
+                if proposal.quantity and proposal.quantity > avail:
+                    if avail <= 0:
+                        logger.info(f"[{proposal.strategy}] SKIP SELL "
+                                    f"{proposal.symbol}: 0 qty available")
+                        report.proposals_rejected += 1
+                        return
+                    logger.info(f"[{proposal.strategy}] CLAMP SELL "
+                                f"{proposal.symbol} qty {proposal.quantity:.4f} "
+                                f"→ {avail:.4f} (qty_available)")
+                    proposal.quantity = avail
+                # Also clamp notional-based sells
+                if proposal.notional_usd and pos.market_price > 0:
+                    needed_qty = proposal.notional_usd / pos.market_price
+                    if needed_qty > avail:
+                        if avail <= 0:
+                            logger.info(f"[{proposal.strategy}] SKIP SELL "
+                                        f"{proposal.symbol}: 0 qty available")
+                            report.proposals_rejected += 1
+                            return
+                        new_notional = avail * pos.market_price * 0.99  # 1% buffer
+                        logger.info(f"[{proposal.strategy}] CLAMP SELL "
+                                    f"{proposal.symbol} notional "
+                                    f"${proposal.notional_usd:.2f} → "
+                                    f"${new_notional:.2f}")
+                        proposal.notional_usd = new_notional
+                break
+
         report.proposals_approved += 1
 
         # 5) Execute

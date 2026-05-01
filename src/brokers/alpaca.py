@@ -121,6 +121,12 @@ class AlpacaAdapter(BrokerAdapter):
             mkt = float(p.get("current_price", avg))
             asset_class = AssetClass.ETF if p.get("asset_class") == "us_equity" and \
                 _is_likely_etf(sym) else AssetClass.EQUITY
+            # Alpaca exposes qty_available — total qty minus what's held
+            # for pending orders. Strategies/orchestrator should cap SELLs
+            # to this value.
+            qty_available = float(p.get("qty_available", qty) or qty)
+            raw = dict(p)
+            raw["qty_available_parsed"] = qty_available
             out.append(Position(
                 venue=self.venue,
                 symbol=sym,
@@ -129,7 +135,7 @@ class AlpacaAdapter(BrokerAdapter):
                 avg_entry_price=avg,
                 market_price=mkt,
                 unrealized_pnl_usd=float(p.get("unrealized_pl", 0)),
-                raw=p,
+                raw=raw,
             ))
         return out
 
