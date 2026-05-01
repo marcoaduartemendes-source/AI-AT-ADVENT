@@ -23,6 +23,11 @@ Configure via env vars (any/all):
     SMTP_PASSWORD        — Gmail App Password (already in your secrets)
     SMTP_FROM            — sender address (default: Marcoaduartemendes@gmail.com)
 
+  Pushover (phone push notifications, $5 one-time):
+    PUSHOVER_USER_KEY    — your User Key from https://pushover.net dashboard
+    PUSHOVER_APP_TOKEN   — application token from a Pushover app you create
+    PUSHOVER_DEVICE      — optional device name to target (default: all devices)
+
 Usage:
     from common.alerts import alert
     alert("Phase 0 fill polling: drift > $50 detected", severity="warning")
@@ -139,11 +144,72 @@ def alert(text: str, severity: str = "info", *, timeout: float = 5.0) -> bool:
         if _send_email(text, severity, timeout=timeout):
             delivered = True
 
+    # Sink 3: Pushover (phone push)
+    if (os.environ.get("PUSHOVER_USER_KEY")
+            and os.environ.get("PUSHOVER_APP_TOKEN")):
+        if _send_pushover(text, severity, timeout=timeout):
+            delivered = True
+
     if not delivered:
         # Either nothing was configured, or everything failed. Either
         # way the message must not get lost — log it.
         logger.info(f"[alert/{severity}] {text}")
     return delivered
+
+
+def _send_pushover(text: str, severity: str, *, timeout: float) -> bool:
+    """Push notification via Pushover (https://pushover.net).
+
+    Pushover priorities map cleanly to our severity levels:
+      info     → 0 (normal)
+      warning  → 1 (high — bypasses quiet hours, always notifies)
+      critical → 2 (emergency — vibrates/sounds until ack'd)
+
+    Priority 2 (emergency) requires `retry` and `expire` parameters
+    by Pushover's API; we use 60s retry / 1h expire so a missed KILL
+    switch alert keeps buzzing until you ack from the app.
+    """
+    user_key = os.environ.get("PUSHOVER_USER_KEY")
+    app_token = os.environ.get("PUSHOVER_APP_TOKEN")
+    if not user_key or not app_token:
+        return False
+
+    severity_to_priority = {"info": 0, "warning": 1, "critical": 2}
+    priority = severity_to_priority.get(severity, 0)
+
+    payload = {
+        "token": app_token,
+        "user": user_key,
+        "title": f"AI-AT-ADVENT [{severity.upper()}]",
+        "message": text[:1024],   # Pushover hard-caps at ~1024 chars
+        "priority": priority,
+    }
+    if priority == 2:
+        # Required by Pushover for emergency priority. The phone will
+        # repeat the alert sound every 60s for up to 1h until the
+        # user opens the app and acknowledges.
+        payload["retry"] = 60
+        payload["expire"] = 3600
+    device = os.environ.get("PUSHOVER_DEVICE")
+    if device:
+        payload["device"] = device
+
+    try:
+        resp = requests.post(
+            "https://api.pushover.net/1/messages.json",
+            data=payload, timeout=timeout,
+        )
+        if resp.status_code != 200:
+            logger.warning(f"Pushover HTTP {resp.status_code}: {resp.text[:200]}")
+            return False
+        body = resp.json()
+        if body.get("status") != 1:
+            logger.warning(f"Pushover error: {body}")
+            return False
+        return True
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"Pushover send failed: {type(e).__name__}: {e}")
+        return False
 
 
 def _send_webhook(text: str, severity: str, *, timeout: float) -> bool:

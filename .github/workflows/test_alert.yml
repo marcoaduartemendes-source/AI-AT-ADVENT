@@ -43,6 +43,9 @@ jobs:
           ALERT_EMAIL_TO:       ${{ vars.ALERT_EMAIL_TO }}
           SMTP_PASSWORD:        ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM:            ${{ vars.SMTP_FROM }}
+          PUSHOVER_USER_KEY:    ${{ secrets.PUSHOVER_USER_KEY }}
+          PUSHOVER_APP_TOKEN:   ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_DEVICE:      ${{ vars.PUSHOVER_DEVICE }}
           SEVERITY:             ${{ inputs.severity }}
           MESSAGE:              ${{ inputs.message }}
         run: |

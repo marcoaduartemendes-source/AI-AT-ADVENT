@@ -253,6 +253,112 @@ def test_both_sinks_fire_when_both_configured(monkeypatch):
     assert len(_FakeSMTP.instances) == 1
 
 
+# ─── Pushover sink ────────────────────────────────────────────────────
+
+
+def test_pushover_sink_sends_with_correct_priority(monkeypatch):
+    """info → priority 0, warning → 1, critical → 2 (emergency)."""
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("ALERT_EMAIL_TO", raising=False)
+    monkeypatch.setenv("PUSHOVER_USER_KEY", "u-test")
+    monkeypatch.setenv("PUSHOVER_APP_TOKEN", "a-test")
+
+    captured = {}
+
+    class _FakeResp:
+        status_code = 200
+        text = '{"status": 1}'
+        def json(self): return {"status": 1, "request": "abc"}
+
+    def _fake_post(url, data, timeout):
+        captured["url"] = url
+        captured["data"] = data
+        return _FakeResp()
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+    alerts_module._recent_calls.clear()
+
+    # Critical → priority 2 (emergency, requires retry/expire)
+    result = alerts_module.alert("KILL switch fired", severity="critical")
+    assert result is True
+    assert captured["url"] == "https://api.pushover.net/1/messages.json"
+    assert captured["data"]["priority"] == 2
+    assert captured["data"]["retry"] == 60
+    assert captured["data"]["expire"] == 3600
+    assert captured["data"]["message"] == "KILL switch fired"
+    assert "[CRITICAL]" in captured["data"]["title"]
+
+    alerts_module._recent_calls.clear()
+    captured.clear()
+    alerts_module.alert("normal info", severity="info")
+    assert captured["data"]["priority"] == 0
+    assert "retry" not in captured["data"]   # only set for emergency
+
+    alerts_module._recent_calls.clear()
+    captured.clear()
+    alerts_module.alert("warn", severity="warning")
+    assert captured["data"]["priority"] == 1
+
+
+def test_pushover_optional_device_targeting(monkeypatch):
+    """If PUSHOVER_DEVICE is set, alert goes only to that device."""
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("ALERT_EMAIL_TO", raising=False)
+    monkeypatch.setenv("PUSHOVER_USER_KEY", "u")
+    monkeypatch.setenv("PUSHOVER_APP_TOKEN", "a")
+    monkeypatch.setenv("PUSHOVER_DEVICE", "iphone-marco")
+
+    captured = {}
+
+    class _FakeResp:
+        status_code = 200
+        def json(self): return {"status": 1}
+
+    monkeypatch.setattr(requests, "post",
+        lambda url, data, timeout: (captured.update({"data": data}) or _FakeResp()))
+    alerts_module._recent_calls.clear()
+
+    alerts_module.alert("hi", severity="info")
+    assert captured["data"]["device"] == "iphone-marco"
+
+
+def test_pushover_skipped_without_both_keys(monkeypatch):
+    """Need BOTH user_key AND app_token; one alone is invalid."""
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("ALERT_EMAIL_TO", raising=False)
+    monkeypatch.setenv("PUSHOVER_USER_KEY", "u")
+    monkeypatch.delenv("PUSHOVER_APP_TOKEN", raising=False)
+
+    called = {"n": 0}
+
+    def _fake_post(*a, **kw):
+        called["n"] += 1
+        raise AssertionError("Pushover should not have been called")
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+    alerts_module._recent_calls.clear()
+
+    result = alerts_module.alert("hi")
+    assert result is False
+    assert called["n"] == 0
+
+
+def test_pushover_failure_does_not_raise(monkeypatch):
+    """Pushover API down → returns False, never raises."""
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("ALERT_EMAIL_TO", raising=False)
+    monkeypatch.setenv("PUSHOVER_USER_KEY", "u")
+    monkeypatch.setenv("PUSHOVER_APP_TOKEN", "a")
+
+    def _exploding_post(*a, **kw):
+        raise requests.ConnectionError("pushover down")
+
+    monkeypatch.setattr(requests, "post", _exploding_post)
+    alerts_module._recent_calls.clear()
+    result = alerts_module.alert("anything", severity="critical")
+    assert result is False    # graceful
+
+
 def test_email_sink_failure_does_not_raise(monkeypatch):
     """Gmail down → return False, never raise. Trading must not block."""
     import smtplib
