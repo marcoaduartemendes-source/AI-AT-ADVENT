@@ -19,7 +19,7 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List
 
-import requests
+from common import cached_get
 
 from .base import ScoutAgent, ScoutSignal
 
@@ -43,20 +43,16 @@ class CommoditiesScout(ScoutAgent):
     name = "commodities_scout"
 
     def scan(self) -> List[ScoutSignal]:
-        # Pull all FUTURE products and group by root
-        try:
-            r = requests.get(
-                f"{COINBASE_PUBLIC}/products",
-                params={"product_type": "FUTURE", "limit": 300},
-                timeout=20,
-            )
-            if r.status_code != 200:
-                logger.warning(f"[{self.name}] futures fetch HTTP {r.status_code}")
-                return []
-            products = r.json().get("products", [])
-        except Exception as e:
-            logger.warning(f"[{self.name}] futures fetch failed: {e}")
+        # Pull all FUTURE products (cached so crypto_basis_trade can reuse).
+        data = cached_get(
+            f"{COINBASE_PUBLIC}/products",
+            params={"product_type": "FUTURE", "limit": 300},
+            ttl_seconds=120,
+        )
+        if not data:
+            logger.warning(f"[{self.name}] futures fetch failed")
             return []
+        products = data.get("products", [])
 
         # group by root + sort by expiry
         by_root: Dict[str, List[Dict]] = {}

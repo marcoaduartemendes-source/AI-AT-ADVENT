@@ -177,27 +177,47 @@ class RiskManager:
         self.multiplier = DynamicRiskMultiplier(self.config)
         self.db = db or EquitySnapshotDB()
         self._cached_state: Optional[RiskState] = None
+        # Per-cycle broker snapshot cache; refreshed by compute_state()
+        self._broker_snapshots: Dict[str, Dict] = {}
+
+    def cached_positions(self, venue: str) -> List:
+        """Read-through accessor for the per-cycle position cache.
+        Saves redundant get_positions() calls during a single cycle."""
+        snap = self._broker_snapshots.get(venue, {})
+        return snap.get("positions", [])
 
     # ── State computation -------------------------------------------------
 
     def compute_state(self, *, persist: bool = True) -> RiskState:
         """Pull equity from every configured broker, persist snapshot, and
-        derive drawdown / vol / multiplier / kill-switch state."""
+        derive drawdown / vol / multiplier / kill-switch state.
+
+        Performance: each broker's account + positions are fetched once
+        and cached in `self._broker_snapshots` for the rest of the cycle
+        (so the orchestrator doesn't double-call get_positions on its
+        own venue lookups). The cache is cleared by the next
+        compute_state() call.
+        """
         equity = 0.0
         notional = 0.0
         venues_ok = True
+        self._broker_snapshots = {}     # venue → {"account", "positions"}
         for name, adapter in self.brokers.items():
+            snap = {}
             try:
                 acct = adapter.get_account()
+                snap["account"] = acct
                 equity += acct.equity_usd
             except Exception as e:
                 logger.warning(f"[risk] {name} get_account failed: {e}")
                 venues_ok = False
             try:
                 positions = adapter.get_positions()
+                snap["positions"] = positions
                 notional += sum(abs(p.market_price * p.quantity) for p in positions)
             except Exception as e:
                 logger.debug(f"[risk] {name} get_positions failed: {e}")
+            self._broker_snapshots[name] = snap
 
         if persist and equity > 0:
             self.db.record_snapshot(equity, note=f"venues={len(self.brokers)}")

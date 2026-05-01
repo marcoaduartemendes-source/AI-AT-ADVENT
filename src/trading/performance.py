@@ -74,6 +74,14 @@ class PerformanceTracker:
                     max_drawdown REAL
                 )
             """)
+            # Performance indexes — strategies query by strategy name +
+            # side='SELL' on every cycle; without these, full-table scan.
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_strategy_side "
+                          "ON trades(strategy, side, timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_timestamp "
+                          "ON trades(timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_strategy "
+                          "ON snapshots(strategy, timestamp)")
 
     # ── Recording ────────────────────────────────────────────────────────────
 

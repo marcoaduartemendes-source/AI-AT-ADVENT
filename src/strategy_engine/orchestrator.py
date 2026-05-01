@@ -39,16 +39,19 @@ class OrchestratorConfig:
     cycle_label: str = ""                     # for logging
     dry_run: bool = True                      # global default
     # Per-broker overrides; None means "use global dry_run".
-    # Use cases:
-    #   • Alpaca paper account is itself a sandbox, so flipping
-    #     dry_run_alpaca=False is safe (no real money).
-    #   • Coinbase/Kalshi go live with real money — keep True until
-    #     manually flipped.
     dry_run_coinbase: Optional[bool] = None
     dry_run_alpaca: Optional[bool] = None
     dry_run_kalshi: Optional[bool] = None
+    # Per-strategy LIVE override: even if the broker is DRY, these
+    # strategies place real orders. Used for gradual live rollout — set
+    # `live_strategies={"crypto_funding_carry"}` to risk only that pod.
+    # Strategies in this set ignore both global and per-broker DRY flags.
+    live_strategies: Optional[set] = None
 
-    def is_dry(self, venue: str) -> bool:
+    def is_dry(self, venue: str, strategy: Optional[str] = None) -> bool:
+        # Per-strategy LIVE override wins over everything else.
+        if strategy and self.live_strategies and strategy in self.live_strategies:
+            return False
         per_broker = {
             "coinbase": self.dry_run_coinbase,
             "alpaca":   self.dry_run_alpaca,
@@ -182,16 +185,26 @@ class Orchestrator:
         return elapsed_hours >= self.cfg.rebalance_cadence_hours
 
     def _positions_for(self, venue: str) -> Dict:
-        adapter = self.brokers.get(venue)
-        if adapter is None:
-            return {}
+        # Reuse the risk manager's per-cycle position cache; avoids hitting
+        # the broker API again for each strategy on the same venue.
+        cached = []
         try:
-            positions = adapter.get_positions()
-        except Exception as e:
-            logger.warning(f"[{venue}] get_positions failed: {e}")
-            return {}
+            cached = self.risk.cached_positions(venue)
+        except Exception:
+            cached = []
+
+        if not cached:
+            adapter = self.brokers.get(venue)
+            if adapter is None:
+                return {}
+            try:
+                cached = adapter.get_positions()
+            except Exception as e:
+                logger.warning(f"[{venue}] get_positions failed: {e}")
+                return {}
+
         out = {}
-        for p in positions:
+        for p in cached:
             out[p.symbol] = {
                 "venue": p.venue,
                 "quantity": p.quantity,
@@ -243,7 +256,7 @@ class Orchestrator:
         report.proposals_approved += 1
 
         # 5) Execute
-        venue_dry = self.cfg.is_dry(proposal.venue)
+        venue_dry = self.cfg.is_dry(proposal.venue, proposal.strategy)
         if venue_dry:
             logger.info(f"[{proposal.strategy}] DRY[{proposal.venue}] "
                         f"{proposal.side.value} {proposal.symbol} "

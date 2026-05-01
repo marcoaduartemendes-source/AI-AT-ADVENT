@@ -241,6 +241,9 @@ def main():
             return None
         return v.lower() != "false"
 
+    live_strategies_raw = os.environ.get("LIVE_STRATEGIES", "")
+    live_strategies = {s.strip() for s in live_strategies_raw.split(",") if s.strip()}
+
     orchestrator = Orchestrator(
         brokers=brokers,
         registry=registry,
@@ -252,8 +255,12 @@ def main():
             dry_run_coinbase=_per_broker_flag("DRY_RUN_COINBASE"),
             dry_run_alpaca=_per_broker_flag("DRY_RUN_ALPACA"),
             dry_run_kalshi=_per_broker_flag("DRY_RUN_KALSHI"),
+            live_strategies=live_strategies or None,
         ),
     )
+
+    if live_strategies:
+        logger.warning(f"⚠ Per-strategy LIVE override active: {sorted(live_strategies)}")
 
     # ── Status mode: print state and exit
     if args.status:

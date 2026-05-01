@@ -38,6 +38,14 @@ try:
 except ImportError:
     _HAS_ORCHESTRATOR = False
 
+# Per-strategy backtests for the new strategies
+try:
+    from backtests import backtest_all as _new_backtest_all, UNBACKTESTABLE
+    _HAS_NEW_BACKTESTS = True
+except ImportError:
+    _HAS_NEW_BACKTESTS = False
+    UNBACKTESTABLE = {}
+
 # ─── Config ──────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -776,10 +784,16 @@ function renderStrategicReview() {
   const colors = {GREEN: "#3fb950", YELLOW: "#d4a64c", RED: "#f85149"};
   const color = colors[r.overall_health] || "#7d8590";
 
+  const repo = (DATA.config && DATA.config.repo) || "marcoaduartemendes-source/AI-AT-ADVENT";
+  const applyUrl = `https://github.com/${repo}/actions/workflows/apply_review.yml`;
+
   let html = `<div class="panel-wrap" style="padding-top: 12px;">`;
   html += `<div class="panel" style="border-left: 4px solid ${color};">`;
-  html += `<h2 style="margin-bottom: 4px;">Strategic Review · ${r.overall_health || "—"}</h2>`;
-  html += `<div class="meta" style="margin-bottom: 10px;">`;
+  html += `<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">`;
+  html += `<h2 style="margin: 0;">Strategic Review · ${r.overall_health || "—"}</h2>`;
+  html += `<a href="${applyUrl}" target="_blank" style="display: inline-block; padding: 8px 14px; background: var(--blue); color: white; border-radius: 6px; font-size: 13px; font-weight: 500; text-decoration: none;">⚙ Apply latest review →</a>`;
+  html += `</div>`;
+  html += `<div class="meta" style="margin: 4px 0 10px 0;">`;
   html += `${fmtTime(r.timestamp)} · `;
   html += `${r.model_used || "—"} · `;
   html += `risk multiplier rec: <strong>${r.risk_multiplier_rec ? r.risk_multiplier_rec.toFixed(2) : "1.00"}x</strong>`;
@@ -922,8 +936,85 @@ def main():
         "strategic_review": load_latest_strategic_review(),
     }
     for days in WINDOWS:
-        logger.info(f"Running {days}-day backtest…")
+        logger.info(f"Running {days}-day backtest (legacy strategies)…")
         result = run_backtest_window(days, candles_by_product)
+
+        # Layer in the new orchestrator strategies' backtests
+        if _HAS_NEW_BACKTESTS:
+            try:
+                new_results = _new_backtest_all(days)
+                for sname, summary in new_results.items():
+                    if summary.n_trades == 0 and not summary.trades and summary.note:
+                        # Strategy has no backtest data yet — record placeholder
+                        result["by_strategy"][sname] = {
+                            "summary": {
+                                "strategy": sname,
+                                "n_trades": 0, "wins": 0, "losses": 0,
+                                "win_rate": 0.0, "total_pnl_usd": 0.0,
+                                "entry_volume_usd": 0.0,
+                                "return_on_volume_pct": 0.0,
+                                "avg_pnl_usd": 0.0,
+                                "note": summary.note,
+                            },
+                            "trades": [],
+                        }
+                    else:
+                        result["by_strategy"][sname] = {
+                            "summary": {
+                                "strategy": sname,
+                                "n_trades": summary.n_trades,
+                                "wins": summary.n_wins,
+                                "losses": summary.n_losses,
+                                "win_rate": summary.win_rate,
+                                "total_pnl_usd": summary.total_pnl_usd,
+                                "entry_volume_usd": summary.entry_volume_usd,
+                                "return_on_volume_pct": summary.return_on_volume_pct,
+                                "avg_pnl_usd": summary.avg_pnl_usd,
+                                "sharpe": summary.sharpe,
+                                "max_drawdown": summary.max_drawdown_usd,
+                                "note": summary.note,
+                            },
+                            "trades": summary.trades,
+                        }
+                    result["trades"].extend(summary.trades)
+            except Exception as e:
+                logger.warning(f"  new-strategy backtest failed for {days}d: {e}")
+
+        # Strategies still missing get a placeholder entry so the dashboard
+        # always shows all 10
+        for sname, why in UNBACKTESTABLE.items():
+            if sname not in result["by_strategy"]:
+                result["by_strategy"][sname] = {
+                    "summary": {
+                        "strategy": sname,
+                        "n_trades": 0, "wins": 0, "losses": 0,
+                        "win_rate": 0.0, "total_pnl_usd": 0.0,
+                        "entry_volume_usd": 0.0,
+                        "return_on_volume_pct": 0.0,
+                        "avg_pnl_usd": 0.0,
+                        "note": why,
+                    },
+                    "trades": [],
+                }
+
+        # Recompute window-level summary now that we've added new strategies
+        all_trades = []
+        for sname, st in result["by_strategy"].items():
+            all_trades.extend(st.get("trades", []))
+        closed_all = [t for t in all_trades if t.get("pnl_usd") is not None]
+        wins_all = sum(1 for t in closed_all if t["pnl_usd"] > 0)
+        total_pnl = sum(t["pnl_usd"] for t in closed_all)
+        entry_vol = sum(t.get("amount_usd", 0)
+                          for t in all_trades if t.get("side") == "BUY")
+        result["summary"].update({
+            "n_trades": len(closed_all),
+            "wins": wins_all, "losses": len(closed_all) - wins_all,
+            "win_rate": (wins_all / len(closed_all)) if closed_all else 0.0,
+            "total_pnl_usd": total_pnl,
+            "entry_volume_usd": entry_vol,
+            "return_on_volume_pct": (total_pnl / entry_vol * 100) if entry_vol else 0.0,
+        })
+
         logger.info(f"  {days}d: {result['summary']['n_trades']} trades, "
                     f"${result['summary']['total_pnl_usd']:+.2f} P&L "
                     f"({result['summary']['return_on_volume_pct']:+.2f}% RoV)")

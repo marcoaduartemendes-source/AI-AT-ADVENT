@@ -56,6 +56,8 @@ jobs:
           DRY_RUN_COINBASE:        ${{ vars.DRY_RUN_COINBASE }}
           DRY_RUN_ALPACA:          ${{ vars.DRY_RUN_ALPACA }}
           DRY_RUN_KALSHI:          ${{ vars.DRY_RUN_KALSHI }}
+          LIVE_STRATEGIES:         ${{ vars.LIVE_STRATEGIES }}
+          MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '5000' }}
           RISK_MULTIPLIER:         ${{ vars.RISK_MULTIPLIER || '1.0' }}
           TARGET_PORTFOLIO_VOL:    ${{ vars.TARGET_PORTFOLIO_VOL || '0.12' }}
           KILL_DD_PCT:             ${{ vars.KILL_DD_PCT || '0.15' }}

@@ -21,9 +21,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-import requests
-
 from brokers.base import OrderSide, OrderType
+from common import cached_get
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
 
 logger = logging.getLogger(__name__)
@@ -51,20 +50,16 @@ class CryptoBasisTrade(Strategy):
         if ctx.target_alloc_usd <= 0:
             return []
 
-        # Fetch crypto futures products (same endpoint we used for the
-        # commodities scout, filtered by root)
-        try:
-            r = requests.get(
-                PUBLIC_PRODUCTS,
-                params={"product_type": "FUTURE", "limit": 300},
-                timeout=15,
-            )
-            if r.status_code != 200:
-                return []
-            futures = r.json().get("products", [])
-        except Exception as e:
-            logger.warning(f"[{self.name}] futures fetch: {e}")
+        # Fetch crypto futures products (cached at module level via
+        # common.cached_get — commodities_scout hits the same endpoint).
+        data = cached_get(
+            PUBLIC_PRODUCTS,
+            params={"product_type": "FUTURE", "limit": 300},
+            ttl_seconds=120,
+        )
+        if not data:
             return []
+        futures = data.get("products", [])
 
         proposals: List[TradeProposal] = []
         per_leg = ctx.target_alloc_usd / 2
@@ -163,10 +158,11 @@ class CryptoBasisTrade(Strategy):
         return candidates[0] if candidates else None
 
     def _spot_price(self, spot_sym: str) -> Optional[float]:
+        data = cached_get(f"{PUBLIC_PRODUCTS}/{spot_sym}", ttl_seconds=30)
+        if not data:
+            return None
         try:
-            r = requests.get(f"{PUBLIC_PRODUCTS}/{spot_sym}", timeout=10)
-            if r.status_code != 200:
-                return None
-            return float(r.json().get("price") or 0) or None
-        except Exception:
+            price = float(data.get("price") or 0)
+            return price or None
+        except (TypeError, ValueError):
             return None
