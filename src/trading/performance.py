@@ -107,6 +107,55 @@ class PerformanceTracker:
                 ),
             )
 
+    # ── Fill backfill (Phase 0 — fill polling) ───────────────────────────────
+
+    def get_unfilled_trades(self, max_age_hours: int = 48) -> List[Dict]:
+        """Return trade rows where the broker hadn't reported a fill at
+        record-time (price=0 or NULL), still within the polling window.
+
+        These rows are candidates for a fill-status check the next time
+        the orchestrator polls. Older rows are presumed dead — orders
+        almost always either fill or get cancelled within a few hours;
+        anything older than `max_age_hours` is skipped to keep the
+        polling loop bounded.
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, timestamp, strategy, product_id, side,
+                       amount_usd, quantity, price, order_id, pnl_usd
+                FROM trades
+                WHERE order_id IS NOT NULL
+                  AND order_id != ''
+                  AND order_id != 'unknown'
+                  AND (price IS NULL OR price = 0)
+                  AND timestamp >= datetime('now', ?)
+                ORDER BY id ASC
+                """,
+                (f"-{max_age_hours} hours",),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_trade_fill(
+        self, trade_id: int, price: float, quantity: float,
+        amount_usd: float, pnl_usd: Optional[float],
+    ) -> None:
+        """Backfill a trade row with real fill data once the broker
+        reports the order as filled. Sets price, quantity, amount_usd,
+        and (for closing SELLs that we can attribute) pnl_usd."""
+        with self._conn() as conn:
+            conn.execute(
+                """
+                UPDATE trades
+                   SET price      = ?,
+                       quantity   = ?,
+                       amount_usd = ?,
+                       pnl_usd    = ?
+                 WHERE id = ?
+                """,
+                (price, quantity, amount_usd, pnl_usd, trade_id),
+            )
+
     # ── Position persistence ─────────────────────────────────────────────────
 
     def save_positions(self, positions: Dict):

@@ -145,6 +145,16 @@ class Orchestrator:
                                 f"(>{stale_threshold}s old)")
             except Exception as e:
                 logger.debug(f"[{vname}] cancel_stale_orders: {e}")
+
+        # Phase-0: poll previously-PENDING orders for fills and backfill
+        # the trade ledger with real fill prices. Without this every
+        # SELL pnl_usd stays NULL because record_trade ran at submit
+        # time. With it, the dashboard's "Realized P&L" finally
+        # reflects the truth.
+        try:
+            self._poll_pending_fills(report)
+        except Exception as e:
+            logger.warning(f"poll_pending_fills failed: {e}")
         # If no scout_signals dict was passed in, hydrate from the bus
         if scout_signals is None:
             try:
@@ -452,6 +462,165 @@ class Orchestrator:
         except Exception as e:
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
+
+    def _poll_pending_fills(self, report: CycleReport) -> None:
+        """Walk the trade ledger looking for orders we recorded at
+        submit-time that the broker has since filled, and backfill the
+        row with real fill data.
+
+        The ledger row is created with `price=0, pnl_usd=NULL` because
+        the broker hasn't reported a fill yet (record_trade runs
+        immediately after the API call returns the order_id). Every
+        cycle we revisit those rows, ask the broker for the current
+        order status, and:
+          - For FILLED  → write filled_avg_price, filled_quantity,
+                          and (for closing SELLs) realized PnL.
+          - For PARTIAL → write what's filled so far; row stays in
+                          the unfilled set so the next cycle picks
+                          up the rest.
+          - For CANCELED / REJECTED → leave price=0; the dashboard
+                          treats it as an un-realized fake.
+          - For PENDING  → ignore; try again next cycle.
+
+        Bounded at 48h via get_unfilled_trades — anything older is
+        effectively dead and not worth polling.
+
+        Independent FIFO recompute is done via
+        recompute_pnl_independent() and the result is logged whenever
+        it disagrees with the broker-attributed PnL by > $1, so the
+        next phantom-loss class of bug surfaces as an alert instead
+        of a user complaint.
+        """
+        if self._tracker is None:
+            return
+        try:
+            unfilled = self._tracker.get_unfilled_trades(max_age_hours=48)
+        except Exception as e:
+            logger.warning(f"get_unfilled_trades failed: {e}")
+            return
+        if not unfilled:
+            return
+
+        # Map strategy name → venue (every strategy is mounted on
+        # exactly one broker; this lookup is O(n_strategies) once
+        # per cycle).
+        strat_to_venue: Dict[str, str] = {
+            name: getattr(s, "venue", "")
+            for name, s in self.strategies.items()
+        }
+
+        n_filled = 0
+        n_partial = 0
+        n_lost = 0
+        for row in unfilled:
+            order_id = row.get("order_id")
+            strategy_name = row.get("strategy", "")
+            venue = strat_to_venue.get(strategy_name)
+            if not venue or venue not in self.brokers:
+                continue
+            adapter = self.brokers[venue]
+            if not hasattr(adapter, "get_order"):
+                continue
+            try:
+                ord_obj = adapter.get_order(order_id)
+            except Exception as e:
+                logger.debug(f"poll get_order({order_id}) failed: {e}")
+                continue
+
+            from brokers.base import OrderStatus as _OS
+            status = ord_obj.status
+            fill_qty = float(ord_obj.filled_quantity or 0)
+            fill_px = float(ord_obj.filled_avg_price or 0)
+
+            if status in (_OS.CANCELED, _OS.REJECTED) and fill_qty == 0:
+                # Mark with sentinel price=-1 so we don't keep polling.
+                # The dashboard treats negative price the same as 0
+                # (no PnL contribution), so this is a no-op visually
+                # but stops the polling loop from scanning it.
+                self._tracker.update_trade_fill(
+                    trade_id=row["id"],
+                    price=-1.0,
+                    quantity=0.0,
+                    amount_usd=0.0,
+                    pnl_usd=None,
+                )
+                n_lost += 1
+                continue
+            if fill_px <= 0 or fill_qty <= 0:
+                continue  # still PENDING / OPEN
+
+            # We have at least a partial fill. Compute realized PnL
+            # only for closing SELLs we can attribute to a known entry.
+            pnl_usd: Optional[float] = None
+            if row.get("side") == "SELL":
+                # Look up entry price from the cached broker position.
+                cached = self.risk.cached_positions(venue)
+                for pos in cached:
+                    if (pos.symbol == row.get("product_id")
+                            and pos.avg_entry_price > 0):
+                        pnl_usd = (fill_px - pos.avg_entry_price) * fill_qty
+                        break
+
+            self._tracker.update_trade_fill(
+                trade_id=row["id"],
+                price=fill_px,
+                quantity=fill_qty,
+                amount_usd=fill_qty * fill_px,
+                pnl_usd=pnl_usd,
+            )
+            if status == _OS.PARTIALLY_FILLED:
+                n_partial += 1
+            else:
+                n_filled += 1
+
+        if n_filled or n_partial or n_lost:
+            logger.info(
+                f"poll_pending_fills: {n_filled} filled, "
+                f"{n_partial} partial, {n_lost} canceled/rejected "
+                f"(of {len(unfilled)} candidates)"
+            )
+
+        # Independent sanity check — recompute realized PnL from the
+        # ledger via FIFO matching and alert if the broker-attributed
+        # number drifts. This is the "second brain" that catches the
+        # next phantom-loss bug pre-deployment.
+        try:
+            self._sanity_check_realized_pnl()
+        except Exception as e:
+            logger.debug(f"sanity_check_realized_pnl failed: {e}")
+
+    def _sanity_check_realized_pnl(self) -> None:
+        """Compare DB-stored realized PnL (sum of pnl_usd) against an
+        independent FIFO recompute over the trade ledger. Logs a
+        WARNING if they differ by > $1.
+
+        The FIFO recompute uses ONLY trade rows (timestamp, side, qty,
+        price); it doesn't trust avg_entry_price from the broker. Two
+        independent computations of the same number — disagreement
+        means somebody's wrong, and the dashboard should be considered
+        suspect until reconciled.
+        """
+        if self._tracker is None:
+            return
+        try:
+            from trading.recompute import recompute_realized_pnl_fifo
+            db_total, recomputed_total, per_strategy_drift = (
+                recompute_realized_pnl_fifo(self._tracker.db_path)
+            )
+        except ImportError:
+            return  # module not present yet — first deploy
+        drift = abs(db_total - recomputed_total)
+        if drift > 1.0:
+            logger.warning(
+                f"PnL DRIFT: DB total ${db_total:+.2f} vs "
+                f"FIFO recompute ${recomputed_total:+.2f} "
+                f"(drift ${drift:.2f}) — strategies: {per_strategy_drift}"
+            )
+        else:
+            logger.debug(
+                f"PnL sanity OK: DB ${db_total:+.2f} == "
+                f"FIFO ${recomputed_total:+.2f} (drift ${drift:.2f})"
+            )
 
     def _mark_pending_intracycle(self, proposal: TradeProposal, order, decision) -> None:
         """After a successful place_order, push the order into

@@ -1,0 +1,51 @@
+name: Tests
+
+# Gate every push and PR on the regression + unit test suite. Once
+# this is green, the orchestrator and dashboard workflows are free to
+# run on the same SHA.
+#
+# When CI fails, the orchestrator and dashboard workflows still run
+# (they live on independent triggers) — but the email subject line
+# from the failed test run is the canary that tells you a real bug
+# slipped through. Treat any RED on this workflow as a do-not-deploy.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/daily-ai-news-digest-vcaC1
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run regression + unit tests
+        env:
+          PYTHONIOENCODING: utf-8
+        run: pytest tests/ -v --tb=short
+
+      - name: Coverage report (informational)
+        if: always()
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          pytest tests/ --cov=src --cov-report=term-missing \
+            --cov-report=xml || true
+        continue-on-error: true
