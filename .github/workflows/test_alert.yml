@@ -1,0 +1,76 @@
+name: Test Alert
+
+# Manually-triggered workflow for verifying alert delivery (Slack /
+# Discord / email / SMS-via-carrier-gateway). Posts a test message
+# through every configured sink. Safe to run anytime — does not
+# touch the orchestrator, broker accounts, or live state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      severity:
+        description: "Alert severity to test"
+        required: true
+        default: "info"
+        type: choice
+        options:
+          - info
+          - warning
+          - critical
+      message:
+        description: "Custom message (optional)"
+        required: false
+        default: "Test alert from manual dispatch"
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install minimal deps
+        run: pip install requests
+
+      - name: Fire alert
+        env:
+          # Same plumbing the orchestrator uses
+          ALERT_WEBHOOK_URL:    ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_TYPE:   ${{ vars.ALERT_WEBHOOK_TYPE }}
+          ALERT_EMAIL_TO:       ${{ vars.ALERT_EMAIL_TO }}
+          SMTP_PASSWORD:        ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM:            ${{ vars.SMTP_FROM }}
+          SEVERITY:             ${{ inputs.severity }}
+          MESSAGE:              ${{ inputs.message }}
+        run: |
+          set -e
+          cd src
+          python -c "
+          import os, sys
+          sys.path.insert(0, '.')
+          from common.alerts import alert
+
+          severity = os.environ.get('SEVERITY', 'info')
+          message  = os.environ.get('MESSAGE', 'Test alert')
+
+          print('=== Configured sinks ===')
+          print(f'  ALERT_WEBHOOK_URL: {\"SET\" if os.environ.get(\"ALERT_WEBHOOK_URL\") else \"not set\"}')
+          print(f'  ALERT_EMAIL_TO:    {os.environ.get(\"ALERT_EMAIL_TO\", \"not set\")}')
+          print(f'  SMTP_PASSWORD:     {\"SET\" if os.environ.get(\"SMTP_PASSWORD\") else \"not set\"}')
+          print()
+          print(f'Firing [{severity}]: {message}')
+
+          delivered = alert(message, severity=severity)
+          print()
+          print(f'Delivered to at-least-one-sink: {delivered}')
+          if not delivered:
+              print()
+              print('NO SINK DELIVERED. Possible reasons:')
+              print('  - ALERT_EMAIL_TO repo variable not set (most common)')
+              print('  - SMTP_PASSWORD secret expired (Gmail App Password)')
+              print('  - All sinks rate-limited (10/min)')
+              sys.exit(1)
+          "
