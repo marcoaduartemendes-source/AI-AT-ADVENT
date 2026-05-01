@@ -181,28 +181,13 @@ def load_live_data() -> Dict:
             "trades": strat_trades,
         }
 
-    # Top-level totals
-    closed = [t for t in all_trades if t.get("pnl_usd") is not None]
-    total_pnl = sum(t["pnl_usd"] for t in closed)
-    entry_volume = sum(t["amount_usd"] for t in all_trades if t["side"] == "BUY")
-    summary = {
-        "label": "Live",
-        "n_trades": len(closed),
-        "wins": sum(1 for t in closed if t["pnl_usd"] > 0),
-        "losses": sum(1 for t in closed if t["pnl_usd"] <= 0),
-        "win_rate": (
-            sum(1 for t in closed if t["pnl_usd"] > 0) / len(closed) if closed else 0.0
-        ),
-        "total_pnl_usd": total_pnl,
-        "entry_volume_usd": entry_volume,
-        "return_on_volume_pct": (
-            total_pnl / entry_volume * 100 if entry_volume > 0 else 0.0
-        ),
-    }
-
     # Open positions — pull from BOTH the legacy open_positions table
     # AND the live broker adapters (Alpaca/Coinbase/Kalshi). Live broker
     # positions are the source of truth for current holdings.
+    # NOTE: positions MUST be loaded before the summary so we can fold
+    # unrealized P&L into the headline number — without that the
+    # dashboard shows $0 P&L even when we hold $25k of paper positions
+    # gaining/losing money in real time.
     open_pos_raw = []
     import sqlite3
     conn = sqlite3.connect(db_path)
@@ -211,17 +196,45 @@ def load_live_data() -> Dict:
     for r in rows:
         open_pos_raw.append(dict(r))
     conn.close()
-    # Live broker positions
+    # Live broker positions + per-broker account snapshots so the
+    # dashboard can render a "money on each broker" view.
+    by_broker: Dict[str, Dict] = {}
     try:
         from brokers.registry import build_brokers
         brokers = build_brokers()
         for venue_name, adapter in brokers.items():
+            broker_entry = {
+                "venue": venue_name,
+                "cash_usd": 0.0,
+                "buying_power_usd": 0.0,
+                "equity_usd": 0.0,
+                "invested_usd": 0.0,         # market value of open positions
+                "unrealized_pnl_usd": 0.0,
+                "n_positions": 0,
+                "available_pct": 0.0,         # cash / equity
+                "error": None,
+            }
+            # Account snapshot
+            try:
+                acct = adapter.get_account()
+                broker_entry["cash_usd"] = float(acct.cash_usd or 0)
+                broker_entry["buying_power_usd"] = float(acct.buying_power_usd or 0)
+                broker_entry["equity_usd"] = float(acct.equity_usd or 0)
+            except Exception as e:
+                logger.warning(f"  account snapshot {venue_name} failed: {e}")
+                broker_entry["error"] = str(e)[:200]
+            # Positions (also fold into open_pos_raw as before)
             try:
                 positions = adapter.get_positions()
             except Exception as e:
                 logger.warning(f"  live positions {venue_name} failed: {e}")
-                continue
+                positions = []
+                broker_entry["error"] = (broker_entry["error"] or "") + f" | positions: {e}"[:200]
             for p in positions:
+                mkt = (p.quantity or 0) * (p.market_price or 0)
+                broker_entry["invested_usd"] += mkt
+                broker_entry["unrealized_pnl_usd"] += (p.unrealized_pnl_usd or 0)
+                broker_entry["n_positions"] += 1
                 open_pos_raw.append({
                     "strategy": f"<{venue_name}>",
                     "product_id": p.symbol,
@@ -233,13 +246,53 @@ def load_live_data() -> Dict:
                     "unrealized_pnl_usd": p.unrealized_pnl_usd,
                     "venue": venue_name,
                 })
+            # Available % of equity (rough utilisation)
+            if broker_entry["equity_usd"] > 0:
+                broker_entry["available_pct"] = (
+                    broker_entry["cash_usd"] / broker_entry["equity_usd"] * 100
+                )
+            by_broker[venue_name] = broker_entry
     except Exception as e:
         logger.warning(f"Could not fetch live broker positions: {e}")
+
+    # Top-level totals — REALIZED + UNREALIZED so the dashboard reflects
+    # the actual P&L state (open positions moving up/down right now),
+    # not just trades that have round-tripped.
+    closed = [t for t in all_trades if t.get("pnl_usd") is not None]
+    realized_pnl = sum(t["pnl_usd"] for t in closed)
+    unrealized_pnl = sum(p.get("unrealized_pnl_usd", 0) or 0 for p in open_pos_raw)
+    market_value = sum(
+        (p.get("quantity", 0) or 0) * (p.get("market_price", 0) or 0)
+        for p in open_pos_raw
+    )
+    total_pnl = realized_pnl + unrealized_pnl
+    entry_volume = sum(t["amount_usd"] for t in all_trades if t["side"] == "BUY")
+    summary = {
+        "label": "Live",
+        "n_trades": len(closed),
+        "wins": sum(1 for t in closed if t["pnl_usd"] > 0),
+        "losses": sum(1 for t in closed if t["pnl_usd"] <= 0),
+        "win_rate": (
+            sum(1 for t in closed if t["pnl_usd"] > 0) / len(closed) if closed else 0.0
+        ),
+        # total_pnl_usd is the headline number on the dashboard — keep
+        # it as realized+unrealized so the user sees real-time P&L.
+        "total_pnl_usd": total_pnl,
+        "realized_pnl_usd": realized_pnl,
+        "unrealized_pnl_usd": unrealized_pnl,
+        "market_value_usd": market_value,
+        "n_open_positions": len(open_pos_raw),
+        "entry_volume_usd": entry_volume,
+        "return_on_volume_pct": (
+            total_pnl / entry_volume * 100 if entry_volume > 0 else 0.0
+        ),
+    }
 
     return {
         "trades": all_trades_sorted,
         "open_positions": open_pos_raw,
         "by_strategy": by_strategy,
+        "by_broker": by_broker,
         "equity_curve": eq,
         "summary": summary,
     }
@@ -599,14 +652,95 @@ function render(tab) {
 
   let html = `<div class="panel-wrap">`;
   html += `<div class="kpi-row">`;
-  html += kpi("Total P&L", fmtUSD(s.total_pnl_usd), `${s.n_trades} closed trades`, cls(s.total_pnl_usd));
-  html += kpi("Return on volume", fmtPct(s.return_on_volume_pct), `over $${s.entry_volume_usd.toFixed(0)} traded`, cls(s.return_on_volume_pct));
-  html += kpi("Win rate", (s.win_rate * 100).toFixed(1) + "%", `${s.wins}W / ${s.losses}L`);
-  html += kpi("Trade volume", "$" + s.entry_volume_usd.toFixed(0), `entry notional`);
-  if (isLive && DATA.live.open_positions.length) {
-    html += kpi("Open positions", DATA.live.open_positions.length, `live exposure`);
+  if (isLive) {
+    // Live tab: show realized + unrealized broken out so the user sees
+    // both "what closed trades have netted" and "what open positions
+    // are doing right now". Total P&L is the sum.
+    const totalPnl = s.total_pnl_usd;
+    const realPnl  = (s.realized_pnl_usd ?? s.total_pnl_usd);
+    const unrPnl   = (s.unrealized_pnl_usd ?? 0);
+    const mktVal   = (s.market_value_usd ?? 0);
+    const nOpen    = (s.n_open_positions ?? DATA.live.open_positions.length);
+    html += kpi("Total P&L",
+                fmtUSD(totalPnl),
+                `realized + unrealized`,
+                cls(totalPnl));
+    html += kpi("Unrealized P&L",
+                fmtUSD(unrPnl),
+                `${nOpen} open position${nOpen===1?"":"s"} · $${mktVal.toFixed(0)} market value`,
+                cls(unrPnl));
+    html += kpi("Realized P&L",
+                fmtUSD(realPnl),
+                `${s.n_trades} closed trade${s.n_trades===1?"":"s"}`,
+                cls(realPnl));
+    html += kpi("Win rate", (s.win_rate * 100).toFixed(1) + "%", `${s.wins}W / ${s.losses}L`);
+  } else {
+    html += kpi("Total P&L", fmtUSD(s.total_pnl_usd), `${s.n_trades} closed trades`, cls(s.total_pnl_usd));
+    html += kpi("Return on volume", fmtPct(s.return_on_volume_pct), `over $${s.entry_volume_usd.toFixed(0)} traded`, cls(s.return_on_volume_pct));
+    html += kpi("Win rate", (s.win_rate * 100).toFixed(1) + "%", `${s.wins}W / ${s.losses}L`);
+    html += kpi("Trade volume", "$" + s.entry_volume_usd.toFixed(0), `entry notional`);
   }
   html += `</div>`;
+
+  // Per-broker breakdown (live tab only) — show cash available,
+  // amount invested (market value of positions), and unrealized P&L
+  // for each broker. Lets the user see at a glance how much capital
+  // is sitting idle vs deployed on each venue.
+  if (isLive && d.by_broker && Object.keys(d.by_broker).length) {
+    html += `<div class="panel"><h2>By broker</h2>`;
+    html += `<table><thead><tr>
+      <th>Broker</th>
+      <th class="num">Cash available</th>
+      <th class="num">Buying power</th>
+      <th class="num">Invested</th>
+      <th class="num">Equity</th>
+      <th class="num">Unrealized P&L</th>
+      <th class="num">Positions</th>
+      <th class="num">Utilisation</th>
+    </tr></thead><tbody>`;
+    Object.values(d.by_broker).forEach(b => {
+      const utilPct = (b.equity_usd > 0)
+        ? ((b.invested_usd / b.equity_usd) * 100)
+        : 0;
+      const errBadge = b.error
+        ? ` <span class="pill stop" title="${b.error}">err</span>`
+        : "";
+      html += `<tr>
+        <td><strong>${b.venue}</strong>${errBadge}</td>
+        <td class="num">${fmtUSD(b.cash_usd)}</td>
+        <td class="num">${fmtUSD(b.buying_power_usd)}</td>
+        <td class="num">${fmtUSD(b.invested_usd)}</td>
+        <td class="num">${fmtUSD(b.equity_usd)}</td>
+        <td class="num ${cls(b.unrealized_pnl_usd)}">${fmtUSD(b.unrealized_pnl_usd)}</td>
+        <td class="num">${b.n_positions}</td>
+        <td class="num">${utilPct.toFixed(1)}%</td>
+      </tr>`;
+    });
+    // Totals row
+    const tot = Object.values(d.by_broker).reduce((a, b) => ({
+      cash_usd: a.cash_usd + b.cash_usd,
+      buying_power_usd: a.buying_power_usd + b.buying_power_usd,
+      invested_usd: a.invested_usd + b.invested_usd,
+      equity_usd: a.equity_usd + b.equity_usd,
+      unrealized_pnl_usd: a.unrealized_pnl_usd + b.unrealized_pnl_usd,
+      n_positions: a.n_positions + b.n_positions,
+    }), {cash_usd:0, buying_power_usd:0, invested_usd:0, equity_usd:0,
+        unrealized_pnl_usd:0, n_positions:0});
+    const totUtil = (tot.equity_usd > 0)
+      ? ((tot.invested_usd / tot.equity_usd) * 100)
+      : 0;
+    html += `<tr style="border-top: 2px solid var(--border); font-weight: 600;">
+      <td>TOTAL</td>
+      <td class="num">${fmtUSD(tot.cash_usd)}</td>
+      <td class="num">${fmtUSD(tot.buying_power_usd)}</td>
+      <td class="num">${fmtUSD(tot.invested_usd)}</td>
+      <td class="num">${fmtUSD(tot.equity_usd)}</td>
+      <td class="num ${cls(tot.unrealized_pnl_usd)}">${fmtUSD(tot.unrealized_pnl_usd)}</td>
+      <td class="num">${tot.n_positions}</td>
+      <td class="num">${totUtil.toFixed(1)}%</td>
+    </tr>`;
+    html += `</tbody></table></div>`;
+  }
 
   // Per-strategy P&L overview (always visible; cards)
   html += `<div class="panel"><h2>P&L by strategy</h2>`;
