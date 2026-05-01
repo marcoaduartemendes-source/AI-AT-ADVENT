@@ -95,6 +95,9 @@ class Orchestrator:
 
     def run_cycle(self, scout_signals: Optional[Dict] = None) -> CycleReport:
         report = CycleReport(timestamp=datetime.now(timezone.utc))
+        # Cache pending orders per venue for the whole cycle so we don't
+        # re-query the broker dozens of times.
+        self._pending_cache: Dict[str, Dict] = {}
         # If no scout_signals dict was passed in, hydrate from the bus
         if scout_signals is None:
             try:
@@ -191,14 +194,21 @@ class Orchestrator:
         Strategies subtract pending BUY notional from their buying intent
         and pending SELL qty from their selling intent — prevents
         double-firing across consecutive 5-min cycles before fills land.
+
+        Result is cached for the duration of one run_cycle().
         """
+        cache = getattr(self, "_pending_cache", None)
+        if cache is not None and venue in cache:
+            return cache[venue]
         adapter = self.brokers.get(venue)
         if adapter is None or not hasattr(adapter, "get_open_orders"):
+            if cache is not None: cache[venue] = {}
             return {}
         try:
             orders = adapter.get_open_orders()
         except Exception as e:
             logger.debug(f"[{venue}] get_open_orders failed: {e}")
+            if cache is not None: cache[venue] = {}
             return {}
         out: Dict[str, Dict] = {}
         for o in orders:
@@ -217,6 +227,8 @@ class Orchestrator:
                     entry["buy_notional_usd"] += o.quantity * o.filled_avg_price
             else:
                 entry["sell_qty"] += float(o.quantity or 0)
+        if cache is not None:
+            cache[venue] = out
         return out
 
     def _positions_for(self, venue: str) -> Dict:
@@ -288,6 +300,17 @@ class Orchestrator:
             proposal.notional_usd = decision.approved_notional_usd
             logger.info(f"[{proposal.strategy}] SCALED to "
                         f"${decision.approved_notional_usd:.2f}: {decision.reason}")
+
+        # Wash-trade guard: if there's any pending order on this symbol
+        # from a previous cycle, skip — let it resolve before we submit
+        # something on the opposite side.
+        pending_for_symbol = self._pending_orders_for(proposal.venue).get(
+            proposal.symbol, {})
+        if pending_for_symbol.get("n_pending", 0) > 0:
+            logger.info(f"[{proposal.strategy}] SKIP {proposal.symbol}: "
+                        f"{pending_for_symbol['n_pending']} pending order(s)")
+            report.proposals_rejected += 1
+            return
 
         report.proposals_approved += 1
 
