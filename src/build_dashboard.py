@@ -159,7 +159,9 @@ def load_live_data() -> Dict:
         ),
     }
 
-    # Open positions
+    # Open positions — pull from BOTH the legacy open_positions table
+    # AND the live broker adapters (Alpaca/Coinbase/Kalshi). Live broker
+    # positions are the source of truth for current holdings.
     open_pos_raw = []
     import sqlite3
     conn = sqlite3.connect(db_path)
@@ -168,6 +170,30 @@ def load_live_data() -> Dict:
     for r in rows:
         open_pos_raw.append(dict(r))
     conn.close()
+    # Live broker positions
+    try:
+        from brokers.registry import build_brokers
+        brokers = build_brokers()
+        for venue_name, adapter in brokers.items():
+            try:
+                positions = adapter.get_positions()
+            except Exception as e:
+                logger.warning(f"  live positions {venue_name} failed: {e}")
+                continue
+            for p in positions:
+                open_pos_raw.append({
+                    "strategy": f"<{venue_name}>",
+                    "product_id": p.symbol,
+                    "quantity": p.quantity,
+                    "cost_basis_usd": p.quantity * p.avg_entry_price,
+                    "entry_price": p.avg_entry_price,
+                    "entry_time": "",
+                    "market_price": p.market_price,
+                    "unrealized_pnl_usd": p.unrealized_pnl_usd,
+                    "venue": venue_name,
+                })
+    except Exception as e:
+        logger.warning(f"Could not fetch live broker positions: {e}")
 
     return {
         "trades": all_trades_sorted,

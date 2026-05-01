@@ -61,6 +61,16 @@ jobs:
           STOP_LOSS_PCT:       ${{ vars.STOP_LOSS_PCT || '0.02' }}
           TAKE_PROFIT_PCT:     ${{ vars.TAKE_PROFIT_PCT || '0.04' }}
           COOLDOWN_SECONDS:    ${{ vars.COOLDOWN_SECONDS || '900' }}
+          # Broker credentials so the dashboard can pull LIVE positions
+          # alongside the historical trade DB.
+          COINBASE_API_KEY:    ${{ secrets.COINBASE_API_KEY }}
+          COINBASE_API_SECRET: ${{ secrets.COINBASE_API_SECRET }}
+          ALPACA_API_KEY_ID:   ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_SECRET_KEY:   ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_ENDPOINT:     ${{ secrets.ALPACA_ENDPOINT }}
+          KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
+          KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
+          KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
         run: python src/build_dashboard.py
 
       - name: Commit dashboard if changed

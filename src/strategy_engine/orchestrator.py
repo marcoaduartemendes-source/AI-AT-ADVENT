@@ -28,6 +28,8 @@ from allocator.allocator import AllocationDecision, MetaAllocator
 from allocator.lifecycle import StrategyRegistry, StrategyState
 from brokers.base import BrokerAdapter, OrderSide, OrderType
 from risk.manager import Decision, RiskManager, RiskState
+from trading.performance import PerformanceTracker
+from trading.portfolio import TradeRecord
 
 from .base import Strategy, StrategyContext, TradeProposal
 
@@ -91,6 +93,13 @@ class Orchestrator:
         self.strategies = strategies          # {name: Strategy instance}
         self.cfg = config or OrchestratorConfig()
         self._last_rebalance_ts: float = 0.0
+        # PerformanceTracker writes every executed trade to
+        # trading_performance.db so the dashboard can render live P&L.
+        try:
+            self._tracker = PerformanceTracker()
+        except Exception as e:
+            logger.warning(f"PerformanceTracker init failed: {e}")
+            self._tracker = None
 
     # ── One cycle ----------------------------------------------------------
 
@@ -395,9 +404,51 @@ class Orchestrator:
                         f"status={order.status.value}")
             strategy.on_fill(proposal, {"order_id": order.order_id,
                                           "status": order.status.value})
+            # Record the trade so the dashboard can render it.
+            self._record_trade(proposal, order, decision)
         except Exception as e:
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
+
+    def _record_trade(self, proposal: TradeProposal, order, decision) -> None:
+        """Persist an executed trade to trading_performance.db so the
+        dashboard can render it. PnL is computed only on closing trades
+        with known entry — leave None otherwise; the dashboard handles
+        that gracefully."""
+        if self._tracker is None:
+            return
+        try:
+            # Best-effort price + quantity from the order response
+            price = (order.filled_avg_price or proposal.limit_price
+                     or 0.0)
+            qty = order.filled_quantity or order.quantity or proposal.quantity or 0.0
+            amount_usd = decision.approved_notional_usd
+            if not amount_usd and qty and price:
+                amount_usd = qty * price
+            # Compute realized PnL only for closing SELLs we can attribute.
+            pnl_usd = None
+            if proposal.is_closing and proposal.side == OrderSide.SELL:
+                # Look up entry price from cached positions
+                cached = self.risk.cached_positions(proposal.venue)
+                for pos in cached:
+                    if pos.symbol == proposal.symbol and pos.avg_entry_price > 0:
+                        pnl_usd = (price - pos.avg_entry_price) * (qty or pos.quantity)
+                        break
+            record = TradeRecord(
+                timestamp=datetime.now(timezone.utc),
+                strategy=proposal.strategy,
+                product_id=proposal.symbol,
+                side=proposal.side.value,
+                amount_usd=float(amount_usd or 0),
+                quantity=float(qty or 0),
+                price=float(price or 0),
+                order_id=order.order_id or "",
+                pnl_usd=pnl_usd,
+                dry_run=self.cfg.is_dry(proposal.venue, proposal.strategy),
+            )
+            self._tracker.record_trade(record)
+        except Exception as e:
+            logger.warning(f"[{proposal.strategy}] record_trade failed: {e}")
 
     def _emergency_close_all(self, report: CycleReport, state: RiskState) -> None:
         """KILL switch fired — every strategy closes its own positions."""
