@@ -93,6 +93,18 @@ def load_live_data() -> Dict:
 
     tracker = PerformanceTracker(db_path)
     all_trades = tracker.get_recent_trades(limit=10000)
+
+    # Sanitize bad PnL records: trades recorded at submission time
+    # before the broker reported a fill have price=0, which the old
+    # orchestrator code combined with avg_entry_price to produce
+    # gigantic phantom losses (e.g. (0 − $85) × 67 qty = −$5,746 on
+    # a SELL TLT that actually filled near $100). Until those get
+    # backfilled with real fill prices, treat them as un-realized.
+    for t in all_trades:
+        if (t.get("pnl_usd") is not None
+                and (not t.get("price") or t.get("price") == 0)):
+            t["pnl_usd"] = None
+
     # Sort ascending by time for an equity curve
     all_trades_sorted = sorted(all_trades, key=lambda t: t["timestamp"])
 

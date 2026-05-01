@@ -464,28 +464,61 @@ class Orchestrator:
 
     def _record_trade(self, proposal: TradeProposal, order, decision) -> None:
         """Persist an executed trade to trading_performance.db so the
-        dashboard can render it. PnL is computed only on closing trades
-        with known entry — leave None otherwise; the dashboard handles
-        that gracefully."""
+        dashboard can render it.
+
+        IMPORTANT: orders are recorded at submission time, before the
+        broker reports a fill. order.filled_avg_price is None and
+        proposal.limit_price is None for MARKET orders. We MUST NOT
+        compute realized PnL with price=0 — that produces gigantic
+        false losses like `(0 − entry_$85) × 67 qty = −$5,746`.
+
+        Fall-back price for the trade record (cosmetic only, used to
+        display a sensible price column on the dashboard) is the
+        cached market_price of the position. Realized PnL is left as
+        None until the order fills and a follow-up cycle attributes
+        it — the dashboard treats None correctly (excluded from
+        win/loss totals).
+        """
         if self._tracker is None:
             return
         try:
-            # Best-effort price + quantity from the order response
-            price = (order.filled_avg_price or proposal.limit_price
-                     or 0.0)
+            # Best-effort price for the cosmetic price column. Cached
+            # market_price >> 0 when the order is still PENDING.
+            cached = self.risk.cached_positions(proposal.venue)
+            cached_pos = next(
+                (p for p in cached if p.symbol == proposal.symbol),
+                None,
+            )
+            cached_mark = (
+                cached_pos.market_price
+                if (cached_pos and cached_pos.market_price > 0)
+                else 0.0
+            )
+            price = (
+                order.filled_avg_price
+                or proposal.limit_price
+                or cached_mark
+                or 0.0
+            )
             qty = order.filled_quantity or order.quantity or proposal.quantity or 0.0
             amount_usd = decision.approved_notional_usd
             if not amount_usd and qty and price:
                 amount_usd = qty * price
-            # Compute realized PnL only for closing SELLs we can attribute.
+
+            # Realized PnL: ONLY when we have a genuine fill price
+            # (not 0, not the cached mark — those don't reflect what
+            # actually executed). For now leave None; a future
+            # follow-up that polls the order for fills can backfill.
             pnl_usd = None
-            if proposal.is_closing and proposal.side == OrderSide.SELL:
-                # Look up entry price from cached positions
-                cached = self.risk.cached_positions(proposal.venue)
-                for pos in cached:
-                    if pos.symbol == proposal.symbol and pos.avg_entry_price > 0:
-                        pnl_usd = (price - pos.avg_entry_price) * (qty or pos.quantity)
-                        break
+            real_fill = order.filled_avg_price
+            if (real_fill and real_fill > 0
+                    and proposal.is_closing
+                    and proposal.side == OrderSide.SELL
+                    and cached_pos and cached_pos.avg_entry_price > 0):
+                pnl_usd = (real_fill - cached_pos.avg_entry_price) * (
+                    qty or cached_pos.quantity
+                )
+
             record = TradeRecord(
                 timestamp=datetime.now(timezone.utc),
                 strategy=proposal.strategy,
