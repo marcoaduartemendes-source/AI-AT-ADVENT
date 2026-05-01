@@ -94,6 +94,10 @@ jobs:
           KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
+          # Polygon.io for PEAD + commodity backtests. Optional —
+          # backtests gracefully skip with note="POLYGON_API_KEY not
+          # set" if the secret isn't configured.
+          POLYGON_API_KEY:     ${{ secrets.POLYGON_API_KEY }}
         run: python src/build_dashboard.py
 
       - name: Commit dashboard if changed

@@ -31,13 +31,15 @@ _FEE_RATE = _FEE_BPS / 10000
 
 
 # Strategies whose backtest needs data we don't have (yet).
+# `pead` MOVED to a real backtest (uses Polygon /vX/reference/financials —
+# see pead_backtest.py). The remaining 5 still need data feeds we
+# haven't wired up.
 UNBACKTESTABLE = {
     "crypto_funding_carry":   "needs historical perp funding-rate series (Coinbase doesn't expose)",
     "crypto_basis_trade":     "needs historical futures vs spot snapshots",
     "commodity_carry":        "needs historical futures-curve term structure",
     "kalshi_calibration_arb": "needs historical Kalshi market resolutions",
     "macro_kalshi":           "needs historical Kalshi macro events",
-    "pead":                   "needs historical earnings surprises (Sharadar/Estimize)",
 }
 
 
@@ -466,11 +468,18 @@ def backtest_vol_managed_overlay(window_days: int) -> BacktestSummary:
 # ─── Dispatch ─────────────────────────────────────────────────────────────
 
 
+def _pead_dispatch(window_days: int) -> BacktestSummary:
+    """Lazy-import to avoid pulling Polygon at module-load time."""
+    from .pead_backtest import backtest_pead
+    return backtest_pead(window_days)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "risk_parity_etf": backtest_risk_parity_etf,
     "crypto_xsmom": backtest_crypto_xsmom,
     "vol_managed_overlay": backtest_vol_managed_overlay,
+    "pead": _pead_dispatch,
 }
 
 
