@@ -346,16 +346,17 @@ class Orchestrator:
                     continue
                 avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
                                 if pos.raw else pos.quantity)
-                if proposal.quantity and proposal.quantity > avail:
+                if proposal.quantity and proposal.quantity > avail * 0.95:
                     if avail <= 0:
                         logger.info(f"[{proposal.strategy}] SKIP SELL "
                                     f"{proposal.symbol}: 0 qty available")
                         report.proposals_rejected += 1
                         return
+                    new_qty = avail * 0.95   # 5% buffer
                     logger.info(f"[{proposal.strategy}] CLAMP SELL "
                                 f"{proposal.symbol} qty {proposal.quantity:.4f} "
-                                f"→ {avail:.4f} (qty_available)")
-                    proposal.quantity = avail
+                                f"→ {new_qty:.4f} (qty_available={avail:.4f})")
+                    proposal.quantity = new_qty
                 # Also clamp notional-based sells
                 if proposal.notional_usd and pos.market_price > 0:
                     needed_qty = proposal.notional_usd / pos.market_price
@@ -365,7 +366,7 @@ class Orchestrator:
                                         f"{proposal.symbol}: 0 qty available")
                             report.proposals_rejected += 1
                             return
-                        new_notional = avail * pos.market_price * 0.99  # 1% buffer
+                        new_notional = avail * pos.market_price * 0.95  # 5% buffer for price drift
                         logger.info(f"[{proposal.strategy}] CLAMP SELL "
                                     f"{proposal.symbol} notional "
                                     f"${proposal.notional_usd:.2f} → "
