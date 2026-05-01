@@ -339,39 +339,50 @@ class Orchestrator:
         # SELL-quantity guard: clamp SELL orders to qty_available so we
         # don't request more than the broker permits (HTTP 403
         # "insufficient qty available for order").
+        #
+        # Why we always convert to a fixed QTY (never let notional pass
+        # through): when a proposal is notional-based, Alpaca's server
+        # converts notional → qty using its CURRENT inside price, which
+        # can differ from the cached price we used to compute the clamp.
+        # A 1-2% intra-cycle price drop can push the server-derived qty
+        # above qty_available even though our notional-clamp looked safe.
+        # By forcing the qty path on the broker, the clamp becomes
+        # authoritative. 10% buffer (was 5%) absorbs partial fills from
+        # earlier in the cycle and any remaining snapshot staleness.
         if proposal.side == OrderSide.SELL:
             cached = self.risk.cached_positions(proposal.venue)
+            BUFFER = 0.90  # keep 10% safety margin under qty_available
             for pos in cached:
                 if pos.symbol != proposal.symbol:
                     continue
                 avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
                                 if pos.raw else pos.quantity)
-                if proposal.quantity and proposal.quantity > avail * 0.95:
-                    if avail <= 0:
-                        logger.info(f"[{proposal.strategy}] SKIP SELL "
-                                    f"{proposal.symbol}: 0 qty available")
-                        report.proposals_rejected += 1
-                        return
-                    new_qty = avail * 0.95   # 5% buffer
+                if avail <= 0:
+                    logger.info(f"[{proposal.strategy}] SKIP SELL "
+                                f"{proposal.symbol}: 0 qty available")
+                    report.proposals_rejected += 1
+                    return
+
+                # Resolve the requested qty (explicit or derived from
+                # notional via cached market price).
+                requested_qty = proposal.quantity
+                if not requested_qty and proposal.notional_usd and pos.market_price > 0:
+                    requested_qty = proposal.notional_usd / pos.market_price
+                if not requested_qty:
+                    break
+
+                max_qty = avail * BUFFER
+                if requested_qty > max_qty:
                     logger.info(f"[{proposal.strategy}] CLAMP SELL "
-                                f"{proposal.symbol} qty {proposal.quantity:.4f} "
-                                f"→ {new_qty:.4f} (qty_available={avail:.4f})")
-                    proposal.quantity = new_qty
-                # Also clamp notional-based sells
-                if proposal.notional_usd and pos.market_price > 0:
-                    needed_qty = proposal.notional_usd / pos.market_price
-                    if needed_qty > avail:
-                        if avail <= 0:
-                            logger.info(f"[{proposal.strategy}] SKIP SELL "
-                                        f"{proposal.symbol}: 0 qty available")
-                            report.proposals_rejected += 1
-                            return
-                        new_notional = avail * pos.market_price * 0.95  # 5% buffer for price drift
-                        logger.info(f"[{proposal.strategy}] CLAMP SELL "
-                                    f"{proposal.symbol} notional "
-                                    f"${proposal.notional_usd:.2f} → "
-                                    f"${new_notional:.2f}")
-                        proposal.notional_usd = new_notional
+                                f"{proposal.symbol} qty {requested_qty:.4f} "
+                                f"→ {max_qty:.4f} "
+                                f"(qty_available={avail:.4f}, buffer=10%)")
+                    proposal.quantity = max_qty
+                else:
+                    proposal.quantity = requested_qty
+                # Force qty path on the broker so its server-side
+                # notional→qty conversion can't drift back over.
+                proposal.notional_usd = None
                 break
 
         report.proposals_approved += 1
