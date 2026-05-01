@@ -95,18 +95,39 @@ class CryptoBasisTrade(Strategy):
                 fut_side = OrderSide.SELL if annualized_bps > 0 else OrderSide.BUY
                 reason = (f"basis {annualized_bps:.0f}bps APR "
                           f"({days_to_exp}d to expiry) — open")
+
+                # Coinbase MARKET BUYs take notional (quote_size); MARKET
+                # SELLs take quantity (base_size). We must size each leg
+                # in the appropriate units up-front — passing notional to
+                # a SELL would fail with "Coinbase MARKET SELL requires
+                # quantity".
+                spot_qty = per_leg / spot_price if spot_price else 0.0
+                fut_qty = per_leg / future_price if future_price else 0.0
+                spot_kwargs = (
+                    {"notional_usd": per_leg}
+                    if spot_side == OrderSide.BUY
+                    else {"quantity": spot_qty}
+                )
+                fut_kwargs = (
+                    {"notional_usd": per_leg}
+                    if fut_side == OrderSide.BUY
+                    else {"quantity": fut_qty}
+                )
+
                 proposals.append(TradeProposal(
                     strategy=self.name, venue=self.venue, symbol=spot_sym,
                     side=spot_side, order_type=OrderType.MARKET,
-                    notional_usd=per_leg, confidence=0.85, reason=reason,
+                    confidence=0.85, reason=reason,
                     metadata={"leg": "spot", "annualized_bps": annualized_bps},
+                    **spot_kwargs,
                 ))
                 proposals.append(TradeProposal(
                     strategy=self.name, venue=self.venue,
                     symbol=front["product_id"],
                     side=fut_side, order_type=OrderType.MARKET,
-                    notional_usd=per_leg, confidence=0.85, reason=reason,
+                    confidence=0.85, reason=reason,
                     metadata={"leg": "future", "annualized_bps": annualized_bps},
+                    **fut_kwargs,
                 ))
             elif in_pos and abs(annualized_bps) < EXIT_BASIS_BPS:
                 # Basis decayed — close
