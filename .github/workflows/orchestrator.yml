@@ -67,7 +67,15 @@ jobs:
           CRITICAL_DD_PCT:         ${{ vars.CRITICAL_DD_PCT || '0.10' }}
           WARNING_DD_PCT:          ${{ vars.WARNING_DD_PCT || '0.05' }}
           # Out-of-band alerts on KILL switch + PnL drift. Optional —
-          # silently logs to stdout if neither secret is set.
+          # silently logs to stdout if NONE of these are set. Multiple
+          # sinks can be enabled simultaneously; whichever delivers
+          # first wins.
+          #   Webhook (Slack/Discord/etc.):
           ALERT_WEBHOOK_URL:       ${{ secrets.ALERT_WEBHOOK_URL }}
           ALERT_WEBHOOK_TYPE:      ${{ vars.ALERT_WEBHOOK_TYPE }}
+          #   Email or carrier-SMS-gateway via Gmail (reuses the daily
+          #   digest's SMTP_PASSWORD):
+          ALERT_EMAIL_TO:          ${{ vars.ALERT_EMAIL_TO }}
+          SMTP_PASSWORD:           ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM:               ${{ vars.SMTP_FROM }}
         run: python src/run_orchestrator.py --once
