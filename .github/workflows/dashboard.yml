@@ -73,4 +73,15 @@ jobs:
             exit 0
           fi
           git commit -m "chore: refresh trading dashboard"
-          git push
+          # Push with rebase + retry to handle the race against
+          # concurrent commits (orchestrator state cache, strategy edits).
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin claude/daily-ai-news-digest-vcaC1 || true
+            if git push; then
+              echo "Push succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying…"
+            sleep $((attempt * 3))
+          done
+          echo "All push attempts failed"; exit 1
