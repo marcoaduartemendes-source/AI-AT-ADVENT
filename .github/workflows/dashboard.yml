@@ -2,7 +2,7 @@ name: Build Dashboard
 
 on:
   schedule:
-    - cron: "30 */6 * * *"   # every 6 hours, offset to avoid trading-cron contention
+    - cron: "*/15 * * * *"   # every 15 minutes — dashboard must reflect live state
   workflow_dispatch:
 
 concurrency:
@@ -29,24 +29,47 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore legacy trading database (read-only)
+      - name: Restore legacy trading database (read-only) — fallback only
+        # We restore the *legacy* bot's trading DB FIRST, then let the
+        # orchestrator-state restore (next step) overwrite it. The
+        # orchestrator now writes every multi-strategy trade to
+        # data/trading_performance.db via PerformanceTracker.record_trade,
+        # so its copy is the authoritative source for the dashboard.
+        # The legacy DB only matters if the orchestrator hasn't run yet.
         uses: actions/cache/restore@v4
         with:
           path: data/trading_performance.db
           key: trading-db-readonly-placeholder
           restore-keys: trading-db-
 
-      - name: Restore orchestrator state databases (read-only)
-        # NOTE: deliberately exclude data/trading_performance.db here so we
-        # don't overwrite the legacy bot's live-trade history that the
-        # previous step (trading-db-) just restored.
+      - name: Restore orchestrator state databases (authoritative)
+        # This MUST run AFTER the legacy restore so its
+        # data/trading_performance.db wins. The orchestrator's
+        # trading_performance.db contains all trades across all
+        # strategies / brokers (Coinbase, Alpaca, Kalshi).
+        # Path list MUST match the orchestrator workflow's save list
+        # exactly or actions/cache will skip the restore.
         uses: actions/cache/restore@v4
         with:
           path: |
             data/risk_state.db
             data/allocator.db
-            data/signal_bus.db
+            data/trading_performance.db
           key: orchestrator-state-readonly-placeholder
+          restore-keys: orchestrator-state-
+
+      - name: Restore signal bus (from scouts workflow)
+        # The scouts workflow saves under key
+        # orchestrator-state-<n>-scouts with this 4-path signature.
+        # Path list MUST match exactly for the lookup to hit.
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/signal_bus.db
+            data/risk_state.db
+            data/allocator.db
+            data/trading_performance.db
+          key: orchestrator-state-readonly-placeholder-scouts
           restore-keys: orchestrator-state-
 
       - name: List restored DBs
