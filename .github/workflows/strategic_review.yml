@@ -27,19 +27,32 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Restore state databases
+      # Three separate restores because each cache was saved by a different
+      # workflow with a different path list — actions/cache requires the
+      # path list to match between save and restore for the lookup to hit.
+
+      - name: Restore orchestrator state (risk + allocator + perf)
         uses: actions/cache/restore@v4
         with:
           path: |
             data/risk_state.db
             data/allocator.db
-            data/signal_bus.db
             data/trading_performance.db
-            data/strategic_review.db
-          key: orchestrator-state-${{ github.run_number }}-review
+          key: orchestrator-state-readonly-placeholder
           restore-keys: orchestrator-state-
 
-      - name: Restore review database (fallback if no orchestrator-state hit)
+      - name: Restore signal bus (from scouts workflow)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/signal_bus.db
+            data/risk_state.db
+            data/allocator.db
+            data/trading_performance.db
+          key: orchestrator-state-readonly-placeholder-scouts
+          restore-keys: orchestrator-state-
+
+      - name: Restore review database
         uses: actions/cache/restore@v4
         with:
           path: data/strategic_review.db
