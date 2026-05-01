@@ -82,4 +82,14 @@ jobs:
           PUSHOVER_USER_KEY:       ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_APP_TOKEN:      ${{ secrets.PUSHOVER_APP_TOKEN }}
           PUSHOVER_DEVICE:         ${{ vars.PUSHOVER_DEVICE }}
+          # Supabase Postgres for state persistence. Optional —
+          # falls back to SQLite when unset. When set, every trade /
+          # equity snapshot / kill-switch event dual-writes to
+          # Postgres so we have point-in-time recovery + a real DB
+          # for the dashboard to query.
+          SUPABASE_URL:            ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:    ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # Tag rows with which deployment recorded them — useful
+          # during the GH→Hetzner transition window.
+          DEPLOY_ENV:              github-actions
         run: python src/run_orchestrator.py --once

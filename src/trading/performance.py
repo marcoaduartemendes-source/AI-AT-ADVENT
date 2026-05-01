@@ -12,7 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class PerformanceTracker:
-    """Tracks all trades in SQLite and computes strategy metrics."""
+    """Tracks all trades in SQLite — and, when SUPABASE_URL +
+    SUPABASE_SERVICE_KEY are set, dual-writes every insert/update
+    to Supabase Postgres as well.
+
+    Dual-write rationale: SQLite stays the source of truth until we've
+    seen ≥1 week of clean Postgres writes. Reads still come from
+    SQLite during the migration window. After cutover (a separate
+    explicit step), Postgres becomes primary and SQLite drops to
+    a local cache."""
 
     def __init__(self, db_path: str | None = None):
         self.db_path = os.path.abspath(
@@ -21,6 +29,19 @@ class PerformanceTracker:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
         logger.info(f"Performance DB: {self.db_path}")
+
+        # Optional secondary sink — Supabase. Lazily-imported so the
+        # tracker doesn't pull `requests` at module-load time when
+        # nothing's configured.
+        self._supabase = None
+        try:
+            from common.supabase_store import SupabaseStore
+            store = SupabaseStore()
+            if store.is_configured():
+                self._supabase = store
+                logger.info("Supabase dual-write enabled (PerformanceTracker)")
+        except ImportError:
+            pass    # supabase_store missing — older deployment
 
     @contextmanager
     def _conn(self):
@@ -105,6 +126,22 @@ class PerformanceTracker:
                     1 if record.dry_run else 0,
                 ),
             )
+        # Dual-write to Supabase (if configured). Failure logs but
+        # never raises — SQLite is still the source of truth.
+        if self._supabase is not None:
+            self._supabase.insert_trade({
+                "timestamp": record.timestamp.isoformat(),
+                "strategy": record.strategy,
+                "product_id": record.product_id,
+                "side": record.side,
+                "amount_usd": record.amount_usd,
+                "quantity": record.quantity,
+                "price": record.price,
+                "order_id": record.order_id,
+                "pnl_usd": record.pnl_usd,
+                "dry_run": bool(record.dry_run),
+                "recorded_via": os.environ.get("DEPLOY_ENV", "github-actions"),
+            })
 
     # ── Fill backfill (Phase 0 — fill polling) ───────────────────────────────
 
@@ -142,7 +179,16 @@ class PerformanceTracker:
         """Backfill a trade row with real fill data once the broker
         reports the order as filled. Sets price, quantity, amount_usd,
         and (for closing SELLs that we can attribute) pnl_usd."""
+        # Read the row first so we can identify it on Postgres by
+        # order_id (different primary key spaces between SQLite and
+        # Postgres). Tiny extra read; keeps writes idempotent.
+        order_id = None
         with self._conn() as conn:
+            row = conn.execute(
+                "SELECT order_id FROM trades WHERE id = ?", (trade_id,),
+            ).fetchone()
+            if row:
+                order_id = row["order_id"]
             conn.execute(
                 """
                 UPDATE trades
@@ -153,6 +199,14 @@ class PerformanceTracker:
                  WHERE id = ?
                 """,
                 (price, quantity, amount_usd, pnl_usd, trade_id),
+            )
+        # Dual-write the backfill to Supabase by order_id
+        if self._supabase is not None and order_id and order_id != "unknown":
+            self._supabase.update_trade_fill(
+                order_id=order_id,
+                price=price, quantity=quantity,
+                amount_usd=amount_usd, pnl_usd=pnl_usd,
+                fill_status="FILLED" if price > 0 else "CANCELED",
             )
 
     # ── Position persistence ─────────────────────────────────────────────────
