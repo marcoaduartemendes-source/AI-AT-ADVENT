@@ -44,6 +44,11 @@ class StrategyContext:
     risk_multiplier: float               # informational; risk layer applies sizing
     open_positions: Dict                 # {symbol: position_dict}
     scout_signals: Dict                  # {scout_name: signal_payload}
+    # Pending broker-side orders that haven't filled yet — strategies must
+    # subtract this from their buying intent or they over-trade across
+    # cycles before fills land.
+    pending_orders: Dict = field(default_factory=dict)
+    # ^^ {symbol: {"buy_notional_usd", "sell_qty"}}
     extra: Dict = field(default_factory=dict)
 
 

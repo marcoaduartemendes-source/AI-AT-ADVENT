@@ -77,6 +77,9 @@ class TSMomETF(Strategy):
             current_qty = ctx.open_positions.get(symbol, {}).get("quantity", 0.0)
             current_price = float(candles[-1].close)
             current_usd = current_qty * current_price
+            # Subtract pending BUY notional so we don't double-fire
+            pending = ctx.pending_orders.get(symbol, {})
+            committed_usd = current_usd + pending.get("buy_notional_usd", 0.0)
 
             # Signal: long if 12-1m momentum > 0, else flat (no shorts in V1)
             target_usd = per_leg if ret_12_1 > 0 else 0.0
@@ -86,8 +89,11 @@ class TSMomETF(Strategy):
                 scaler = TARGET_VOL_PER_LEG / ann_vol
                 target_usd = target_usd * min(2.0, max(0.3, scaler))
 
-            delta_usd = target_usd - current_usd
+            delta_usd = target_usd - committed_usd
             if abs(delta_usd) < max(5.0, per_leg * 0.05):
+                continue
+            # Skip if there's already a pending BUY for this symbol
+            if pending.get("n_pending", 0) > 0 and delta_usd > 0:
                 continue
 
             side = OrderSide.BUY if delta_usd > 0 else OrderSide.SELL

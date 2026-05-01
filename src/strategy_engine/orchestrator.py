@@ -161,6 +161,7 @@ class Orchestrator:
                 risk_multiplier=state.multiplier.effective,
                 open_positions=self._positions_for(strategy.venue),
                 scout_signals=scout_signals.get(strategy.venue, {}),
+                pending_orders=self._pending_orders_for(strategy.venue),
             )
 
             try:
@@ -183,6 +184,40 @@ class Orchestrator:
             return True
         elapsed_hours = (time.time() - self._last_rebalance_ts) / 3600
         return elapsed_hours >= self.cfg.rebalance_cadence_hours
+
+    def _pending_orders_for(self, venue: str) -> Dict:
+        """Return aggregated pending-order notional per symbol.
+
+        Strategies subtract pending BUY notional from their buying intent
+        and pending SELL qty from their selling intent — prevents
+        double-firing across consecutive 5-min cycles before fills land.
+        """
+        adapter = self.brokers.get(venue)
+        if adapter is None or not hasattr(adapter, "get_open_orders"):
+            return {}
+        try:
+            orders = adapter.get_open_orders()
+        except Exception as e:
+            logger.debug(f"[{venue}] get_open_orders failed: {e}")
+            return {}
+        out: Dict[str, Dict] = {}
+        for o in orders:
+            sym = o.symbol
+            entry = out.setdefault(sym, {"buy_notional_usd": 0.0,
+                                         "sell_qty": 0.0,
+                                         "n_pending": 0})
+            entry["n_pending"] += 1
+            if o.side and o.side.value == "BUY":
+                # Best-effort notional: limit price × qty, or notional_usd
+                if o.notional_usd is not None:
+                    entry["buy_notional_usd"] += o.notional_usd
+                elif o.limit_price and o.quantity:
+                    entry["buy_notional_usd"] += o.limit_price * o.quantity
+                elif o.quantity and o.filled_avg_price:
+                    entry["buy_notional_usd"] += o.quantity * o.filled_avg_price
+            else:
+                entry["sell_qty"] += float(o.quantity or 0)
+        return out
 
     def _positions_for(self, venue: str) -> Dict:
         # Reuse the risk manager's per-cycle position cache; avoids hitting

@@ -221,6 +221,15 @@ class AlpacaAdapter(BrokerAdapter):
         d = self._get(f"/orders/{order_id}")
         return _parse_order(d, self.venue)
 
+    def get_open_orders(self) -> List[Order]:
+        """Open + pending orders. Strategies subtract pending notional from
+        their buying intent so they don't double-fire across cycles."""
+        try:
+            rows = self._get("/orders", params={"status": "open", "limit": 500})
+        except BrokerError:
+            return []
+        return [_parse_order(r, self.venue) for r in rows]
+
     def cancel_order(self, order_id: str) -> None:
         self._delete(f"/orders/{order_id}")
 

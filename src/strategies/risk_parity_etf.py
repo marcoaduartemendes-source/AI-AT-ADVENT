@@ -78,13 +78,22 @@ class RiskParityETF(Strategy):
 
             current_qty = ctx.open_positions.get(symbol, {}).get("quantity", 0.0)
             current_usd = current_qty * price
-            delta_usd = target_usd - current_usd
+            # Pending BUYs are not yet in positions but committed buying
+            # power — subtract from intent to avoid double-firing.
+            pending = ctx.pending_orders.get(symbol, {})
+            pending_buy_usd = pending.get("buy_notional_usd", 0.0)
+            committed_usd = current_usd + pending_buy_usd
+            delta_usd = target_usd - committed_usd
 
             # Skip near-target positions
             if abs(delta_usd) < ctx.target_alloc_usd * _MIN_REBALANCE_DELTA_PCT:
                 continue
             # Skip dust
             if abs(delta_usd) < 5.0:
+                continue
+            # Skip if there's already a pending BUY for this symbol
+            if pending.get("n_pending", 0) > 0 and delta_usd > 0:
+                logger.debug(f"[{self.name}] {symbol} has pending order(s); skip")
                 continue
 
             side = OrderSide.BUY if delta_usd > 0 else OrderSide.SELL
