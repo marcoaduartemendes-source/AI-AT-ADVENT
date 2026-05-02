@@ -78,9 +78,33 @@ class PerformanceTracker:
                     price        REAL    NOT NULL,
                     order_id     TEXT,
                     pnl_usd      REAL,
-                    dry_run      INTEGER NOT NULL DEFAULT 1
+                    dry_run      INTEGER NOT NULL DEFAULT 1,
+                    fill_status  TEXT    NOT NULL DEFAULT 'PENDING'
                 )
             """)
+            # Audit fix #2: fill_status migration for existing rows.
+            # SQLite ALTER TABLE ADD COLUMN is supported; we wrap in
+            # try/except so re-running on a fresh DB doesn't error.
+            try:
+                conn.execute(
+                    "ALTER TABLE trades ADD COLUMN fill_status TEXT "
+                    "NOT NULL DEFAULT 'PENDING'"
+                )
+                # Backfill fill_status from price for legacy rows:
+                #   price > 0 AND pnl_usd IS NOT NULL → FILLED
+                #   price == -1                       → CANCELED (sentinel)
+                #   price == 0                        → PENDING (default)
+                conn.execute(
+                    "UPDATE trades SET fill_status = 'FILLED' "
+                    "WHERE price > 0 AND fill_status = 'PENDING'"
+                )
+                conn.execute(
+                    "UPDATE trades SET fill_status = 'CANCELED' "
+                    "WHERE price < 0 AND fill_status = 'PENDING'"
+                )
+                logger.info("trades.fill_status column added + backfilled")
+            except sqlite3.OperationalError:
+                pass    # column already exists
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS snapshots (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,12 +130,23 @@ class PerformanceTracker:
     # ── Recording ────────────────────────────────────────────────────────────
 
     def record_trade(self, record: TradeRecord):
+        # Audit fix #2: every new trade starts as fill_status='PENDING'.
+        # The fill-polling loop transitions to FILLED / PARTIALLY_FILLED
+        # / CANCELED based on broker reports. PnL is ONLY computed when
+        # fill_status='FILLED' — eliminates the entire phantom-loss bug
+        # class permanently.
+        # If the caller knows the order is already filled at insert time
+        # (DRY_RUN paths, instant-fill mocks), they can pass a non-null
+        # pnl_usd and the trigger below auto-sets fill_status='FILLED'.
+        initial_status = "FILLED" if (record.pnl_usd is not None
+                                       and record.price > 0) else "PENDING"
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO trades
-                  (timestamp, strategy, product_id, side, amount_usd, quantity, price, order_id, pnl_usd, dry_run)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  (timestamp, strategy, product_id, side, amount_usd,
+                   quantity, price, order_id, pnl_usd, dry_run, fill_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.timestamp.isoformat(),
@@ -124,6 +159,7 @@ class PerformanceTracker:
                     record.order_id,
                     record.pnl_usd,
                     1 if record.dry_run else 0,
+                    initial_status,
                 ),
             )
         # Dual-write to Supabase (if configured). Failure logs but
@@ -140,31 +176,33 @@ class PerformanceTracker:
                 "order_id": record.order_id,
                 "pnl_usd": record.pnl_usd,
                 "dry_run": bool(record.dry_run),
+                "fill_status": initial_status,
                 "recorded_via": os.environ.get("DEPLOY_ENV", "github-actions"),
             })
 
     # ── Fill backfill (Phase 0 — fill polling) ───────────────────────────────
 
     def get_unfilled_trades(self, max_age_hours: int = 48) -> list[dict]:
-        """Return trade rows where the broker hadn't reported a fill at
-        record-time (price=0 or NULL), still within the polling window.
+        """Return trade rows the broker hasn't reported as filled yet.
 
-        These rows are candidates for a fill-status check the next time
-        the orchestrator polls. Older rows are presumed dead — orders
-        almost always either fill or get cancelled within a few hours;
-        anything older than `max_age_hours` is skipped to keep the
-        polling loop bounded.
+        Audit fix #2: query is now keyed on fill_status='PENDING'
+        (or 'PARTIALLY_FILLED' — partial fills should be re-polled
+        until they complete). Previously we matched on price=0,
+        which conflated "broker didn't fill yet" with "broker
+        reported a $0 fill" with "we never updated the price".
+        fill_status disambiguates.
         """
         with self._conn() as conn:
             rows = conn.execute(
                 """
                 SELECT id, timestamp, strategy, product_id, side,
-                       amount_usd, quantity, price, order_id, pnl_usd
+                       amount_usd, quantity, price, order_id, pnl_usd,
+                       fill_status
                 FROM trades
                 WHERE order_id IS NOT NULL
                   AND order_id != ''
                   AND order_id != 'unknown'
-                  AND (price IS NULL OR price = 0)
+                  AND fill_status IN ('PENDING', 'PARTIALLY_FILLED')
                   AND timestamp >= datetime('now', ?)
                 ORDER BY id ASC
                 """,
@@ -175,10 +213,25 @@ class PerformanceTracker:
     def update_trade_fill(
         self, trade_id: int, price: float, quantity: float,
         amount_usd: float, pnl_usd: float | None,
+        fill_status: str = "FILLED",
     ) -> None:
         """Backfill a trade row with real fill data once the broker
-        reports the order as filled. Sets price, quantity, amount_usd,
-        and (for closing SELLs that we can attribute) pnl_usd."""
+        reports the order as filled.
+
+        Audit fix #2: now sets fill_status as well. Caller passes one
+        of FILLED / PARTIALLY_FILLED / CANCELED / REJECTED. The
+        invariant that PnL is only meaningful for fill_status='FILLED'
+        is enforced here — if anyone passes a non-FILLED status with
+        a non-null pnl_usd, we null the PnL out so the dashboard
+        never displays speculative numbers.
+        """
+        if fill_status != "FILLED" and pnl_usd is not None:
+            logger.warning(
+                f"update_trade_fill: nulling pnl_usd ${pnl_usd:.2f} "
+                f"for non-FILLED status={fill_status} (id={trade_id})"
+            )
+            pnl_usd = None
+
         # Read the row first so we can identify it on Postgres by
         # order_id (different primary key spaces between SQLite and
         # Postgres). Tiny extra read; keeps writes idempotent.
@@ -192,13 +245,14 @@ class PerformanceTracker:
             conn.execute(
                 """
                 UPDATE trades
-                   SET price      = ?,
-                       quantity   = ?,
-                       amount_usd = ?,
-                       pnl_usd    = ?
+                   SET price       = ?,
+                       quantity    = ?,
+                       amount_usd  = ?,
+                       pnl_usd     = ?,
+                       fill_status = ?
                  WHERE id = ?
                 """,
-                (price, quantity, amount_usd, pnl_usd, trade_id),
+                (price, quantity, amount_usd, pnl_usd, fill_status, trade_id),
             )
         # Dual-write the backfill to Supabase by order_id
         if self._supabase is not None and order_id and order_id != "unknown":
@@ -206,7 +260,7 @@ class PerformanceTracker:
                 order_id=order_id,
                 price=price, quantity=quantity,
                 amount_usd=amount_usd, pnl_usd=pnl_usd,
-                fill_status="FILLED" if price > 0 else "CANCELED",
+                fill_status=fill_status,
             )
 
     # ── Position persistence ─────────────────────────────────────────────────

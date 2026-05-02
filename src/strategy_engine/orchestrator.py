@@ -551,16 +551,19 @@ class Orchestrator:
             fill_px = float(ord_obj.filled_avg_price or 0)
 
             if status in (_OS.CANCELED, _OS.REJECTED) and fill_qty == 0:
-                # Mark with sentinel price=-1 so we don't keep polling.
-                # The dashboard treats negative price the same as 0
-                # (no PnL contribution), so this is a no-op visually
-                # but stops the polling loop from scanning it.
+                # Audit fix #2: explicit fill_status='CANCELED' rather
+                # than the price=-1 sentinel. The query in
+                # get_unfilled_trades now keys on fill_status, so
+                # canceled rows are excluded automatically.
+                cancel_status = ("REJECTED" if status == _OS.REJECTED
+                                  else "CANCELED")
                 self._tracker.update_trade_fill(
                     trade_id=row["id"],
-                    price=-1.0,
+                    price=0.0,
                     quantity=0.0,
                     amount_usd=0.0,
                     pnl_usd=None,
+                    fill_status=cancel_status,
                 )
                 n_lost += 1
                 continue
@@ -569,8 +572,12 @@ class Orchestrator:
 
             # We have at least a partial fill. Compute realized PnL
             # only for closing SELLs we can attribute to a known entry.
+            # PnL is ONLY recorded when fill_status=='FILLED' (the
+            # invariant that audit fix #2 enforces in update_trade_fill).
             pnl_usd: float | None = None
-            if row.get("side") == "SELL":
+            new_status = ("PARTIALLY_FILLED"
+                          if status == _OS.PARTIALLY_FILLED else "FILLED")
+            if new_status == "FILLED" and row.get("side") == "SELL":
                 # Look up entry price from the cached broker position.
                 cached = self.risk.cached_positions(venue)
                 for pos in cached:
@@ -585,8 +592,9 @@ class Orchestrator:
                 quantity=fill_qty,
                 amount_usd=fill_qty * fill_px,
                 pnl_usd=pnl_usd,
+                fill_status=new_status,
             )
-            if status == _OS.PARTIALLY_FILLED:
+            if new_status == "PARTIALLY_FILLED":
                 n_partial += 1
             else:
                 n_filled += 1
