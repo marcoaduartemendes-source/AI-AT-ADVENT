@@ -33,7 +33,10 @@ from strategies import (
     CryptoXSMom,
     DividendGrowth,
     EarningsMomentum,
+    GapTrading,
+    InternationalsRotation,
     KalshiCalibrationArb,
+    LowVolAnomaly,
     MacroKalshi,
     PairsTrading,
     PEAD,
@@ -41,6 +44,7 @@ from strategies import (
     RSIMeanReversion,
     SectorRotation,
     TSMomETF,
+    TurnOfMonth,
     VolManagedOverlay,
 )
 from strategy_engine.orchestrator import Orchestrator, OrchestratorConfig
@@ -160,6 +164,34 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
         description="Quality-dividend ETF rotation by 90d return (P4)",
     ),
+    # ── Phase 4b — additional experimental strategies for Alpaca
+    # paper $100k (audit recommendation: experiment more, identify
+    # winners, double down). Each starts at 3% baseline; champion
+    # tier kicks in at Sharpe ≥ 1.0 + 10 trades.
+    StrategyMeta(
+        name="gap_trading",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        description="Overnight-gap reversion on S&P 100 (P4b)",
+    ),
+    StrategyMeta(
+        name="turn_of_month",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.01,
+        description="Calendar seasonal: SPY around month boundaries (P4b)",
+    ),
+    StrategyMeta(
+        name="low_vol_anomaly",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.15, min_alloc_pct=0.01,
+        description="Lowest-vol ETFs + stocks with positive trend (P4b)",
+    ),
+    StrategyMeta(
+        name="internationals_rotation",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        description="International country-ETF momentum vs SPY (P4b)",
+    ),
 ]
 
 # Backward compat alias used by older test scripts
@@ -187,6 +219,11 @@ def build_strategies(brokers):
         instances["bollinger_breakout"] = BollingerBreakout(al)
         instances["earnings_momentum"] = EarningsMomentum(al)
         instances["dividend_growth"] = DividendGrowth(al)
+        # Phase 4b — additional experimental sleeve
+        instances["gap_trading"] = GapTrading(al)
+        instances["turn_of_month"] = TurnOfMonth(al)
+        instances["low_vol_anomaly"] = LowVolAnomaly(al)
+        instances["internationals_rotation"] = InternationalsRotation(al)
     if "kalshi" in brokers:
         ks = brokers["kalshi"]
         instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)

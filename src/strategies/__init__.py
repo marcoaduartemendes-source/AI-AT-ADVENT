@@ -27,10 +27,15 @@ Phase 4 (W3, experimental — small initial allocations):
     earnings_momentum         — LIVE PEAD using FMP earnings calendar
     dividend_growth           — Quality-dividend ETF rotation
 
+Phase 4b (this session — adds 4 more, all on Alpaca paper):
+    gap_trading               — Overnight-gap reversion (long-only fades down-gaps)
+    turn_of_month             — Seasonal 4-7-day SPY long around month boundaries
+    low_vol_anomaly           — Long lowest realized-vol ETFs + stocks (positive trend)
+    internationals_rotation   — Country-ETF momentum vs SPY baseline
+
 The Phase-4 strategies all run on Alpaca paper. Allocator gives each
-a 5% baseline; the auto-Sharpe-tilt mechanism reallocates capital to
-winners over time. Strategies that earn a 30d Sharpe > 1.0 enter the
-"champion" tier and get 1.5× their baseline.
+a 4% baseline; the auto-Sharpe-tilt + champion-tier (≥1.0 Sharpe → 1.5×
+boost) reallocate capital to winners.
 """
 from .bollinger_breakout import BollingerBreakout
 from .commodity_carry import CommodityCarry
@@ -39,7 +44,10 @@ from .crypto_funding_carry import CryptoFundingCarry
 from .crypto_xsmom import CryptoXSMom
 from .dividend_growth import DividendGrowth
 from .earnings_momentum import EarningsMomentum
+from .gap_trading import GapTrading
+from .internationals_rotation import InternationalsRotation
 from .kalshi_calibration_arb import KalshiCalibrationArb
+from .low_vol_anomaly import LowVolAnomaly
 from .macro_kalshi import MacroKalshi
 from .pairs_trading import PairsTrading
 from .pead import PEAD
@@ -47,6 +55,7 @@ from .risk_parity_etf import RiskParityETF
 from .rsi_mean_reversion import RSIMeanReversion
 from .sector_rotation import SectorRotation
 from .tsmom_etf import TSMomETF
+from .turn_of_month import TurnOfMonth
 from .vol_managed_overlay import VolManagedOverlay
 
 __all__ = [
@@ -61,11 +70,16 @@ __all__ = [
     "RiskParityETF",
     "TSMomETF",
     "VolManagedOverlay",
-    # Phase 4 — experimental
+    # Phase 4 — experimental (Alpaca paper)
     "BollingerBreakout",
     "DividendGrowth",
     "EarningsMomentum",
     "PairsTrading",
     "RSIMeanReversion",
     "SectorRotation",
+    # Phase 4b — more experimental sleeve (Alpaca paper)
+    "GapTrading",
+    "InternationalsRotation",
+    "LowVolAnomaly",
+    "TurnOfMonth",
 ]
