@@ -68,14 +68,17 @@ class SupabaseStore:
                 timeout=self.timeout,
             )
             if resp.status_code >= 300:
+                # Include the constructed URL in the warning so a
+                # malformed SUPABASE_URL is obvious from CI logs.
+                # The key never appears here; only the URL path.
                 logger.warning(
-                    f"supabase POST {table} HTTP {resp.status_code}: "
+                    f"supabase POST {url} HTTP {resp.status_code}: "
                     f"{resp.text[:300]}"
                 )
                 return False
             return True
         except requests.RequestException as e:
-            logger.warning(f"supabase POST {table} failed: {e}")
+            logger.warning(f"supabase POST {url} failed: {e}")
             return False
 
     def _patch(self, table: str, query: str, payload: dict) -> bool:
