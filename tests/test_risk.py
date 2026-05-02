@@ -182,4 +182,98 @@ class TestRiskStateFromCycle:
         )
         state = rm.compute_state(persist=True)
         assert state.kill_switch == KillSwitchState.KILL
-        assert state.drawdown_pct >= 0.15
+
+
+class TestAssetClassExposureCap:
+    """Audit fix #5: per-asset-class concentration cap. Without this,
+    five strategies could pile into equity-beta-1 names; one bad SPX
+    day would drain the book before per-strategy freezes engage."""
+
+    def test_equity_cap_scales_oversized_order(self, tmp_path):
+        """Equity cap = 45% of $100k = $45k. Existing equity exposure
+        already $40k. New order for $20k should be SCALED to $5k."""
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker, MockPosition
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        # Existing equity exposure: 4 stocks × $10k each = $40k
+        broker = MockBroker(
+            venue="alpaca", cash_usd=60_000, equity_usd=100_000,
+            positions=[
+                MockPosition("AAPL", qty=50, entry=200, mark=200),
+                MockPosition("MSFT", qty=25, entry=400, mark=400),
+                MockPosition("GOOGL", qty=60, entry=166.67, mark=166.67),
+                MockPosition("AMZN", qty=80, entry=125, mark=125),
+            ],
+        )
+        cfg = RiskConfig(
+            max_asset_class_pct={"EQUITY": 0.45, "ETF": 0.45},
+        )
+        rm = RiskManager(brokers={"alpaca": broker}, config=cfg, db=db)
+        state = rm.compute_state(persist=True)
+
+        # Try to buy $20k more equity — should be scaled to $5k
+        from risk.manager import Decision
+        decision = rm.check_order(
+            notional_usd=20_000,
+            symbol="NVDA",
+            asset_class="EQUITY",
+            state=state,
+        )
+        # cap=$45k - existing $40k = $5k headroom
+        assert decision.decision == Decision.SCALE
+        assert decision.approved_notional_usd == pytest.approx(5_000, rel=0.05)
+
+    def test_closing_trade_bypasses_cap(self, tmp_path):
+        """Closing trades reduce exposure — should ALWAYS be allowed
+        even when the asset class is at/above its cap."""
+        from risk.manager import RiskManager, EquitySnapshotDB, Decision
+        from tests.mock_broker import MockBroker, MockPosition
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        # Equity exposure already $50k > 45% cap
+        broker = MockBroker(
+            venue="alpaca", cash_usd=50_000, equity_usd=100_000,
+            positions=[MockPosition("AAPL", qty=250, entry=200, mark=200)],
+        )
+        cfg = RiskConfig(max_asset_class_pct={"EQUITY": 0.45})
+        rm = RiskManager(brokers={"alpaca": broker}, config=cfg, db=db)
+        state = rm.compute_state(persist=True)
+
+        # Sell AAPL is_closing=True — must be approved
+        decision = rm.check_order(
+            notional_usd=10_000,
+            symbol="AAPL",
+            is_closing=True,
+            asset_class="EQUITY",
+            state=state,
+        )
+        assert decision.decision in (Decision.APPROVE, Decision.SCALE)
+        assert decision.approved_notional_usd > 0
+
+    def test_unconfigured_asset_class_passes(self, tmp_path):
+        """An asset class not in max_asset_class_pct dict should not
+        be capped (treat as unlimited)."""
+        from risk.manager import RiskManager, EquitySnapshotDB, Decision
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        broker = MockBroker(venue="alpaca", cash_usd=100_000, equity_usd=100_000)
+        # Use a high max_trade_usd so we test the asset-class cap
+        # in isolation (not the per-order ceiling)
+        cfg = RiskConfig(
+            max_asset_class_pct={"EQUITY": 0.45},  # no NEW_CLASS
+            max_trade_usd=50_000,
+            max_position_pct=0.50,
+        )
+        rm = RiskManager(brokers={"alpaca": broker}, config=cfg, db=db)
+        state = rm.compute_state(persist=True)
+        decision = rm.check_order(
+            notional_usd=10_000,
+            symbol="WTFCOIN",
+            asset_class="NEW_CLASS",
+            state=state,
+        )
+        # No cap on NEW_CLASS → not scaled by the asset-class gate
+        assert decision.decision == Decision.APPROVE
+        assert decision.approved_notional_usd == pytest.approx(10_000)

@@ -345,6 +345,14 @@ class Orchestrator:
         existing_usd = abs(existing.get("quantity", 0) *
                             existing.get("market_price", 0))
 
+        # Pull asset_class from the registry so the per-asset-class
+        # exposure cap (audit fix #5) can fire. Each strategy is
+        # registered with a list of asset classes — use the first
+        # since they're effectively single-class in practice.
+        meta = self.registry.meta(proposal.strategy)
+        asset_class = (meta.asset_classes[0]
+                       if meta and meta.asset_classes else None)
+
         decision = self.risk.check_order(
             notional_usd=notional,
             symbol=proposal.symbol,
@@ -353,6 +361,7 @@ class Orchestrator:
             existing_position_usd=existing_usd,
             state=state,
             venue=proposal.venue,
+            asset_class=asset_class,
         )
 
         if decision.decision == Decision.REJECT:

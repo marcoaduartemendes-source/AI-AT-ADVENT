@@ -185,6 +185,33 @@ class RiskManager:
         snap = self._broker_snapshots.get(venue, {})
         return snap.get("positions", [])
 
+    def _asset_class_exposure(self, asset_class: str) -> float:
+        """Sum absolute notional exposure across the cached position
+        snapshot for every position whose asset_class matches.
+
+        Cached snapshots come from compute_state() — same per-cycle
+        dict the orchestrator already uses for cached_positions(),
+        so this is an O(positions) walk with no extra broker calls.
+
+        Returns USD notional. 0 if no matching positions.
+        """
+        if not asset_class:
+            return 0.0
+        target = asset_class.upper()
+        total = 0.0
+        for snap in self._broker_snapshots.values():
+            for p in snap.get("positions") or []:
+                # Position.asset_class is the AssetClass enum;
+                # tolerate either enum or string just in case.
+                ac = getattr(p, "asset_class", None)
+                ac_str = (ac.value if hasattr(ac, "value") else ac) or ""
+                if ac_str.upper() != target:
+                    continue
+                qty = getattr(p, "quantity", 0.0) or 0.0
+                px = getattr(p, "market_price", 0.0) or 0.0
+                total += abs(qty * px)
+        return total
+
     def _month_to_date_loss_pct(self, current_equity: float) -> float | None:
         """Return MTD loss as a positive fraction (0.04 = 4% down).
         None if insufficient history.
@@ -342,6 +369,7 @@ class RiskManager:
         existing_position_usd: float = 0.0,
         state: RiskState | None = None,
         venue: str | None = None,
+        asset_class: str | None = None,
     ) -> RiskDecision:
         """Approve, scale, or reject a candidate order.
 
@@ -353,6 +381,9 @@ class RiskManager:
             strategy_name: for logging / per-strategy exposure tracking.
             existing_position_usd: current absolute exposure in this symbol.
             state: pass an already-computed RiskState to avoid re-fetching.
+            venue: broker name for per-broker cap resolution.
+            asset_class: AssetClass enum value (string) for the
+                per-asset-class concentration cap (audit fix #5).
         """
         st = state or self._cached_state or self.compute_state()
         cfg = self.config
@@ -394,6 +425,29 @@ class RiskManager:
         max_position = cfg.max_position_pct * st.equity_usd
         if not is_closing and existing_position_usd + approved > max_position:
             approved = max(0.0, max_position - existing_position_usd)
+
+        # ─ Per-asset-class concentration cap (audit fix #5).
+        # Sum exposure of every position whose asset_class matches,
+        # across all brokers, then ensure approved + existing
+        # ≤ cap × equity. Enforced ONLY on opening trades — closing
+        # trades reduce exposure so they're always allowed.
+        if not is_closing and asset_class and st.equity_usd > 0:
+            ac_cap = cfg.cap_for_asset_class(asset_class)
+            if ac_cap is not None:
+                current_ac_exposure = self._asset_class_exposure(asset_class)
+                max_ac_notional = ac_cap * st.equity_usd
+                ac_headroom = max(0.0, max_ac_notional - current_ac_exposure)
+                if approved > ac_headroom:
+                    if ac_headroom <= cfg.min_trade_usd:
+                        return RiskDecision(
+                            Decision.REJECT, 0.0,
+                            f"{asset_class} exposure "
+                            f"${current_ac_exposure:,.0f} ≥ "
+                            f"{ac_cap*100:.0f}% cap "
+                            f"(${max_ac_notional:,.0f}) — "
+                            f"no headroom for new entries", st,
+                        )
+                    approved = ac_headroom
 
         # ─ Leverage cap
         if not is_closing and st.equity_usd > 0:
