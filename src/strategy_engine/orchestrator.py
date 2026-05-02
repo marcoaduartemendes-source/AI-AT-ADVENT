@@ -334,25 +334,73 @@ class Orchestrator:
         report: CycleReport,
         strategy: Strategy,
     ) -> None:
+        """Orchestrate one proposal through the risk → guards →
+        execute pipeline. Audit fix #4: the body of this method
+        used to be 130+ lines doing 5 different concerns. Now it's
+        a thin orchestrator over focused helpers, each independently
+        unit-testable:
+
+            _resolve_proposal_size  →  notional + asset_class lookup
+            _gate_through_risk      →  risk.check_order, REJECT/SCALE
+            _check_intracycle_wash  →  pending-order conflict guard
+            _clamp_sell_quantity    →  SELL qty_available clamp
+            _execute_proposal       →  broker call + record + mark
+        """
+        notional, asset_class, existing_usd = self._resolve_proposal_size(
+            proposal, state,
+        )
+
+        decision = self._gate_through_risk(
+            proposal, notional, existing_usd, asset_class, state, report,
+        )
+        if decision is None:
+            return    # rejected by risk
+
+        if self._check_intracycle_wash(proposal, report):
+            return    # pending conflict — skip
+
+        if not self._clamp_sell_quantity(proposal, report):
+            return    # 0 qty available — skip
+
+        report.proposals_approved += 1
+        self._execute_proposal(proposal, decision, report, strategy)
+
+    # ── Helpers extracted from _handle_proposal ───────────────────────
+
+    def _resolve_proposal_size(
+        self, proposal: TradeProposal, state: RiskState,
+    ) -> tuple[float, str | None, float]:
+        """Return (notional_usd, asset_class, existing_position_usd) for
+        the risk gate. notional falls back to 1% of equity if the
+        proposal didn't specify; asset_class comes from the strategy
+        registry."""
         notional = proposal.notional_usd
         if notional is None and proposal.quantity is not None and proposal.limit_price:
             notional = proposal.quantity * proposal.limit_price
         if notional is None:
-            # Best-effort fallback: use target alloc as size
             notional = state.equity_usd * 0.01
 
         existing = self._positions_for(proposal.venue).get(proposal.symbol, {})
         existing_usd = abs(existing.get("quantity", 0) *
                             existing.get("market_price", 0))
 
-        # Pull asset_class from the registry so the per-asset-class
-        # exposure cap (audit fix #5) can fire. Each strategy is
-        # registered with a list of asset classes — use the first
-        # since they're effectively single-class in practice.
         meta = self.registry.meta(proposal.strategy)
         asset_class = (meta.asset_classes[0]
                        if meta and meta.asset_classes else None)
+        return notional, asset_class, existing_usd
 
+    def _gate_through_risk(
+        self,
+        proposal: TradeProposal,
+        notional: float,
+        existing_usd: float,
+        asset_class: str | None,
+        state: RiskState,
+        report: CycleReport,
+    ):
+        """Call risk.check_order and apply REJECT / SCALE side effects.
+        Returns the RiskDecision when the proposal should continue, or
+        None if it was rejected."""
         decision = self.risk.check_order(
             notional_usd=notional,
             symbol=proposal.symbol,
@@ -368,79 +416,89 @@ class Orchestrator:
             report.proposals_rejected += 1
             logger.info(f"[{proposal.strategy}] REJECTED {proposal.side.value} "
                         f"{proposal.symbol}: {decision.reason}")
-            return
+            return None
 
         if decision.decision == Decision.SCALE:
             report.proposals_scaled += 1
             proposal.notional_usd = decision.approved_notional_usd
             logger.info(f"[{proposal.strategy}] SCALED to "
                         f"${decision.approved_notional_usd:.2f}: {decision.reason}")
+        return decision
 
-        # Wash-trade guard: if there's any pending order on this symbol
-        # from a previous cycle, skip — let it resolve before we submit
-        # something on the opposite side.
-        pending_for_symbol = self._pending_orders_for(proposal.venue).get(
+    def _check_intracycle_wash(
+        self, proposal: TradeProposal, report: CycleReport,
+    ) -> bool:
+        """Return True if the proposal should be skipped due to a
+        pending order on the same symbol (carryover from previous
+        cycle OR the just-placed earlier proposal in THIS cycle).
+        Side-effect: increments report.proposals_rejected on skip."""
+        pending = self._pending_orders_for(proposal.venue).get(
             proposal.symbol, {})
-        if pending_for_symbol.get("n_pending", 0) > 0:
+        n_pending = pending.get("n_pending", 0)
+        if n_pending > 0:
             logger.info(f"[{proposal.strategy}] SKIP {proposal.symbol}: "
-                        f"{pending_for_symbol['n_pending']} pending order(s)")
+                        f"{n_pending} pending order(s)")
             report.proposals_rejected += 1
-            return
+            return True
+        return False
 
-        # SELL-quantity guard: clamp SELL orders to qty_available so we
-        # don't request more than the broker permits (HTTP 403
-        # "insufficient qty available for order").
-        #
-        # Why we always convert to a fixed QTY (never let notional pass
-        # through): when a proposal is notional-based, Alpaca's server
-        # converts notional → qty using its CURRENT inside price, which
-        # can differ from the cached price we used to compute the clamp.
-        # A 1-2% intra-cycle price drop can push the server-derived qty
-        # above qty_available even though our notional-clamp looked safe.
-        # By forcing the qty path on the broker, the clamp becomes
-        # authoritative. 10% buffer (was 5%) absorbs partial fills from
-        # earlier in the cycle and any remaining snapshot staleness.
-        if proposal.side == OrderSide.SELL:
-            cached = self.risk.cached_positions(proposal.venue)
-            BUFFER = 0.90  # keep 10% safety margin under qty_available
-            for pos in cached:
-                if pos.symbol != proposal.symbol:
-                    continue
-                avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
-                                if pos.raw else pos.quantity)
-                if avail <= 0:
-                    logger.info(f"[{proposal.strategy}] SKIP SELL "
-                                f"{proposal.symbol}: 0 qty available")
-                    report.proposals_rejected += 1
-                    return
+    def _clamp_sell_quantity(
+        self, proposal: TradeProposal, report: CycleReport,
+    ) -> bool:
+        """For SELL proposals, clamp `proposal.quantity` to
+        qty_available × 0.90 (10% safety buffer) and force the qty
+        path on the broker so server-side notional→qty conversion
+        can't drift over the limit. Returns False (and increments
+        report.proposals_rejected) only if 0 qty is available — caller
+        should skip in that case."""
+        if proposal.side != OrderSide.SELL:
+            return True
 
-                # Resolve the requested qty (explicit or derived from
-                # notional via cached market price).
-                requested_qty = proposal.quantity
-                if not requested_qty and proposal.notional_usd and pos.market_price > 0:
-                    requested_qty = proposal.notional_usd / pos.market_price
-                if not requested_qty:
-                    break
+        BUFFER = 0.90  # keep 10% safety margin under qty_available
+        cached = self.risk.cached_positions(proposal.venue)
+        for pos in cached:
+            if pos.symbol != proposal.symbol:
+                continue
+            avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
+                            if pos.raw else pos.quantity)
+            if avail <= 0:
+                logger.info(f"[{proposal.strategy}] SKIP SELL "
+                            f"{proposal.symbol}: 0 qty available")
+                report.proposals_rejected += 1
+                return False
 
-                max_qty = avail * BUFFER
-                if requested_qty > max_qty:
-                    logger.info(f"[{proposal.strategy}] CLAMP SELL "
-                                f"{proposal.symbol} qty {requested_qty:.4f} "
-                                f"→ {max_qty:.4f} "
-                                f"(qty_available={avail:.4f}, buffer=10%)")
-                    proposal.quantity = max_qty
-                else:
-                    proposal.quantity = requested_qty
-                # Force qty path on the broker so its server-side
-                # notional→qty conversion can't drift back over.
-                proposal.notional_usd = None
+            requested_qty = proposal.quantity
+            if not requested_qty and proposal.notional_usd and pos.market_price > 0:
+                requested_qty = proposal.notional_usd / pos.market_price
+            if not requested_qty:
                 break
 
-        report.proposals_approved += 1
+            max_qty = avail * BUFFER
+            if requested_qty > max_qty:
+                logger.info(f"[{proposal.strategy}] CLAMP SELL "
+                            f"{proposal.symbol} qty {requested_qty:.4f} "
+                            f"→ {max_qty:.4f} "
+                            f"(qty_available={avail:.4f}, buffer=10%)")
+                proposal.quantity = max_qty
+            else:
+                proposal.quantity = requested_qty
+            # Force qty path on the broker so its server-side
+            # notional→qty conversion can't drift back over.
+            proposal.notional_usd = None
+            break
+        return True
 
-        # 5) Execute
-        venue_dry = self.cfg.is_dry(proposal.venue, proposal.strategy)
-        if venue_dry:
+    def _execute_proposal(
+        self,
+        proposal: TradeProposal,
+        decision,
+        report: CycleReport,
+        strategy: Strategy,
+    ) -> None:
+        """Final step: place the order with the broker (or log DRY),
+        record to ledger, mark intra-cycle pending. Catches
+        broker-side errors so a bad call doesn't kill the cycle."""
+        if self.cfg.is_dry(proposal.venue, proposal.strategy):
             logger.info(f"[{proposal.strategy}] DRY[{proposal.venue}] "
                         f"{proposal.side.value} {proposal.symbol} "
                         f"${decision.approved_notional_usd:.2f} ({proposal.reason})")
@@ -467,15 +525,11 @@ class Orchestrator:
                         f"status={order.status.value}")
             strategy.on_fill(proposal, {"order_id": order.order_id,
                                           "status": order.status.value})
-            # Register the just-placed order in the per-cycle pending
-            # cache so subsequent proposals in the SAME cycle see it.
-            # Without this, two strategies firing opposite-side orders
-            # on the same symbol within a single cycle (e.g.
-            # risk_parity_etf BUY SPY then tsmom_etf SELL SPY) trip
-            # Alpaca's wash-trade rule because the broker sees two
-            # opposite-side market orders for one symbol back-to-back.
+            # Register the just-placed order so subsequent proposals
+            # in the same cycle see it (audit/regression: prevents
+            # the wash-trade rejection from Alpaca on opposing-side
+            # orders fired by different strategies in one cycle).
             self._mark_pending_intracycle(proposal, order, decision)
-            # Record the trade so the dashboard can render it.
             self._record_trade(proposal, order, decision)
         except Exception as e:
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
