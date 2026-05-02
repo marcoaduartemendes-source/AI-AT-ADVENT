@@ -117,6 +117,6 @@ def test_top_n_selection_works():
     # All trades should be on PDBC; GLD/USO never qualify
     tickers = {t["product_id"] for t in result.trades}
     assert "PDBC" in tickers, f"Expected PDBC in trades, got {tickers}"
-    assert "USO" not in tickers, f"Down-trending USO should not be traded"
+    assert "USO" not in tickers, "Down-trending USO should not be traded"
     # Strategy is long-only; no sells
     assert all(t["side"] == "BUY" for t in result.trades)

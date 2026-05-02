@@ -203,7 +203,7 @@ def backtest_commodity_carry(
         # Compute trailing-LOOKBACK return for each ETF available on
         # the ranking_date.
         rankings = []
-        for ticker, bars in bars_by_ticker.items():
+        for ticker in bars_by_ticker:
             cur_bar = bar_idx.get((ticker, ranking_date))
             past_idx = rebal_idx - LOOKBACK_DAYS
             if past_idx < 0:
