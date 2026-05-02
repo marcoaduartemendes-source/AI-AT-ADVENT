@@ -30,6 +30,25 @@ class _FakeResp:
         return self._body
 
 
+def test_url_normalization_strips_trailing_rest_v1():
+    """Users sometimes paste SUPABASE_URL with /rest/v1 already on
+    it (Supabase's dashboard shows that form in some quickstart
+    panels). Without normalization, we end up POSTing to
+    /rest/v1/rest/v1/trades → 404 PGRST125."""
+    s1 = SupabaseStore(url="https://x.supabase.co/rest/v1", service_key="k")
+    assert s1.url == "https://x.supabase.co"
+
+    s2 = SupabaseStore(url="https://x.supabase.co/rest/v1/", service_key="k")
+    assert s2.url == "https://x.supabase.co"
+
+    s3 = SupabaseStore(url="https://x.supabase.co/rest", service_key="k")
+    assert s3.url == "https://x.supabase.co"
+
+    # Already-normalized URLs unchanged
+    s4 = SupabaseStore(url="https://x.supabase.co", service_key="k")
+    assert s4.url == "https://x.supabase.co"
+
+
 def test_unconfigured_store_returns_false_everywhere():
     """No URL/key → every method returns False, never calls HTTP."""
     store = SupabaseStore(url="", service_key="")

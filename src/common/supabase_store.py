@@ -41,7 +41,18 @@ class SupabaseStore:
         service_key: str | None = None,
         timeout_seconds: float = 10.0,
     ):
-        self.url = (url or os.environ.get("SUPABASE_URL", "")).rstrip("/")
+        raw = (url or os.environ.get("SUPABASE_URL", "")).rstrip("/")
+        # Be forgiving about the user's URL format. The Supabase
+        # dashboard sometimes shows the URL with `/rest/v1` already
+        # appended (in the API quickstart panel), and pasting that
+        # value into the secret causes us to duplicate the path:
+        #   https://xxx.supabase.co/rest/v1/rest/v1/trades  → 404
+        # Strip any trailing /rest/v1 (or /rest) to normalize.
+        for suffix in ("/rest/v1", "/rest"):
+            if raw.endswith(suffix):
+                raw = raw[: -len(suffix)].rstrip("/")
+                break
+        self.url = raw
         self.key = service_key or os.environ.get("SUPABASE_SERVICE_KEY", "")
         self.timeout = timeout_seconds
 
