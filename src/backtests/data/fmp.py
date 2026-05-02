@@ -180,17 +180,23 @@ class FMPClient:
     def recent_earnings(self, ticker: str, limit: int = 8) -> list[EarningsRecord]:
         """Last N quarterly earnings reports with EPS actual + estimate.
 
-        FMP's /historical/earning_calendar?symbol=… returns the entire
-        history; we slice to `limit` (newest-first by date in their
-        response).
+        FMP's /stable/earnings?symbol=… returns the entire history
+        for the symbol (mix of past + upcoming announcements); we
+        slice to `limit` and filter to past-and-actual.
 
-        IMPORTANT: FMP reports a `date` field which is the announcement
-        date — equivalent to Polygon's filing_date. We map it into
-        `filing_date` so the backtest's no-look-ahead guard works the
-        same way.
+        Endpoint history note: pre-Aug 2025 the legacy v3 path was
+        `/api/v3/historical/earning_calendar/<ticker>`. Post-Aug
+        2025 it's `/stable/earnings?symbol=<ticker>`. The earlier
+        attempt at `/stable/historical/earning_calendar` returns
+        HTTP 404 — that path was never valid in the new API.
+
+        IMPORTANT: FMP reports a `date` field which is the
+        announcement date — equivalent to Polygon's filing_date.
+        We map it into `filing_date` so the backtest's no-look-ahead
+        guard works the same way.
         """
         data = self._get(
-            "/historical/earning_calendar",
+            "/earnings",
             {"symbol": ticker},
         )
         if not isinstance(data, list):
