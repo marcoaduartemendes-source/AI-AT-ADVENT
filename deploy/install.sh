@@ -63,6 +63,10 @@ else
 fi
 
 # ─── 3. Clone or update the repo ──────────────────────────────────────
+# Add safe.directory before any git ops because if a previous partial
+# run left the dir owned by `$SERVICE_USER`, root's `git` will refuse
+# with "dubious ownership". Idempotent.
+git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
 if [[ -d "$INSTALL_DIR/.git" ]]; then
     echo "[3/6] Updating existing checkout at $INSTALL_DIR"
     git -C "$INSTALL_DIR" fetch --all --quiet
