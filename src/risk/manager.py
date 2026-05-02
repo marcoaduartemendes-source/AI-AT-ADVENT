@@ -185,6 +185,46 @@ class RiskManager:
         snap = self._broker_snapshots.get(venue, {})
         return snap.get("positions", [])
 
+    def _month_to_date_loss_pct(self, current_equity: float) -> float | None:
+        """Return MTD loss as a positive fraction (0.04 = 4% down).
+        None if insufficient history.
+
+        Uses the first equity snapshot recorded on or after the 1st
+        of the current month as the baseline. If we don't have a
+        snapshot from this month yet (first-day-of-month edge case),
+        fall back to the most recent snapshot prior to the 1st.
+        """
+        try:
+            import sqlite3
+            now = datetime.now(UTC)
+            month_start = now.replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0,
+            ).isoformat()
+            with sqlite3.connect(self.db.db_path) as c:
+                row = c.execute(
+                    "SELECT equity_usd FROM equity_snapshots "
+                    "WHERE timestamp >= ? ORDER BY id ASC LIMIT 1",
+                    (month_start,),
+                ).fetchone()
+                if row is None:
+                    # Fallback: last snapshot before this month
+                    row = c.execute(
+                        "SELECT equity_usd FROM equity_snapshots "
+                        "WHERE timestamp < ? ORDER BY id DESC LIMIT 1",
+                        (month_start,),
+                    ).fetchone()
+            if row is None or row[0] <= 0:
+                return None
+            month_start_equity = float(row[0])
+            loss_pct = (month_start_equity - current_equity) / month_start_equity
+            # Only report a positive fraction (loss). A monthly GAIN
+            # returns 0.0 — we never want to "gate" on a profitable
+            # month even if the absolute drawdown crosses the limit.
+            return max(0.0, loss_pct)
+        except Exception as e:
+            logger.debug(f"[risk] mtd_loss calc failed: {e}")
+            return None
+
     # ── State computation -------------------------------------------------
 
     def compute_state(self, *, persist: bool = True) -> RiskState:
@@ -252,6 +292,29 @@ class RiskManager:
         if ks_state == KillSwitchState.KILL:
             self.db.record_kill_switch(ks_state, dd_pct,
                                         note=f"equity=${equity:.2f} peak=${peak:.2f}")
+
+        # Monthly loss budget (audit fix #1). Even if portfolio DD
+        # hasn't crossed kill_dd_pct, a drawn-out month-to-date loss
+        # > monthly_loss_limit_pct should escalate to CRITICAL
+        # (closing-only) — protects against repeated per-strategy
+        # failures stacking before the global kill fires.
+        mtd_loss_pct = self._month_to_date_loss_pct(equity)
+        if (mtd_loss_pct is not None
+                and mtd_loss_pct >= self.config.monthly_loss_limit_pct
+                and ks_state in (KillSwitchState.NORMAL,
+                                  KillSwitchState.WARNING)):
+            ks_state = KillSwitchState.CRITICAL
+            self.db.record_kill_switch(
+                ks_state, dd_pct,
+                note=f"MTD loss {mtd_loss_pct*100:.2f}% > "
+                     f"monthly_limit {self.config.monthly_loss_limit_pct*100:.2f}%",
+            )
+            logger.warning(
+                f"[risk] Monthly loss budget breached: "
+                f"MTD {mtd_loss_pct*100:.2f}% > "
+                f"{self.config.monthly_loss_limit_pct*100:.2f}% — "
+                f"escalating to CRITICAL (closing-only)"
+            )
 
         state = RiskState(
             timestamp=datetime.now(UTC),

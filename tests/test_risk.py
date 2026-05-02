@@ -98,6 +98,69 @@ class TestRiskStateFromCycle:
         assert len(cached) == 1
         assert cached[0].symbol == "SPY"
 
+    def test_monthly_loss_budget_escalates_to_critical(self, tmp_path):
+        """Monthly loss > monthly_loss_limit_pct (default 4%) should
+        escalate state to CRITICAL even when global drawdown hasn't
+        crossed kill_dd_pct (15%). Audit fix #1."""
+        from datetime import UTC, datetime
+        import sqlite3
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        now = datetime.now(UTC)
+        month_start = now.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0,
+        )
+        with sqlite3.connect(db.db_path) as c:
+            c.execute(
+                "INSERT INTO equity_snapshots (timestamp, equity_usd, note) "
+                "VALUES (?, ?, ?)",
+                (month_start.isoformat(), 100_000.0, "month-start"),
+            )
+        # Broker reports $95k now → 5% MTD loss, exceeds 4% limit
+        broker = MockBroker(venue="alpaca", cash_usd=95_000, equity_usd=95_000)
+        rm = RiskManager(
+            brokers={"alpaca": broker},
+            config=RiskConfig(monthly_loss_limit_pct=0.04),
+            db=db,
+        )
+        state = rm.compute_state(persist=True)
+        # Drawdown alone wouldn't trigger CRITICAL (5% < 10%), but
+        # the monthly-loss check should
+        assert state.kill_switch == KillSwitchState.CRITICAL, (
+            f"Expected CRITICAL on 5% MTD loss > 4% limit, "
+            f"got {state.kill_switch}"
+        )
+
+    def test_monthly_gain_does_not_gate(self, tmp_path):
+        """A profitable month should NEVER trigger the monthly loss
+        budget — even if intra-month drawdown is positive."""
+        from datetime import UTC, datetime
+        import sqlite3
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        now = datetime.now(UTC)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        with sqlite3.connect(db.db_path) as c:
+            c.execute(
+                "INSERT INTO equity_snapshots (timestamp, equity_usd, note) "
+                "VALUES (?, ?, ?)",
+                (month_start.isoformat(), 100_000.0, "month-start"),
+            )
+        # Equity went UP to $105k (positive month) → MTD loss = 0
+        broker = MockBroker(venue="alpaca", cash_usd=105_000, equity_usd=105_000)
+        rm = RiskManager(
+            brokers={"alpaca": broker},
+            config=RiskConfig(monthly_loss_limit_pct=0.04),
+            db=db,
+        )
+        state = rm.compute_state(persist=True)
+        assert state.kill_switch == KillSwitchState.NORMAL
+
+
     def test_drawdown_drives_kill_switch(self, tmp_path):
         """Seed the equity DB with a peak, then a 16% drop; expect KILL."""
         from risk.manager import RiskManager, EquitySnapshotDB

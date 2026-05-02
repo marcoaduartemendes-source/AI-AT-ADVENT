@@ -7,7 +7,7 @@ defaults aimed at the 15% return / 12% vol / 12% max-DD profile.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -60,6 +60,40 @@ class RiskConfig:
 
     strategy_freeze_dd_pct: float = 0.20
     """Single-strategy drawdown that auto-freezes that strategy."""
+
+    # ── Monthly loss budget (audit fix #1) ──────────────────────────
+    monthly_loss_limit_pct: float = 0.04
+    """Hard cap on month-to-date portfolio loss as a fraction of
+    month-start equity. When MTD loss exceeds this, every venue
+    moves to closing-only (CRITICAL state) until the calendar
+    flips. Without this, a strategy can lose 19% twice in a row
+    before its per-strategy freeze kicks in — blowing through
+    the kill_dd_pct global threshold from a single bad month.
+
+    4% is conservative. Loosen to 0.06–0.08 once the system has
+    6+ months of clean live equity history."""
+
+    # ── Per-asset-class concentration cap (audit fix #5) ────────────
+    max_asset_class_pct: dict[str, float] = field(default_factory=lambda: {
+        # Total notional across ALL strategies cannot exceed these
+        # fractions of portfolio equity per asset class. Prevents a
+        # situation where 5 ostensibly-different strategies all pile
+        # into equity-beta-1 names (SPY, QQQ, NVDA, AAPL) and a
+        # single bad SPX day drains the book before per-strategy
+        # freezes engage.
+        "EQUITY":           0.45,
+        "ETF":              0.45,    # shared bucket with EQUITY
+                                     # (same beta exposure)
+        "CRYPTO_SPOT":      0.25,
+        "CRYPTO_PERP":      0.20,
+        "CRYPTO_FUTURE":    0.15,
+        "COMMODITY_FUTURE": 0.20,
+        "PREDICTION":       0.10,
+    })
+    """Per-asset-class total exposure cap. Keys are AssetClass enum
+    values (uppercased strings). When a strategy's proposal would
+    push that asset class above its cap, the proposal is scaled
+    down to stay within budget."""
 
     # ── Vol-spike auto-deleverage ---------------------------------------
     vol_spike_ratio: float = 1.5
@@ -128,7 +162,19 @@ class RiskConfig:
             max_trade_usd_alpaca=_opt_envf("MAX_TRADE_USD_ALPACA"),
             max_trade_usd_kalshi=_opt_envf("MAX_TRADE_USD_KALSHI"),
             kill_switch_cooldown_seconds=_envi("KILL_SWITCH_COOLDOWN_SECONDS", 86400),
+            monthly_loss_limit_pct=_envf("MONTHLY_LOSS_LIMIT_PCT", 0.04),
         )
+
+    def cap_for_asset_class(self, asset_class: str) -> float | None:
+        """Return the max-exposure cap for an asset class, or None
+        if no cap is configured (treat as unlimited).
+
+        Lookup is case-insensitive and checks the AssetClass enum's
+        uppercase string form (e.g. "EQUITY", "CRYPTO_SPOT")."""
+        if not asset_class:
+            return None
+        key = asset_class.upper()
+        return self.max_asset_class_pct.get(key)
 
     def state_for_drawdown(self, dd_pct: float) -> KillSwitchState:
         """Map a drawdown magnitude (0.05 == 5%) to a state."""
