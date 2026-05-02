@@ -127,9 +127,11 @@ CREATE TABLE IF NOT EXISTS signals (
 );
 CREATE INDEX IF NOT EXISTS idx_signals_venue_name_ts
     ON signals(venue, name, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_signals_active
-    ON signals(venue, name)
-    WHERE expires_at IS NULL OR expires_at > NOW();
+-- (Removed an `idx_signals_active` partial index that used NOW() in
+-- the predicate — Postgres requires index predicates to be IMMUTABLE,
+-- and NOW() isn't. The full (venue, name, timestamp) index above
+-- covers the active-signal lookup path well enough — the signals
+-- table is small and TTL-cleaned, so a tiny seq scan is fine.)
 
 
 -- ─── strategic_review — Opus reviews + recommendations ─────────────
