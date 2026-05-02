@@ -8,9 +8,9 @@ Type=oneshot
 User=aaa
 Group=aaa
 WorkingDirectory=/opt/ai-at-advent
-EnvironmentFile=/etc/aaa.env
+# Source env via bash (see orchestrator.service for why)
 TimeoutStartSec=600
-ExecStart=/opt/ai-at-advent/.venv/bin/python src/build_dashboard.py
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/build_dashboard.py'
 
 NoNewPrivileges=yes
 ProtectSystem=strict

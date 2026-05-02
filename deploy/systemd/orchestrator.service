@@ -10,10 +10,15 @@ Type=oneshot
 User=aaa
 Group=aaa
 WorkingDirectory=/opt/ai-at-advent
-EnvironmentFile=/etc/aaa.env
-# Belt and suspenders — one cycle should never need 4 minutes
+# We deliberately do NOT use EnvironmentFile=/etc/aaa.env here.
+# systemd's EnvironmentFile parser is line-based and does NOT
+# understand quoted multi-line values, so secrets like
+# KALSHI_PRIVATE_KEY (which is a multi-line PEM blob) get parsed
+# as one var per line — most of them invalid. Instead, source the
+# env file in a wrapper shell which DOES handle bash-style quoting,
+# then exec into Python.
 TimeoutStartSec=240
-ExecStart=/opt/ai-at-advent/.venv/bin/python src/run_orchestrator.py --once
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_orchestrator.py --once'
 
 # Hardening: the trading bot doesn't need any of these capabilities.
 # Reduce blast radius if the process is ever compromised.

@@ -8,9 +8,10 @@ Type=oneshot
 User=aaa
 Group=aaa
 WorkingDirectory=/opt/ai-at-advent
-EnvironmentFile=/etc/aaa.env
+# Source env via bash so multi-line values (KALSHI_PRIVATE_KEY) work.
+# See orchestrator.service for the full reasoning.
 TimeoutStartSec=240
-ExecStart=/opt/ai-at-advent/.venv/bin/python src/run_scouts.py --vacuum
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_scouts.py --vacuum'
 
 NoNewPrivileges=yes
 ProtectSystem=strict

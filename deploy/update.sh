@@ -18,6 +18,13 @@ fi
 
 cd "$INSTALL_DIR"
 
+# Ensure runtime dirs exist (systemd ProtectSystem=strict makes
+# everything outside ReadWritePaths read-only, so /opt/.../data
+# must exist before the service starts or it fails with
+# "Failed to set up mount namespacing").
+install -d -o "$SERVICE_USER" -g "$SERVICE_USER" \
+    "$INSTALL_DIR/data" "$INSTALL_DIR/docs"
+
 echo "[1/4] Fetching latest"
 sudo -u "$SERVICE_USER" git fetch --all --quiet
 
