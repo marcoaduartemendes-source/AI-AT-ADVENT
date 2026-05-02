@@ -39,6 +39,12 @@ class TradeRecord:
     order_id: str
     pnl_usd: float | None = None
     dry_run: bool = False
+    # Explicit fill_status from the broker. None = let
+    # PerformanceTracker auto-detect from price + pnl (legacy
+    # callers). Orchestrator now passes the actual broker status
+    # so opening trades with non-zero price + None pnl land as
+    # FILLED instead of getting stuck in PENDING.
+    fill_status: str | None = None
 
 
 class PortfolioManager:

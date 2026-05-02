@@ -335,17 +335,25 @@ class Orchestrator:
         strategy: Strategy,
     ) -> None:
         """Orchestrate one proposal through the risk → guards →
-        execute pipeline. Audit fix #4: the body of this method
-        used to be 130+ lines doing 5 different concerns. Now it's
-        a thin orchestrator over focused helpers, each independently
-        unit-testable:
-
-            _resolve_proposal_size  →  notional + asset_class lookup
-            _gate_through_risk      →  risk.check_order, REJECT/SCALE
-            _check_intracycle_wash  →  pending-order conflict guard
-            _clamp_sell_quantity    →  SELL qty_available clamp
-            _execute_proposal       →  broker call + record + mark
+        execute pipeline. Audit fix #4: decomposed into focused
+        helpers; market-hours guard added later as the FIRST gate
+        because there's no point running risk + wash-trade logic
+        for an order that the broker is going to cancel for being
+        out-of-session.
         """
+        # Market-hours gate (fixes the 770-PENDING / 128-CANCELED
+        # state on Alpaca caused by orders fired at 23:40 UTC). The
+        # broker silently cancels day orders submitted outside the
+        # US regular session; we now skip those proposals up front.
+        from common.market_hours import is_market_open, venue_window_str
+        if not is_market_open(proposal.venue):
+            logger.debug(
+                f"[{proposal.strategy}] SKIP {proposal.venue} closed "
+                f"({venue_window_str(proposal.venue)})"
+            )
+            report.proposals_rejected += 1
+            return
+
         notional, asset_class, existing_usd = self._resolve_proposal_size(
             proposal, state,
         )
@@ -806,6 +814,23 @@ class Orchestrator:
                     qty or cached_pos.quantity
                 )
 
+            # Map the broker's order status into our fill_status enum.
+            # FILLED / PARTIALLY_FILLED → use as-is.
+            # OPEN / PENDING / NEW → 'PENDING' (the poller will transition).
+            # CANCELED / REJECTED → use as-is.
+            from brokers.base import OrderStatus
+            broker_status = order.status
+            if broker_status == OrderStatus.FILLED:
+                fill_status_str: str | None = "FILLED"
+            elif broker_status == OrderStatus.PARTIALLY_FILLED:
+                fill_status_str = "PARTIALLY_FILLED"
+            elif broker_status in (OrderStatus.CANCELED, OrderStatus.REJECTED):
+                fill_status_str = broker_status.value
+            else:
+                # PENDING / OPEN / NEW etc. — let the polling loop
+                # transition once the broker reports a real fill.
+                fill_status_str = "PENDING"
+
             record = TradeRecord(
                 timestamp=datetime.now(UTC),
                 strategy=proposal.strategy,
@@ -817,6 +842,7 @@ class Orchestrator:
                 order_id=order.order_id or "",
                 pnl_usd=pnl_usd,
                 dry_run=self.cfg.is_dry(proposal.venue, proposal.strategy),
+                fill_status=fill_status_str,
             )
             self._tracker.record_trade(record)
         except Exception as e:

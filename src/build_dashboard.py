@@ -271,6 +271,53 @@ def load_live_data() -> dict:
         reverse=True,
     )
 
+    # Per-broker realized P&L attribution. The trades table doesn't
+    # carry a venue column; we map strategy → venue via the
+    # orchestrator's strategy registry. Trades whose strategy isn't
+    # registered (e.g. legacy bot's Momentum/MeanReversion) attribute
+    # to the legacy bucket.
+    strategy_to_venue: dict[str, str] = {}
+    try:
+        from run_orchestrator import ALL_STRATEGIES
+        for meta in ALL_STRATEGIES:
+            strategy_to_venue[meta.name] = meta.venue
+    except ImportError:
+        pass
+
+    for t in all_trades:
+        if t.get("pnl_usd") is None:
+            continue
+        sname = t.get("strategy") or ""
+        venue = strategy_to_venue.get(sname, "legacy")
+        if venue not in by_broker:
+            # The legacy bot or an unknown strategy — track separately
+            by_broker.setdefault(venue, {
+                "venue": venue, "cash_usd": 0, "buying_power_usd": 0,
+                "equity_usd": 0, "invested_usd": 0,
+                "unrealized_pnl_usd": 0, "n_positions": 0,
+                "n_open_orders": 0, "available_pct": 0,
+                "last_ok_at": None, "error": None,
+            })
+        by_broker[venue].setdefault("realized_pnl_usd", 0.0)
+        by_broker[venue]["realized_pnl_usd"] += t["pnl_usd"]
+
+    # Trade counts per broker (filled SELLs)
+    for t in all_trades:
+        sname = t.get("strategy") or ""
+        venue = strategy_to_venue.get(sname, "legacy")
+        if venue in by_broker:
+            by_broker[venue].setdefault("n_trades_closed", 0)
+            if t.get("pnl_usd") is not None:
+                by_broker[venue]["n_trades_closed"] += 1
+
+    # Compute total_pnl_usd per broker as realized + unrealized
+    for b in by_broker.values():
+        b["realized_pnl_usd"] = b.get("realized_pnl_usd", 0.0)
+        b["n_trades_closed"] = b.get("n_trades_closed", 0)
+        b["total_pnl_usd"] = (
+            b["realized_pnl_usd"] + b.get("unrealized_pnl_usd", 0.0)
+        )
+
     return {
         "trades": all_trades_sorted,
         "open_positions": open_pos_raw,
@@ -1007,15 +1054,16 @@ function render(tab) {
   // for each broker. Lets the user see at a glance how much capital
   // is sitting idle vs deployed on each venue.
   if (isLive && d.by_broker && Object.keys(d.by_broker).length) {
-    html += `<div class="panel"><h2>By broker</h2>`;
+    html += `<div class="panel"><h2>By broker — capital + P&L</h2>`;
     html += `<table><thead><tr>
       <th>Broker</th>
-      <th class="num">Cash available</th>
-      <th class="num">Buying power</th>
+      <th class="num">Cash</th>
       <th class="num">Invested</th>
       <th class="num">Equity</th>
       <th class="num">Unrealized P&L</th>
-      <th class="num">Positions</th>
+      <th class="num">Realized P&L</th>
+      <th class="num">Total P&L</th>
+      <th class="num">Pos / Closed</th>
       <th class="num">Utilisation</th>
     </tr></thead><tbody>`;
     Object.values(d.by_broker).forEach(b => {
@@ -1025,38 +1073,46 @@ function render(tab) {
       const errBadge = b.error
         ? ` <span class="pill stop" title="${b.error}">err</span>`
         : "";
+      const totalPnl = (b.total_pnl_usd != null
+        ? b.total_pnl_usd
+        : (b.realized_pnl_usd || 0) + (b.unrealized_pnl_usd || 0));
       html += `<tr>
         <td><strong>${b.venue}</strong>${errBadge}</td>
         <td class="num">${fmtUSD(b.cash_usd)}</td>
-        <td class="num">${fmtUSD(b.buying_power_usd)}</td>
         <td class="num">${fmtUSD(b.invested_usd)}</td>
         <td class="num">${fmtUSD(b.equity_usd)}</td>
         <td class="num ${cls(b.unrealized_pnl_usd)}">${fmtUSD(b.unrealized_pnl_usd)}</td>
-        <td class="num">${b.n_positions}</td>
+        <td class="num ${cls(b.realized_pnl_usd)}">${fmtUSD(b.realized_pnl_usd || 0)}</td>
+        <td class="num ${cls(totalPnl)}"><strong>${fmtUSD(totalPnl)}</strong></td>
+        <td class="num">${b.n_positions} / ${b.n_trades_closed || 0}</td>
         <td class="num">${utilPct.toFixed(1)}%</td>
       </tr>`;
     });
     // Totals row
     const tot = Object.values(d.by_broker).reduce((a, b) => ({
       cash_usd: a.cash_usd + b.cash_usd,
-      buying_power_usd: a.buying_power_usd + b.buying_power_usd,
       invested_usd: a.invested_usd + b.invested_usd,
       equity_usd: a.equity_usd + b.equity_usd,
       unrealized_pnl_usd: a.unrealized_pnl_usd + b.unrealized_pnl_usd,
+      realized_pnl_usd: a.realized_pnl_usd + (b.realized_pnl_usd || 0),
       n_positions: a.n_positions + b.n_positions,
-    }), {cash_usd:0, buying_power_usd:0, invested_usd:0, equity_usd:0,
-        unrealized_pnl_usd:0, n_positions:0});
+      n_trades_closed: a.n_trades_closed + (b.n_trades_closed || 0),
+    }), {cash_usd:0, invested_usd:0, equity_usd:0,
+        unrealized_pnl_usd:0, realized_pnl_usd:0,
+        n_positions:0, n_trades_closed:0});
     const totUtil = (tot.equity_usd > 0)
       ? ((tot.invested_usd / tot.equity_usd) * 100)
       : 0;
+    const totTotal = tot.unrealized_pnl_usd + tot.realized_pnl_usd;
     html += `<tr style="border-top: 2px solid var(--border); font-weight: 600;">
       <td>TOTAL</td>
       <td class="num">${fmtUSD(tot.cash_usd)}</td>
-      <td class="num">${fmtUSD(tot.buying_power_usd)}</td>
       <td class="num">${fmtUSD(tot.invested_usd)}</td>
       <td class="num">${fmtUSD(tot.equity_usd)}</td>
       <td class="num ${cls(tot.unrealized_pnl_usd)}">${fmtUSD(tot.unrealized_pnl_usd)}</td>
-      <td class="num">${tot.n_positions}</td>
+      <td class="num ${cls(tot.realized_pnl_usd)}">${fmtUSD(tot.realized_pnl_usd)}</td>
+      <td class="num ${cls(totTotal)}"><strong>${fmtUSD(totTotal)}</strong></td>
+      <td class="num">${tot.n_positions} / ${tot.n_trades_closed}</td>
       <td class="num">${totUtil.toFixed(1)}%</td>
     </tr>`;
     html += `</tbody></table></div>`;

@@ -130,16 +130,24 @@ class PerformanceTracker:
     # ── Recording ────────────────────────────────────────────────────────────
 
     def record_trade(self, record: TradeRecord):
-        # Audit fix #2: every new trade starts as fill_status='PENDING'.
-        # The fill-polling loop transitions to FILLED / PARTIALLY_FILLED
-        # / CANCELED based on broker reports. PnL is ONLY computed when
-        # fill_status='FILLED' — eliminates the entire phantom-loss bug
-        # class permanently.
-        # If the caller knows the order is already filled at insert time
-        # (DRY_RUN paths, instant-fill mocks), they can pass a non-null
-        # pnl_usd and the trigger below auto-sets fill_status='FILLED'.
-        initial_status = "FILLED" if (record.pnl_usd is not None
-                                       and record.price > 0) else "PENDING"
+        # Audit fix #2 + post-deploy fix: prefer the explicit
+        # fill_status from the orchestrator (which knows the actual
+        # broker order status) over the auto-detect heuristic. The
+        # heuristic was conservative (PENDING unless pnl_usd was
+        # set) which incorrectly stranded opening BUYs with non-zero
+        # price as PENDING — they never got picked up by the polling
+        # loop because their order_id was already attached, leading
+        # to 770 stuck rows in production.
+        if record.fill_status is not None:
+            initial_status = record.fill_status
+        else:
+            # Legacy callers (synthetic / DRY) get the auto-detect:
+            # if there's a real pnl_usd, the order was clearly filled.
+            # Otherwise default to PENDING and let the poller transition.
+            initial_status = ("FILLED"
+                              if (record.pnl_usd is not None
+                                  and record.price > 0)
+                              else "PENDING")
         with self._conn() as conn:
             conn.execute(
                 """
