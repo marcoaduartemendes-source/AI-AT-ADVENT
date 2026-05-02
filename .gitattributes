@@ -1,0 +1,23 @@
+# Force LF line endings for files that run on Linux servers, even
+# when committed from Windows. Without this, install.sh and the
+# systemd unit files get CRLF endings which bash chokes on
+# (`$'\r': command not found`, `set: pipefail: invalid option name`).
+*.sh        text eol=lf
+*.service   text eol=lf
+*.timer     text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.sql       text eol=lf
+*.toml      text eol=lf
+
+# Python files don't strictly need LF on Windows, but consistency
+# helps and Python doesn't care about line endings either way.
+*.py        text eol=lf
+
+# Binary catch-all — never normalize these
+*.png       binary
+*.jpg       binary
+*.gif       binary
+*.ico       binary
+*.zip       binary
+*.db        binary
