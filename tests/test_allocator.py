@@ -188,6 +188,75 @@ class TestAllocatorWeeklyDelta:
         assert a.target_pct <= 0.10 + 1e-9
 
 
+class TestChampionTier:
+    """High-Sharpe strategies should get the champion boost."""
+
+    def test_champion_strategy_gets_15x_boost(self, tmp_path):
+        """A strategy with shrunk_sharpe=2.0 and n_trades=30 should
+        end up with significantly higher weight than its peer with
+        identical baseline but Sharpe=0.5."""
+        from allocator.allocator import AllocatorConfig, MetaAllocator
+
+        strategies = [
+            ("hot",  0.05, 0.02, 0.20),    # baseline 5%, max 20%
+            ("warm", 0.05, 0.02, 0.20),    # same baseline
+        ]
+        reg = _make_registry(tmp_path, strategies)
+        perf = _stub_perf({
+            "hot":  {"shrunk_sharpe": 2.0, "n_trades": 30, "wins": 20},
+            "warm": {"shrunk_sharpe": 0.5, "n_trades": 30, "wins": 18},
+        })
+        # Disable weekly clamp so we can see the full boost effect
+        alloc = MetaAllocator(reg, perf, AllocatorConfig(
+            max_weekly_delta_pct=1.0,
+            sharpe_tilt_strength=0.5,
+            champion_sharpe=1.0,
+            champion_boost=1.5,
+            champion_min_trades=10,
+        ))
+        result = alloc.rebalance(100_000)
+        hot = next(d for d in result.decisions if d.name == "hot")
+        warm = next(d for d in result.decisions if d.name == "warm")
+        # Champion gets the 1.5× boost on top of Sharpe-tilt; should
+        # be considerably higher than the warm peer
+        assert hot.target_pct > warm.target_pct
+        # And the difference should be ≥ 30% (rough heuristic)
+        assert hot.target_pct >= warm.target_pct * 1.3
+
+    def test_low_trade_count_blocks_champion_promotion(self, tmp_path):
+        """A strategy that lucks into Sharpe=2.0 with only 5 trades
+        should NOT get the champion boost (insufficient sample size)."""
+        from allocator.allocator import AllocatorConfig, MetaAllocator
+
+        strategies = [
+            ("lucky", 0.05, 0.02, 0.20),
+            ("warm",  0.05, 0.02, 0.20),
+        ]
+        reg = _make_registry(tmp_path, strategies)
+        perf = _stub_perf({
+            "lucky": {"shrunk_sharpe": 2.0, "n_trades": 5, "wins": 4},
+            "warm":  {"shrunk_sharpe": 0.6, "n_trades": 30, "wins": 18},
+        })
+        alloc = MetaAllocator(reg, perf, AllocatorConfig(
+            max_weekly_delta_pct=1.0,
+            champion_sharpe=1.0,
+            champion_boost=1.5,
+            champion_min_trades=10,
+        ))
+        result = alloc.rebalance(100_000)
+        lucky = next(d for d in result.decisions if d.name == "lucky")
+        # Lucky has high Sharpe but only 5 trades — boost should be
+        # skipped, so its weight is just the standard Sharpe-tilt.
+        # We can't easily compare to a "would-be-champion" version,
+        # but we can assert the boost log was NOT triggered (proxy:
+        # lucky's weight isn't dramatically larger than warm's).
+        warm = next(d for d in result.decisions if d.name == "warm")
+        # Without champion boost, the difference should be modest
+        # (just Sharpe-tilt: ~2x sharpe → some boost, but not 1.5×
+        # multiplier on top)
+        assert lucky.target_pct < warm.target_pct * 2.0
+
+
 class TestAllocatorBaselineFallback:
     def test_no_sharpe_data_falls_back_to_baseline_proportions(self, tmp_path):
         """When all strategies have shrunk_sharpe=0, the allocator

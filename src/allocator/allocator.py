@@ -47,6 +47,24 @@ class AllocatorConfig:
     1.0 = pure Sharpe weighting. 0.5 is a healthy middle that preserves
     diversification while rewarding winners."""
 
+    # ── Champion tier (double-down on winners) ──────────────────────
+    champion_sharpe: float = 1.0
+    """Strategies with shrunk_sharpe ≥ this in the primary window
+    enter the champion tier and get a multiplicative boost on top
+    of the standard Sharpe-tilt weighting. The intent is to actively
+    reward the winners that emerge from experimental sleeves
+    instead of waiting for the slow Sharpe-tilt to creep weights up."""
+
+    champion_boost: float = 1.5
+    """Multiplier applied to a champion's blended weight before the
+    max_alloc_pct cap. 1.5 = champions get 50% above their normal
+    allocation, capped by their own max_alloc_pct."""
+
+    champion_min_trades: int = 10
+    """Don't promote to champion on luck — require at least N trades
+    in the primary window. Prevents a one-shot lucky trade from
+    triggering a 1.5× ramp-up."""
+
 
 # ─── Outputs ───────────────────────────────────────────────────────────
 
@@ -130,6 +148,27 @@ class MetaAllocator:
         for n in active_names:
             if self.registry.get_state(n) == StrategyState.WATCH:
                 weights[n] *= 0.5
+
+        # Champion-tier boost: strategies with primary-window Sharpe
+        # ≥ champion_sharpe AND a meaningful sample size get their
+        # blended weight multiplied by champion_boost. This is what
+        # turns "experimental 4% sleeve" into a real position when a
+        # P4 strategy starts working — instead of waiting for the
+        # slow tilt to creep up, we explicitly double down. The
+        # max_alloc_pct cap below still limits runaway growth.
+        champions: list[str] = []
+        for n in active_names:
+            m = primary[n]
+            if (m.shrunk_sharpe >= self.cfg.champion_sharpe
+                    and m.n_trades >= self.cfg.champion_min_trades
+                    and self.registry.get_state(n) == StrategyState.ACTIVE):
+                weights[n] *= self.cfg.champion_boost
+                champions.append(n)
+        if champions:
+            logger.info(
+                f"[allocator] champion-tier boost ×{self.cfg.champion_boost}: "
+                f"{', '.join(champions)}"
+            )
 
         # Floor / ceiling per-strategy
         for n in active_names:

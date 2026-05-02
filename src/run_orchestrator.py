@@ -26,14 +26,20 @@ from allocator.metrics import StrategyPerformance
 from brokers.registry import build_brokers
 from risk.manager import RiskManager
 from strategies import (
+    BollingerBreakout,
     CommodityCarry,
     CryptoBasisTrade,
     CryptoFundingCarry,
     CryptoXSMom,
+    DividendGrowth,
+    EarningsMomentum,
     KalshiCalibrationArb,
     MacroKalshi,
+    PairsTrading,
     PEAD,
     RiskParityETF,
+    RSIMeanReversion,
+    SectorRotation,
     TSMomETF,
     VolManagedOverlay,
 )
@@ -52,66 +58,61 @@ DRY_RUN_DEFAULT = True
 
 
 ALL_STRATEGIES = [
-    # ── Phase 1
+    # ── Phase 1 (rebalanced down to make room for P4 experimental sleeve)
     StrategyMeta(
         name="crypto_funding_carry",
         asset_classes=["CRYPTO_PERP"], venue="coinbase",
-        target_alloc_pct=0.15, max_alloc_pct=0.30, min_alloc_pct=0.03,
+        target_alloc_pct=0.12, max_alloc_pct=0.25, min_alloc_pct=0.03,
         description="Long spot / short perp; capture funding rate (P1)",
     ),
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
-        # Per Opus's first review: capped at 30% to satisfy the
-        # single-strategy hard cap rule.
-        target_alloc_pct=0.28, max_alloc_pct=0.30, min_alloc_pct=0.20,
+        target_alloc_pct=0.22, max_alloc_pct=0.30, min_alloc_pct=0.15,
         description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
     ),
     StrategyMeta(
         name="kalshi_calibration_arb",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.05, max_alloc_pct=0.10, min_alloc_pct=0.02,
+        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.02,
         description="Favorite-longshot bias arb on Kalshi (P1)",
     ),
     # ── Phase 2
     StrategyMeta(
         name="crypto_basis_trade",
         asset_classes=["CRYPTO_FUTURE"], venue="coinbase",
-        target_alloc_pct=0.10, max_alloc_pct=0.20, min_alloc_pct=0.02,
+        target_alloc_pct=0.08, max_alloc_pct=0.20, min_alloc_pct=0.02,
         description="Long spot / short dated future on Coinbase (P2)",
     ),
     StrategyMeta(
         name="tsmom_etf",
         asset_classes=["ETF"], venue="alpaca",
-        # Per Opus review: increased from 10% to absorb risk_parity_etf overage
-        target_alloc_pct=0.18, max_alloc_pct=0.25, min_alloc_pct=0.05,
+        target_alloc_pct=0.13, max_alloc_pct=0.25, min_alloc_pct=0.05,
         description="12-1m time-series momentum on 7-ETF basket (P2)",
     ),
     StrategyMeta(
         name="commodity_carry",
         asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
-        # Per Opus review: increased from 7% — scout fires but strategy
-        # under-allocated to capture term-structure edge
-        target_alloc_pct=0.10, max_alloc_pct=0.18, min_alloc_pct=0.03,
+        target_alloc_pct=0.07, max_alloc_pct=0.18, min_alloc_pct=0.03,
         description="Top-N backwardated commodity futures (P2)",
     ),
     # ── Phase 3
     StrategyMeta(
         name="pead",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.05, max_alloc_pct=0.12, min_alloc_pct=0.02,
-        description="Post-earnings announcement drift (P3)",
+        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
+        description="Post-earnings announcement drift (P3, scout-fed)",
     ),
     StrategyMeta(
         name="macro_kalshi",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.01,
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.01,
         description="Kalshi macro events vs implied probabilities (P3)",
     ),
     StrategyMeta(
         name="crypto_xsmom",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
-        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.02,
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.02,
         description="Cross-sectional momentum on top-15 alts (P3)",
     ),
     StrategyMeta(
@@ -119,6 +120,45 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.00, max_alloc_pct=0.00, min_alloc_pct=0.0,
         description="Vol-target multiplier; publishes scaler only, no trades (P3)",
+    ),
+    # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
+    # paper $100k). Allocator's Sharpe-tilt will reallocate to
+    # winners over the first 30-60 days. Each starts at 4%.
+    StrategyMeta(
+        name="rsi_mean_reversion",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Connors-style RSI(2) mean-reversion on 30 large-caps (P4)",
+    ),
+    StrategyMeta(
+        name="sector_rotation",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Top-N SPDR sector ETFs by 90d return (P4)",
+    ),
+    StrategyMeta(
+        name="pairs_trading",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Stat-arb on 6 classic correlated pairs (P4)",
+    ),
+    StrategyMeta(
+        name="bollinger_breakout",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Momentum continuation on 20d Bollinger upper-band breaks (P4)",
+    ),
+    StrategyMeta(
+        name="earnings_momentum",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Live PEAD via FMP earnings calendar (P4)",
+    ),
+    StrategyMeta(
+        name="dividend_growth",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Quality-dividend ETF rotation by 90d return (P4)",
     ),
 ]
 
@@ -140,6 +180,13 @@ def build_strategies(brokers):
         instances["tsmom_etf"] = TSMomETF(al)
         instances["pead"] = PEAD(al)
         instances["vol_managed_overlay"] = VolManagedOverlay(al)
+        # Phase 4 — experimental sleeve
+        instances["rsi_mean_reversion"] = RSIMeanReversion(al)
+        instances["sector_rotation"] = SectorRotation(al)
+        instances["pairs_trading"] = PairsTrading(al)
+        instances["bollinger_breakout"] = BollingerBreakout(al)
+        instances["earnings_momentum"] = EarningsMomentum(al)
+        instances["dividend_growth"] = DividendGrowth(al)
     if "kalshi" in brokers:
         ks = brokers["kalshi"]
         instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
