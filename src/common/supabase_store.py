@@ -205,6 +205,19 @@ class SupabaseStore:
         except (TypeError, ValueError):
             return None
 
+    def recent_trades(self, *, strategy: str | None = None,
+                       limit: int = 1000) -> list[dict]:
+        """Most-recent trades, ordered newest-first. Used as a read-
+        primary fallback by PerformanceTracker.get_recent_trades when
+        SQLite is empty/missing — covers the disaster-recovery case
+        where the local DB was wiped but Supabase preserved history."""
+        if not self.is_configured():
+            return []
+        query = (f"select=*&order=timestamp.desc&limit={limit}")
+        if strategy:
+            query += f"&strategy=eq.{strategy}"
+        return self._select("trades", query)
+
     def recent_equity_snapshots(self, n: int = 60) -> list[float]:
         """Last `n` equity_usd values, oldest first. Returns empty list
         on any error so callers can fall back to SQLite cleanly."""

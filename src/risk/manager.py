@@ -202,6 +202,29 @@ class EquitySnapshotDB:
                 return sb_peak
         return sqlite_peak
 
+    def trailing_high(self, lookback_days: int) -> float | None:
+        """Highest equity_usd recorded in the last `lookback_days`.
+
+        Returns None if no rows are available in the window (which is
+        safer than 0 — callers know to skip the trailing-stop check
+        when there's no baseline). SQLite-only — Supabase failover
+        is for the all-time peak only; trailing stop is a short-
+        window check and we tolerate brief gaps."""
+        from datetime import timedelta
+        if lookback_days <= 0:
+            return None
+        since = (datetime.now(UTC) - timedelta(days=lookback_days)).isoformat()
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT MAX(equity_usd) AS peak "
+                "FROM equity_snapshots "
+                "WHERE timestamp >= ?",
+                (since,),
+            ).fetchone()
+        if row and row["peak"] is not None:
+            return float(row["peak"])
+        return None
+
     def recent_returns(self, n: int = 60) -> list[float]:
         """Last `n` snapshot-to-snapshot pct returns.
 
@@ -448,6 +471,47 @@ class RiskManager:
                 f"{self.config.monthly_loss_limit_pct*100:.2f}% — "
                 f"escalating to CRITICAL (closing-only)"
             )
+
+        # Trailing stop (audit-fix follow-up). Catches sharp local
+        # drops the all-time-peak drawdown thresholds miss when the
+        # peak is months in the past. We use a SHORTER lookback (14d
+        # default) — equity below the recent local high by
+        # trailing_stop_critical_pct → CRITICAL; below
+        # trailing_stop_warning_pct → at least WARNING.
+        if (self.config.trailing_stop_critical_pct > 0
+                and ks_state != KillSwitchState.KILL):
+            trail_high = self.db.trailing_high(
+                self.config.trailing_stop_lookback_days
+            )
+            if trail_high is not None and trail_high > 0 and equity > 0:
+                trail_dd = (trail_high - equity) / trail_high
+                if (trail_dd >= self.config.trailing_stop_critical_pct
+                        and ks_state in (KillSwitchState.NORMAL,
+                                          KillSwitchState.WARNING)):
+                    ks_state = KillSwitchState.CRITICAL
+                    self.db.record_kill_switch(
+                        ks_state, dd_pct,
+                        note=(
+                            f"trailing stop {trail_dd*100:.2f}% from "
+                            f"{self.config.trailing_stop_lookback_days}d "
+                            f"high ${trail_high:.2f}"
+                        ),
+                    )
+                    logger.warning(
+                        f"[risk] Trailing stop breached: "
+                        f"{trail_dd*100:.2f}% below "
+                        f"{self.config.trailing_stop_lookback_days}d "
+                        f"high ${trail_high:.2f} — escalating to CRITICAL"
+                    )
+                elif (trail_dd >= self.config.trailing_stop_warning_pct
+                        and ks_state == KillSwitchState.NORMAL):
+                    ks_state = KillSwitchState.WARNING
+                    logger.info(
+                        f"[risk] Trailing stop warning: "
+                        f"{trail_dd*100:.2f}% below "
+                        f"{self.config.trailing_stop_lookback_days}d "
+                        f"high — escalating to WARNING"
+                    )
 
         state = RiskState(
             timestamp=datetime.now(UTC),

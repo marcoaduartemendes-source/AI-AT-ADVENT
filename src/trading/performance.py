@@ -361,6 +361,13 @@ class PerformanceTracker:
         }
 
     def get_recent_trades(self, strategy: str | None = None, limit: int = 20) -> list[dict]:
+        """SQLite-primary, Supabase failover.
+
+        SQLite is the read primary under normal conditions. If SQLite
+        returns 0 rows AND Supabase is configured, we consult Supabase
+        as a disaster-recovery fallback — covers the "VPS DB wiped,
+        dashboard now empty" scenario where Supabase still has the
+        full history. Same failover pattern as EquitySnapshotDB.peak_equity."""
         with self._conn() as conn:
             if strategy:
                 rows = conn.execute(
@@ -371,7 +378,29 @@ class PerformanceTracker:
                 rows = conn.execute(
                     "SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?", (limit,)
                 ).fetchall()
-        return [dict(r) for r in rows]
+        local = [dict(r) for r in rows]
+
+        # Supabase failover: only when SQLite is empty (the suspect
+        # disaster-recovery case). When SQLite has any rows we trust
+        # it — dual-writes keep Supabase in sync, so an empty SQLite
+        # is the only state where Supabase could legitimately have
+        # more than us.
+        if not local and self._supabase is not None:
+            try:
+                sb_rows = self._supabase.recent_trades(
+                    strategy=strategy, limit=limit,
+                )
+            except Exception as e:    # noqa: BLE001
+                logger.warning(f"Supabase trades failover read failed: {e}")
+                sb_rows = []
+            if sb_rows:
+                logger.warning(
+                    f"PerformanceTracker.get_recent_trades: SQLite empty, "
+                    f"using Supabase ({len(sb_rows)} rows) — "
+                    f"disaster-recovery path"
+                )
+                return sb_rows
+        return local
 
     # ── Dashboard ────────────────────────────────────────────────────────────
 

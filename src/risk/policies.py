@@ -61,6 +61,25 @@ class RiskConfig:
     strategy_freeze_dd_pct: float = 0.20
     """Single-strategy drawdown that auto-freezes that strategy."""
 
+    # ── Trailing stop (audit-fix follow-up: portfolio-level safety) ──
+    # The drawdown thresholds above measure peak-to-now from the
+    # all-time high. That's slow to trigger if the all-time high
+    # was set months ago — a short-but-violent drop can hit
+    # critical_dd_pct only after weeks of bleed.
+    #
+    # The trailing stop uses a SHORTER lookback (default 14 days)
+    # so a sharp local drop escalates risk state quickly even when
+    # the all-time peak is far above. Acts as an early-warning
+    # circuit breaker that complements the existing thresholds.
+    trailing_stop_lookback_days: int = 14
+    trailing_stop_warning_pct: float = 0.04   # 4% from 14-day high
+    trailing_stop_critical_pct: float = 0.07  # 7% from 14-day high
+    """Trailing-stop window (days) and thresholds. The risk manager
+    escalates state when the current equity is more than X% below
+    the highest equity in the lookback window. Set _critical_pct=0
+    to disable the trailing stop entirely (drawdown thresholds
+    still apply)."""
+
     # ── Monthly loss budget (audit fix #1) ──────────────────────────
     monthly_loss_limit_pct: float = 0.04
     """Hard cap on month-to-date portfolio loss as a fraction of
