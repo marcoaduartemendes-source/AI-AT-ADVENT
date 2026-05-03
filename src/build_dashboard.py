@@ -192,17 +192,33 @@ def load_live_data() -> dict:
             cum += t["pnl_usd"]
             eq.append({"t": t["timestamp"], "pnl_cumulative": cum})
 
-    # Per-strategy summary — include legacy strategies AND the new
-    # orchestrator-driven strategies so the dashboard shows all of them.
+    # Per-strategy summary. Discover strategies from ALL_STRATEGIES
+    # at runtime so the dashboard auto-picks-up newly-registered ones.
+    # Pre-bug: this list was hardcoded to 13 names; when 11 new
+    # strategies shipped (Phase 4/4b/5) the dashboard still only
+    # rendered the original 13 — every new strategy was invisible.
     by_strategy: dict[str, dict] = {}
-    all_strategy_names = [
-        # ── Production strategies (orchestrator-driven)
-        "crypto_funding_carry", "risk_parity_etf", "kalshi_calibration_arb",
-        "crypto_basis_trade", "tsmom_etf", "commodity_carry",
-        "pead", "macro_kalshi", "crypto_xsmom", "vol_managed_overlay",
-        # ── Legacy (retired in W2; kept here so historical trades remain visible)
-        "Momentum", "MeanReversion", "VolatilityBreakout",
-    ]
+    all_strategy_names: list[str] = []
+    try:
+        from run_orchestrator import ALL_STRATEGIES as _REG
+        all_strategy_names.extend(meta.name for meta in _REG)
+    except ImportError:
+        pass
+    # Always include legacy strategies (they predate the orchestrator
+    # registry) so historical Coinbase trades remain visible.
+    for legacy in ("Momentum", "MeanReversion", "VolatilityBreakout"):
+        if legacy not in all_strategy_names:
+            all_strategy_names.append(legacy)
+    # Plus any unknown strategy that has actually traded — covers
+    # the case where a strategy got renamed in the registry but
+    # historical rows still reference the old name.
+    seen = set(all_strategy_names)
+    for t in all_trades:
+        sname = t.get("strategy")
+        if sname and sname not in seen:
+            all_strategy_names.append(sname)
+            seen.add(sname)
+
     # Pre-bucket trades by strategy in ONE pass instead of N×len(trades)
     # passes — was a hidden 13×10000 = 130k-iteration hot loop.
     trades_by_strategy: dict[str, list[dict]] = defaultdict(list)
@@ -212,6 +228,32 @@ def load_live_data() -> dict:
         strat_trades = trades_by_strategy.get(name, [])
         summary = _summarize(strat_trades)
         summary["strategy"] = name
+        # Per-strategy last-trade timestamp — drives the dashboard's
+        # "Last trade" column so the user sees at-a-glance which
+        # strategies are dormant. Picks the most-recent timestamp
+        # across BOTH opens and closes.
+        last_ts = None
+        for t in strat_trades:
+            ts = t.get("timestamp")
+            if ts and (last_ts is None or ts > last_ts):
+                last_ts = ts
+        summary["last_trade_at"] = last_ts
+        # Days since last trade — purely a convenience for the UI;
+        # JS will recompute "live" but having the integer here lets
+        # us sort + filter on the data side too.
+        if last_ts:
+            try:
+                from datetime import datetime as _dt
+                last_dt = _dt.fromisoformat(
+                    last_ts.replace("Z", "+00:00")
+                ).astimezone(UTC)
+                summary["days_since_last_trade"] = round(
+                    (datetime.now(UTC) - last_dt).total_seconds() / 86400, 2
+                )
+            except (ValueError, TypeError):
+                summary["days_since_last_trade"] = None
+        else:
+            summary["days_since_last_trade"] = None
         by_strategy[name] = {
             "summary": summary,
             "trades": strat_trades,
@@ -853,7 +895,13 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <header>
   <div>
     <h1>Crypto Trading Dashboard</h1>
-    <div class="meta">Generated <span id="generated-at"></span> · <a style="color: var(--blue); text-decoration: none;" id="repo-link" href="#">View workflow</a></div>
+    <div class="meta">
+      Now <strong id="now-clock" style="font-variant-numeric: tabular-nums;">—</strong>
+      · Data <span id="data-age">—</span>
+      <span style="color:var(--muted);">(generated <span id="generated-at"></span>)</span>
+      · <a style="color: var(--blue); text-decoration: none;" id="repo-link" href="#">View workflow</a>
+      · <a style="color: var(--blue); text-decoration: none;" href="javascript:window.location.reload()">↻ refresh</a>
+    </div>
   </div>
   <div class="meta">
     Stop: <span id="cfg-stop"></span> · Take: <span id="cfg-tp"></span> · Cooldown: <span id="cfg-cd"></span> · Max/trade: <span id="cfg-mt"></span>
@@ -873,9 +921,64 @@ const TAB_LABELS = {live: "Live", d7: "7-day backtest", d15: "15-day backtest", 
 const fmtUSD = (v) => (v == null) ? "—" : (v >= 0 ? "+$" : "-$") + Math.abs(v).toFixed(2);
 const fmtPct = (v) => (v == null) ? "—" : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
 const fmtTime = (iso) => { if (!iso) return "—"; const d = new Date(iso); return d.toISOString().slice(0,16).replace("T"," "); };
+// Relative-time formatter — "3m ago", "2h ago", "5d ago". Used for
+// last-trade-per-strategy and the page-age indicator. Anything beyond
+// 30 days reverts to absolute date so the user doesn't have to do
+// month math in their head.
+const fmtRelTime = (iso) => {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return "just now";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + "s ago";
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + "h ago";
+  const d = Math.floor(h / 24);
+  if (d < 30) return d + "d ago";
+  return new Date(iso).toISOString().slice(0, 10);
+};
 const cls = (v) => (v == null) ? "" : (v >= 0 ? "pos" : "neg");
 
 document.getElementById("generated-at").textContent = fmtTime(DATA.generated_at);
+
+// Live clock + page-age indicator. Updates every second so the user
+// always sees "data is N min old" even if the tab has been open a
+// while. Crucial for trader workflow — a stale dashboard is worse
+// than no dashboard because it looks current but isn't.
+function updateClock() {
+  const nowEl = document.getElementById("now-clock");
+  const ageEl = document.getElementById("data-age");
+  if (nowEl) {
+    const now = new Date();
+    nowEl.textContent = now.toISOString().slice(11, 19) + " UTC";
+  }
+  if (ageEl && DATA.generated_at) {
+    const ageSec = Math.floor((Date.now() - new Date(DATA.generated_at).getTime()) / 1000);
+    let label, klass;
+    if (ageSec < 90) {       // fresh
+      label = ageSec + "s ago"; klass = "pos";
+    } else if (ageSec < 60 * 20) {     // recent
+      label = Math.floor(ageSec / 60) + "m ago"; klass = "";
+    } else {                  // stale → red
+      label = Math.floor(ageSec / 60) + "m ago (stale)"; klass = "neg";
+    }
+    ageEl.textContent = label;
+    ageEl.className = klass;
+  }
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// Auto-reload the page every 5 minutes so users who leave the
+// dashboard open get fresh data without manual refresh. The
+// dashboard.timer regenerates every 15 minutes; reloading every 5
+// catches every regeneration with margin. Disable via ?noreload=1
+// for debugging.
+if (!new URLSearchParams(window.location.search).has("noreload")) {
+  setTimeout(() => window.location.reload(), 5 * 60 * 1000);
+}
 document.getElementById("cfg-stop").textContent = (DATA.config.stop_loss_pct * 100).toFixed(1) + "%";
 document.getElementById("cfg-tp").textContent = (DATA.config.take_profit_pct * 100).toFixed(1) + "%";
 document.getElementById("cfg-cd").textContent = (DATA.config.cooldown_seconds / 60) + " min";
@@ -1254,11 +1357,27 @@ function render(tab) {
   };
 
   // Per-strategy summary table + EXPANDABLE TRADE DETAILS per row
-  html += `<div class="panel"><h2>By strategy — click a row to see every trade</h2>`;
+  html += `<div class="panel"><h2>By strategy — ranked by P&L · click a row to see every trade</h2>`;
   html += `<table><thead><tr>
-    <th>Strategy</th><th>State</th><th>Trades</th><th>Win rate</th><th class="num">Total P&L</th>
-    <th class="num">Volume</th><th class="num">Return on volume</th><th class="num">Avg/trade</th></tr></thead><tbody>`;
-  const stratList = Object.values(d.by_strategy);
+    <th>#</th><th>Strategy</th><th>State</th><th>Trades</th>
+    <th>Win rate</th><th class="num">Total P&L</th>
+    <th class="num">Volume</th><th class="num">Return on volume</th>
+    <th class="num">Avg/trade</th><th>Last trade</th></tr></thead><tbody>`;
+  // Rank by total P&L descending. Ties broken by recency of last
+  // trade so a recently-active flat strategy ranks above a dormant
+  // flat one. Strategies that have never traded (last_trade_at=null)
+  // sink to the bottom.
+  const stratList = Object.values(d.by_strategy).slice().sort((a, b) => {
+    const pnlDiff = (b.summary.total_pnl_usd || 0)
+                  - (a.summary.total_pnl_usd || 0);
+    if (Math.abs(pnlDiff) > 0.01) return pnlDiff;
+    const la = a.summary.last_trade_at;
+    const lb = b.summary.last_trade_at;
+    if (!la && !lb) return a.summary.strategy.localeCompare(b.summary.strategy);
+    if (!la) return 1;     // null → bottom
+    if (!lb) return -1;
+    return lb.localeCompare(la);
+  });
   stratList.forEach((st, idx) => {
     const x = st.summary;
     const safeId = `${tab}-strat-${idx}`;
@@ -1266,7 +1385,21 @@ function render(tab) {
     const stateCell = pod
       ? `${lifecyclePill(pod.state)} <span style="color:var(--muted);font-size:11px;">${(pod.target_pct*100).toFixed(1)}%</span>`
       : `<span style="color:var(--muted);font-size:11px;">—</span>`;
+    // Last-trade cell — relative ("3h ago") with absolute on hover.
+    // Computed in JS against Date.now() so it stays accurate as the
+    // page sits open between dashboard regenerations.
+    const lastTrade = x.last_trade_at
+      ? `<span title="${x.last_trade_at}">${fmtRelTime(x.last_trade_at)}</span>`
+      : `<span style="color:var(--muted);">never</span>`;
+    // Rank badge: 🏆 for the top P&L, ⚡ for top-3, dimmed for rest.
+    let rankCell = `<span style="color:var(--muted);">${idx+1}</span>`;
+    if (idx === 0 && x.total_pnl_usd > 0) {
+      rankCell = `<span title="Top P&L">🏆 1</span>`;
+    } else if (idx < 3 && x.total_pnl_usd > 0) {
+      rankCell = `<span title="Top 3">⚡ ${idx+1}</span>`;
+    }
     html += `<tr style="cursor: pointer;" onclick="document.getElementById('${safeId}').open = !document.getElementById('${safeId}').open">
+      <td>${rankCell}</td>
       <td><strong>${x.strategy}</strong></td>
       <td>${stateCell}</td>
       <td>${x.n_trades} (${x.wins}W/${x.losses}L)</td>
@@ -1275,6 +1408,7 @@ function render(tab) {
       <td class="num">$${x.entry_volume_usd.toFixed(2)}</td>
       <td class="num ${cls(x.return_on_volume_pct)}">${fmtPct(x.return_on_volume_pct)}</td>
       <td class="num ${cls(x.avg_pnl_usd)}">${fmtUSD(x.avg_pnl_usd)}</td>
+      <td>${lastTrade}</td>
     </tr>`;
     // Expandable trade detail row
     const stTrades = (st.trades || []).slice().sort((a,b) => {
@@ -1282,7 +1416,7 @@ function render(tab) {
       const tb = b.close_time || b.open_time || b.timestamp;
       return tb.localeCompare(ta);
     });
-    html += `<tr><td colspan="8" style="padding: 0; background: var(--panel-2);">
+    html += `<tr><td colspan="10" style="padding: 0; background: var(--panel-2);">
       <details id="${safeId}" style="border: none; background: transparent; padding: 0;">
         <summary style="padding: 10px 14px;">${stTrades.length} trade(s) for <strong>${x.strategy}</strong></summary>
         <div class="scroll" style="max-height: 280px;"><table style="margin: 0;"><thead><tr>
@@ -1312,7 +1446,7 @@ function render(tab) {
       </tr>`;
     });
     if (stTrades.length === 0) {
-      html += `<tr><td colspan="8" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
+      html += `<tr><td colspan="10" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
     }
     html += `</tbody></table></div></details></td></tr>`;
   });
