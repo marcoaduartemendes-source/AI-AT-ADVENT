@@ -1,0 +1,35 @@
+[Unit]
+Description=AI-AT-ADVENT daily digest (Pushover + email)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+TimeoutStartSec=180
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_daily_digest.py'
+
+# Same hardening profile as the orchestrator. Reads SQLite DBs +
+# hits broker APIs, no writes outside data/.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+ReadWritePaths=/opt/ai-at-advent/data
+
+# Don't auto-restart — daily oneshot. Persistent failure shows up
+# as silence in the inbox + a missing healthcheck ping.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

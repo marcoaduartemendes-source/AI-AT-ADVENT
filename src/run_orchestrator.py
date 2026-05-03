@@ -28,11 +28,14 @@ from risk.manager import RiskManager
 from strategies import (
     BollingerBreakout,
     CommodityCarry,
+    CrossVenueArb,
     CryptoBasisTrade,
     CryptoFundingCarry,
+    CryptoFundingCarryV2,
     CryptoXSMom,
     DividendGrowth,
     EarningsMomentum,
+    EarningsNewsPEAD,
     GapTrading,
     InternationalsRotation,
     KalshiCalibrationArb,
@@ -197,12 +200,29 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="macro_kalshi_v2",
         asset_classes=["PREDICTION"], venue="kalshi",
-        # Starts at 2% — bigger than v1 (3% existing) wouldn't be safe
-        # until we have a few weeks of paper P&L confirming the CME-vs-
-        # Kalshi divergence actually drives wins. Champion tier auto-
-        # promotes to higher alloc once Sharpe ≥ 1.0 + 10 trades.
         target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.01,
         description="Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)",
+    ),
+    StrategyMeta(
+        name="cross_venue_arb",
+        asset_classes=["PREDICTION"], venue="kalshi",
+        target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.01,
+        description="Kalshi vs Polymarket cross-venue arbitrage (P5)",
+    ),
+    StrategyMeta(
+        name="crypto_funding_carry_v2",
+        asset_classes=["CRYPTO_PERP"], venue="coinbase",
+        # Smaller than v1 (12%) until we have paper-P&L data showing
+        # the multi-venue gate adds Sharpe rather than just shrinking
+        # opportunity. Champion tier auto-promotes if it earns it.
+        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        description="Funding carry gated on Coinbase+Binance consensus (P5)",
+    ),
+    StrategyMeta(
+        name="earnings_news_pead",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        description="PEAD gated on RSS news corroboration (P5)",
     ),
 ]
 
@@ -218,6 +238,8 @@ def build_strategies(brokers):
         instances["crypto_basis_trade"] = CryptoBasisTrade(cb)
         instances["commodity_carry"] = CommodityCarry(cb)
         instances["crypto_xsmom"] = CryptoXSMom(cb)
+        # Phase 5 — multi-venue consensus version
+        instances["crypto_funding_carry_v2"] = CryptoFundingCarryV2(cb)
     if "alpaca" in brokers:
         al = brokers["alpaca"]
         instances["risk_parity_etf"] = RiskParityETF(al)
@@ -236,12 +258,15 @@ def build_strategies(brokers):
         instances["turn_of_month"] = TurnOfMonth(al)
         instances["low_vol_anomaly"] = LowVolAnomaly(al)
         instances["internationals_rotation"] = InternationalsRotation(al)
+        # Phase 5 — Alpaca-side new-feed strategy
+        instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:
         ks = brokers["kalshi"]
         instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
         instances["macro_kalshi"] = MacroKalshi(ks)
-        # Phase 5 — first strategy to consume the new CME data feed
+        # Phase 5 — strategies consuming the new Sprint-3 data feeds
         instances["macro_kalshi_v2"] = MacroKalshiV2(ks)
+        instances["cross_venue_arb"] = CrossVenueArb(ks)
     return instances
 
 

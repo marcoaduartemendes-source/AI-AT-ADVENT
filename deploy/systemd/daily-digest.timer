@@ -1,0 +1,15 @@
+[Unit]
+Description=AI-AT-ADVENT daily digest timer
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+
+[Timer]
+# Once daily at 13:00 UTC = 9 ET (after US market open) /
+# 14:00 GMT / 15:00 CET. Sets the digest up to land at breakfast
+# US East / lunch in Europe. Doesn't conflict with the 04:00 UTC
+# db-backup or any of the cycle/scout timers.
+OnCalendar=*-*-* 13:00:00
+Persistent=true
+Unit=daily-digest.service
+
+[Install]
+WantedBy=timers.target

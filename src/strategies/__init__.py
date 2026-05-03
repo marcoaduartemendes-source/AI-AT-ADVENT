@@ -39,11 +39,14 @@ boost) reallocate capital to winners.
 """
 from .bollinger_breakout import BollingerBreakout
 from .commodity_carry import CommodityCarry
+from .cross_venue_arb import CrossVenueArb
 from .crypto_basis_trade import CryptoBasisTrade
 from .crypto_funding_carry import CryptoFundingCarry
+from .crypto_funding_carry_v2 import CryptoFundingCarryV2
 from .crypto_xsmom import CryptoXSMom
 from .dividend_growth import DividendGrowth
 from .earnings_momentum import EarningsMomentum
+from .earnings_news_pead import EarningsNewsPEAD
 from .gap_trading import GapTrading
 from .internationals_rotation import InternationalsRotation
 from .kalshi_calibration_arb import KalshiCalibrationArb
@@ -84,4 +87,8 @@ __all__ = [
     "InternationalsRotation",
     "LowVolAnomaly",
     "TurnOfMonth",
+    # Phase 5 — strategies consuming the new Sprint-3 data feeds
+    "CrossVenueArb",         # Kalshi vs Polymarket
+    "CryptoFundingCarryV2",  # Coinbase + Binance consensus
+    "EarningsNewsPEAD",      # PEAD × news corroboration
 ]

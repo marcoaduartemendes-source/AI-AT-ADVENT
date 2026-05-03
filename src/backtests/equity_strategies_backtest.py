@@ -517,6 +517,403 @@ def backtest_turn_of_month(window_days: int) -> BacktestSummary:
     )
 
 
+# ─── 6) sector_rotation ───────────────────────────────────────────────
+
+
+_SECTOR_ETFS = ["XLK", "XLF", "XLE", "XLV", "XLY", "XLP",
+                 "XLI", "XLB", "XLU", "XLRE", "XLC"]
+
+
+def backtest_sector_rotation(window_days: int) -> BacktestSummary:
+    """Top-N SPDR sector ETFs by 90d trailing return; rebalance monthly.
+    Mirrors src/strategies/sector_rotation.py: TOP_N=3, LOOKBACK=90."""
+    lookback, top_n = 90, 3
+    rebalance_every = 21
+    per_leg_usd = 4000.0
+
+    histories = _load_universe(_SECTOR_ETFS, window_days + lookback + 10)
+    if len(histories) < 4:
+        return BacktestSummary(
+            strategy="sector_rotation", window_days=window_days,
+            note="Insufficient Yahoo data",
+        )
+
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, lookback + 1)
+
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+
+    for i in range(base_idx, n_bars):
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        bar_time = datetime.fromtimestamp(
+            next(iter(histories.values()))[i, 0], tz=UTC,
+        ).isoformat()
+
+        # Rank by 90-day return
+        scored: list[tuple[str, float, float]] = []
+        for sym, candles in histories.items():
+            if i >= len(candles) or i - lookback < 0:
+                continue
+            start = float(candles[i - lookback, 4])
+            end = float(candles[i, 4])
+            if start <= 0:
+                continue
+            ret = (end - start) / start
+            if ret < 0:    # don't long sectors with negative trend
+                continue
+            scored.append((sym, ret, end))
+        if not scored:
+            continue
+        scored.sort(key=lambda r: r[1], reverse=True)
+        winners = {s for s, _, _ in scored[:top_n]}
+
+        # Close non-winners
+        for sym in list(positions.keys()):
+            if sym in winners or i >= len(histories[sym]):
+                continue
+            pos = positions.pop(sym)
+            close = float(histories[sym][i, 4])
+            gross = pos["qty"] * (close - pos["entry_price"])
+            fees = (pos["qty"] * pos["entry_price"]
+                     + pos["qty"] * close) * _FEE_RATE
+            trades.append({
+                "strategy": "sector_rotation", "side": "SELL",
+                "product_id": sym, "amount_usd": pos["qty"] * close,
+                "quantity": pos["qty"], "entry_price": pos["entry_price"],
+                "exit_price": close, "open_time": pos["entry_time"],
+                "close_time": bar_time, "pnl_usd": gross - fees,
+                "exit_reason": "out of top-3",
+            })
+        # Open new winners
+        for sym, _, last in scored[:top_n]:
+            if sym in positions:
+                continue
+            qty = per_leg_usd / last
+            positions[sym] = {
+                "qty": qty, "entry_price": last, "entry_time": bar_time,
+            }
+            entry_volume += per_leg_usd
+            trades.append({
+                "strategy": "sector_rotation", "side": "BUY",
+                "product_id": sym, "amount_usd": per_leg_usd,
+                "quantity": qty, "entry_price": last,
+                "open_time": bar_time, "reason": "top-3 by 90d return",
+            })
+
+    return _equity_curve_to_summary(
+        "sector_rotation", window_days, trades, entry_volume,
+    )
+
+
+# ─── 7) pairs_trading ─────────────────────────────────────────────────
+
+
+_PAIRS = [
+    ("KO", "PEP"), ("V", "MA"), ("GS", "MS"),
+    ("JPM", "BAC"), ("HD", "LOW"), ("CVX", "XOM"),
+]
+
+
+def backtest_pairs_trading(window_days: int) -> BacktestSummary:
+    """Stat-arb on 6 classic correlated pairs. When the price ratio
+    A/B drifts > 2σ from its 60-day mean, long the cheap leg / short
+    the expensive leg; close on mean revert."""
+    lookback = 60
+    z_entry, z_exit = 2.0, 0.5
+    per_leg_usd = 1500.0
+    fee_rate = _FEE_RATE
+
+    all_syms = sorted({s for pair in _PAIRS for s in pair})
+    histories = _load_universe(all_syms, window_days + lookback + 10)
+    if len(histories) < 6:
+        return BacktestSummary(
+            strategy="pairs_trading", window_days=window_days,
+            note="Insufficient Yahoo data",
+        )
+
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, lookback + 1)
+
+    trades: list[dict] = []
+    # positions[(a,b)] = {"long": sym, "short": sym, "long_qty", "short_qty",
+    #                    "entry_long", "entry_short", "entry_idx", "entry_time"}
+    positions: dict[tuple[str, str], dict] = {}
+    entry_volume = 0.0
+
+    for i in range(base_idx, n_bars):
+        bar_time = datetime.fromtimestamp(
+            next(iter(histories.values()))[i, 0], tz=UTC,
+        ).isoformat()
+
+        for a, b in _PAIRS:
+            if a not in histories or b not in histories:
+                continue
+            ca = histories[a]
+            cb = histories[b]
+            if i >= len(ca) or i >= len(cb):
+                continue
+            window_a = ca[max(0, i - lookback):i, 4]
+            window_b = cb[max(0, i - lookback):i, 4]
+            if len(window_a) < lookback or len(window_b) < lookback:
+                continue
+            mask = (window_a > 0) & (window_b > 0)
+            ratios = window_a[mask] / window_b[mask]
+            if len(ratios) < lookback // 2:
+                continue
+            mean = float(ratios.mean())
+            sd = float(ratios.std(ddof=1))
+            if sd <= 0:
+                continue
+            cur_a = float(ca[i, 4])
+            cur_b = float(cb[i, 4])
+            if cur_b <= 0:
+                continue
+            cur_ratio = cur_a / cur_b
+            z = (cur_ratio - mean) / sd
+
+            pos = positions.get((a, b))
+
+            if pos is None and abs(z) >= z_entry:
+                # Long the cheap leg, short the expensive leg
+                if z > 0:
+                    # ratio too high → A is rich, B is cheap → long B, short A
+                    long_sym, short_sym = b, a
+                    long_px, short_px = cur_b, cur_a
+                else:
+                    long_sym, short_sym = a, b
+                    long_px, short_px = cur_a, cur_b
+                long_qty = per_leg_usd / long_px
+                short_qty = per_leg_usd / short_px
+                positions[(a, b)] = {
+                    "long": long_sym, "short": short_sym,
+                    "long_qty": long_qty, "short_qty": short_qty,
+                    "entry_long": long_px, "entry_short": short_px,
+                    "entry_time": bar_time, "entry_z": z,
+                }
+                entry_volume += 2 * per_leg_usd
+                trades.append({
+                    "strategy": "pairs_trading", "side": "PAIR-OPEN",
+                    "product_id": f"{long_sym}/{short_sym}",
+                    "amount_usd": 2 * per_leg_usd,
+                    "quantity": long_qty + short_qty,
+                    "entry_price": cur_ratio,
+                    "open_time": bar_time,
+                    "reason": f"z={z:+.2f}",
+                })
+            elif pos is not None and abs(z) <= z_exit:
+                # Mean-revert: close both legs
+                long_close = (cur_a if pos["long"] == a else cur_b)
+                short_close = (cur_b if pos["long"] == a else cur_a)
+                long_pnl = pos["long_qty"] * (long_close - pos["entry_long"])
+                short_pnl = pos["short_qty"] * (pos["entry_short"] - short_close)
+                gross = long_pnl + short_pnl
+                fees = 4 * per_leg_usd * fee_rate    # 4 legs total
+                trades.append({
+                    "strategy": "pairs_trading", "side": "PAIR-CLOSE",
+                    "product_id": f"{pos['long']}/{pos['short']}",
+                    "amount_usd": 2 * per_leg_usd,
+                    "quantity": pos["long_qty"] + pos["short_qty"],
+                    "entry_price": pos["entry_z"],
+                    "exit_price": z,
+                    "open_time": pos["entry_time"], "close_time": bar_time,
+                    "pnl_usd": gross - fees,
+                    "exit_reason": f"|z|={abs(z):.2f} ≤ {z_exit}",
+                })
+                del positions[(a, b)]
+
+    return _equity_curve_to_summary(
+        "pairs_trading", window_days, trades, entry_volume,
+    )
+
+
+# ─── 8) dividend_growth ───────────────────────────────────────────────
+
+
+_DIV_ETFS = ["VYM", "SCHD", "DVY", "HDV", "NOBL", "DGRO", "SPHD"]
+
+
+def backtest_dividend_growth(window_days: int) -> BacktestSummary:
+    """Top-2 dividend ETFs by 90d total return; rebalance monthly.
+    Mirrors src/strategies/dividend_growth.py: TOP_N=2, LOOKBACK=90."""
+    lookback, top_n = 90, 2
+    rebalance_every = 21
+    per_leg_usd = 3000.0
+
+    histories = _load_universe(_DIV_ETFS, window_days + lookback + 10)
+    if len(histories) < 3:
+        return BacktestSummary(
+            strategy="dividend_growth", window_days=window_days,
+            note="Insufficient Yahoo data",
+        )
+
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, lookback + 1)
+
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+
+    for i in range(base_idx, n_bars):
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        bar_time = datetime.fromtimestamp(
+            next(iter(histories.values()))[i, 0], tz=UTC,
+        ).isoformat()
+
+        scored: list[tuple[str, float, float]] = []
+        for sym, candles in histories.items():
+            if i >= len(candles) or i - lookback < 0:
+                continue
+            start = float(candles[i - lookback, 4])
+            end = float(candles[i, 4])
+            if start <= 0:
+                continue
+            ret = (end - start) / start
+            scored.append((sym, ret, end))
+        if not scored:
+            continue
+        scored.sort(key=lambda r: r[1], reverse=True)
+        winners = {s for s, _, _ in scored[:top_n]}
+
+        for sym in list(positions.keys()):
+            if sym in winners or i >= len(histories[sym]):
+                continue
+            pos = positions.pop(sym)
+            close = float(histories[sym][i, 4])
+            gross = pos["qty"] * (close - pos["entry_price"])
+            fees = (pos["qty"] * pos["entry_price"]
+                     + pos["qty"] * close) * _FEE_RATE
+            trades.append({
+                "strategy": "dividend_growth", "side": "SELL",
+                "product_id": sym, "amount_usd": pos["qty"] * close,
+                "quantity": pos["qty"], "entry_price": pos["entry_price"],
+                "exit_price": close, "open_time": pos["entry_time"],
+                "close_time": bar_time, "pnl_usd": gross - fees,
+                "exit_reason": "out of top-2",
+            })
+        for sym, _, last in scored[:top_n]:
+            if sym in positions:
+                continue
+            qty = per_leg_usd / last
+            positions[sym] = {
+                "qty": qty, "entry_price": last, "entry_time": bar_time,
+            }
+            entry_volume += per_leg_usd
+            trades.append({
+                "strategy": "dividend_growth", "side": "BUY",
+                "product_id": sym, "amount_usd": per_leg_usd,
+                "quantity": qty, "entry_price": last,
+                "open_time": bar_time, "reason": "top-2 by 90d return",
+            })
+
+    return _equity_curve_to_summary(
+        "dividend_growth", window_days, trades, entry_volume,
+    )
+
+
+# ─── 9) internationals_rotation ───────────────────────────────────────
+
+
+_INTL_ETFS = ["EFA", "EEM", "EWJ", "EWG", "EWU", "INDA", "EWZ", "FXI"]
+_US_BASELINE = "SPY"
+
+
+def backtest_internationals_rotation(window_days: int) -> BacktestSummary:
+    """Long top-2 country ETFs only when their 90d return beats SPY.
+    Mirrors src/strategies/internationals_rotation.py."""
+    lookback, top_n = 90, 2
+    rebalance_every = 21
+    per_leg_usd = 3000.0
+
+    universe = _INTL_ETFS + [_US_BASELINE]
+    histories = _load_universe(universe, window_days + lookback + 10)
+    if _US_BASELINE not in histories or len(histories) < 4:
+        return BacktestSummary(
+            strategy="internationals_rotation", window_days=window_days,
+            note="Insufficient Yahoo data (need SPY baseline + ≥3 country ETFs)",
+        )
+
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, lookback + 1)
+
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+
+    for i in range(base_idx, n_bars):
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        bar_time = datetime.fromtimestamp(
+            next(iter(histories.values()))[i, 0], tz=UTC,
+        ).isoformat()
+
+        # SPY baseline return
+        spy = histories[_US_BASELINE]
+        if i >= len(spy):
+            continue
+        spy_start = float(spy[i - lookback, 4])
+        spy_end = float(spy[i, 4])
+        if spy_start <= 0:
+            continue
+        spy_ret = (spy_end - spy_start) / spy_start
+
+        # Country ETFs that BEAT SPY
+        scored: list[tuple[str, float, float]] = []
+        for sym in _INTL_ETFS:
+            if sym not in histories:
+                continue
+            candles = histories[sym]
+            if i >= len(candles):
+                continue
+            start = float(candles[i - lookback, 4])
+            end = float(candles[i, 4])
+            if start <= 0:
+                continue
+            ret = (end - start) / start
+            if ret > spy_ret:
+                scored.append((sym, ret, end))
+        scored.sort(key=lambda r: r[1], reverse=True)
+        winners = {s for s, _, _ in scored[:top_n]}
+
+        for sym in list(positions.keys()):
+            if sym in winners or i >= len(histories[sym]):
+                continue
+            pos = positions.pop(sym)
+            close = float(histories[sym][i, 4])
+            gross = pos["qty"] * (close - pos["entry_price"])
+            fees = (pos["qty"] * pos["entry_price"]
+                     + pos["qty"] * close) * _FEE_RATE
+            trades.append({
+                "strategy": "internationals_rotation", "side": "SELL",
+                "product_id": sym, "amount_usd": pos["qty"] * close,
+                "quantity": pos["qty"], "entry_price": pos["entry_price"],
+                "exit_price": close, "open_time": pos["entry_time"],
+                "close_time": bar_time, "pnl_usd": gross - fees,
+                "exit_reason": "no longer beating SPY (top-2)",
+            })
+        for sym, _, last in scored[:top_n]:
+            if sym in positions:
+                continue
+            qty = per_leg_usd / last
+            positions[sym] = {
+                "qty": qty, "entry_price": last, "entry_time": bar_time,
+            }
+            entry_volume += per_leg_usd
+            trades.append({
+                "strategy": "internationals_rotation", "side": "BUY",
+                "product_id": sym, "amount_usd": per_leg_usd,
+                "quantity": qty, "entry_price": last,
+                "open_time": bar_time, "reason": "beats SPY 90d",
+            })
+
+    return _equity_curve_to_summary(
+        "internationals_rotation", window_days, trades, entry_volume,
+    )
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────
 
 

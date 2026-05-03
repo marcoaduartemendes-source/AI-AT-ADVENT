@@ -62,7 +62,7 @@ else
 fi
 
 echo "[4/6] Refreshing systemd unit files (if changed)"
-for unit in orchestrator scouts dashboard db-backup; do
+for unit in orchestrator scouts dashboard db-backup daily-digest; do
     src="$INSTALL_DIR/deploy/systemd/$unit.service"
     dst="/etc/systemd/system/$unit.service"
     [[ -f "$src" ]] || continue    # db-backup is new; tolerate older deploys
@@ -79,6 +79,11 @@ systemctl daemon-reload
 # Sprint A2 — Enable db-backup timer on first deploy that includes it.
 if [[ -f "/etc/systemd/system/db-backup.timer" ]]; then
     systemctl enable --now db-backup.timer 2>/dev/null || true
+fi
+
+# Sprint E2 — Enable daily-digest timer on first deploy that includes it.
+if [[ -f "/etc/systemd/system/daily-digest.timer" ]]; then
+    systemctl enable --now daily-digest.timer 2>/dev/null || true
 fi
 
 echo "[5/6] Restarting orchestrator timer"

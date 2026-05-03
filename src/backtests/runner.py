@@ -527,6 +527,26 @@ def _turn_of_month_dispatch(window_days: int) -> BacktestSummary:
     return backtest_turn_of_month(window_days)
 
 
+def _sector_rotation_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_sector_rotation
+    return backtest_sector_rotation(window_days)
+
+
+def _pairs_trading_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_pairs_trading
+    return backtest_pairs_trading(window_days)
+
+
+def _dividend_growth_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_dividend_growth
+    return backtest_dividend_growth(window_days)
+
+
+def _internationals_rotation_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_internationals_rotation
+    return backtest_internationals_rotation(window_days)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "risk_parity_etf": backtest_risk_parity_etf,
@@ -538,12 +558,16 @@ _STRATEGY_BACKTESTS = {
     "crypto_basis_trade": _crypto_basis_trade_dispatch,
     "kalshi_calibration_arb": _kalshi_calibration_arb_dispatch,
     "macro_kalshi": _macro_kalshi_dispatch,
-    # Sprint B3: 5 of the 14 unbacktested strategies, all Yahoo-fed.
+    # Sprint B3 — 9 of the 14 unbacktested strategies, all Yahoo-fed.
     "rsi_mean_reversion": _rsi_mean_reversion_dispatch,
     "bollinger_breakout": _bollinger_breakout_dispatch,
     "gap_trading": _gap_trading_dispatch,
     "low_vol_anomaly": _low_vol_anomaly_dispatch,
     "turn_of_month": _turn_of_month_dispatch,
+    "sector_rotation": _sector_rotation_dispatch,
+    "pairs_trading": _pairs_trading_dispatch,
+    "dividend_growth": _dividend_growth_dispatch,
+    "internationals_rotation": _internationals_rotation_dispatch,
 }
 
 
