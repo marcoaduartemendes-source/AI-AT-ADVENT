@@ -31,16 +31,16 @@ _FEE_RATE = _FEE_BPS / 10000
 
 
 # Strategies whose backtest needs data we don't have (yet).
-# - pead             → real backtest via FMP /historical/earning_calendar
-# - commodity_carry  → proxy backtest via commodity-ETF momentum
-#   (real version needs futures-curve data which is paid CME)
-# The remaining 4 still need data feeds we haven't wired up.
-UNBACKTESTABLE = {
-    "crypto_funding_carry":   "needs historical perp funding-rate series (Coinbase doesn't expose)",
-    "crypto_basis_trade":     "needs historical futures vs spot snapshots",
-    "kalshi_calibration_arb": "needs historical Kalshi market resolutions",
-    "macro_kalshi":           "needs historical Kalshi macro events",
-}
+# As of audit-fix #3, the 4 previously-stub strategies are now wired to
+# real public data feeds:
+#   - crypto_funding_carry    → Bybit funding history (≈ Coinbase ±1bp)
+#   - crypto_basis_trade      → Bybit perp-vs-spot basis (proxy for
+#                               quarterly-futures basis, see file note)
+#   - kalshi_calibration_arb  → Kalshi /markets settled-history (auth)
+#   - macro_kalshi            → same Kalshi feed + FRED actuals
+#
+# Anything still genuinely un-backtestable goes here.
+UNBACKTESTABLE: dict[str, str] = {}
 
 
 # ─── Output type ──────────────────────────────────────────────────────────
@@ -480,6 +480,28 @@ def _commodity_carry_dispatch(window_days: int) -> BacktestSummary:
     return backtest_commodity_carry(window_days)
 
 
+def _crypto_funding_carry_dispatch(window_days: int) -> BacktestSummary:
+    """Lazy-import to avoid pulling Bybit at module-load time."""
+    from .crypto_funding_carry_backtest import backtest_crypto_funding_carry
+    return backtest_crypto_funding_carry(window_days)
+
+
+def _crypto_basis_trade_dispatch(window_days: int) -> BacktestSummary:
+    from .crypto_basis_trade_backtest import backtest_crypto_basis_trade
+    return backtest_crypto_basis_trade(window_days)
+
+
+def _kalshi_calibration_arb_dispatch(window_days: int) -> BacktestSummary:
+    """Lazy-import to avoid pulling Kalshi adapter at module-load time."""
+    from .kalshi_arb_backtest import backtest_kalshi_calibration_arb
+    return backtest_kalshi_calibration_arb(window_days)
+
+
+def _macro_kalshi_dispatch(window_days: int) -> BacktestSummary:
+    from .macro_kalshi_backtest import backtest_macro_kalshi
+    return backtest_macro_kalshi(window_days)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "risk_parity_etf": backtest_risk_parity_etf,
@@ -487,6 +509,10 @@ _STRATEGY_BACKTESTS = {
     "vol_managed_overlay": backtest_vol_managed_overlay,
     "pead": _pead_dispatch,
     "commodity_carry": _commodity_carry_dispatch,
+    "crypto_funding_carry": _crypto_funding_carry_dispatch,
+    "crypto_basis_trade": _crypto_basis_trade_dispatch,
+    "kalshi_calibration_arb": _kalshi_calibration_arb_dispatch,
+    "macro_kalshi": _macro_kalshi_dispatch,
 }
 
 
