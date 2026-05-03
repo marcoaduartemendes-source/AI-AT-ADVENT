@@ -49,6 +49,7 @@ from .internationals_rotation import InternationalsRotation
 from .kalshi_calibration_arb import KalshiCalibrationArb
 from .low_vol_anomaly import LowVolAnomaly
 from .macro_kalshi import MacroKalshi
+from .macro_kalshi_v2 import MacroKalshiV2
 from .pairs_trading import PairsTrading
 from .pead import PEAD
 from .risk_parity_etf import RiskParityETF
@@ -66,6 +67,7 @@ __all__ = [
     "CryptoXSMom",
     "KalshiCalibrationArb",
     "MacroKalshi",
+    "MacroKalshiV2",
     "PEAD",
     "RiskParityETF",
     "TSMomETF",

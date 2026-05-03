@@ -502,6 +502,31 @@ def _macro_kalshi_dispatch(window_days: int) -> BacktestSummary:
     return backtest_macro_kalshi(window_days)
 
 
+def _rsi_mean_reversion_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_rsi_mean_reversion
+    return backtest_rsi_mean_reversion(window_days)
+
+
+def _bollinger_breakout_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_bollinger_breakout
+    return backtest_bollinger_breakout(window_days)
+
+
+def _gap_trading_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_gap_trading
+    return backtest_gap_trading(window_days)
+
+
+def _low_vol_anomaly_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_low_vol_anomaly
+    return backtest_low_vol_anomaly(window_days)
+
+
+def _turn_of_month_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_turn_of_month
+    return backtest_turn_of_month(window_days)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "risk_parity_etf": backtest_risk_parity_etf,
@@ -513,6 +538,12 @@ _STRATEGY_BACKTESTS = {
     "crypto_basis_trade": _crypto_basis_trade_dispatch,
     "kalshi_calibration_arb": _kalshi_calibration_arb_dispatch,
     "macro_kalshi": _macro_kalshi_dispatch,
+    # Sprint B3: 5 of the 14 unbacktested strategies, all Yahoo-fed.
+    "rsi_mean_reversion": _rsi_mean_reversion_dispatch,
+    "bollinger_breakout": _bollinger_breakout_dispatch,
+    "gap_trading": _gap_trading_dispatch,
+    "low_vol_anomaly": _low_vol_anomaly_dispatch,
+    "turn_of_month": _turn_of_month_dispatch,
 }
 
 

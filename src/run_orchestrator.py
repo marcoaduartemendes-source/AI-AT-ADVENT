@@ -38,6 +38,7 @@ from strategies import (
     KalshiCalibrationArb,
     LowVolAnomaly,
     MacroKalshi,
+    MacroKalshiV2,
     PairsTrading,
     PEAD,
     RiskParityETF,
@@ -192,6 +193,17 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
         description="International country-ETF momentum vs SPY (P4b)",
     ),
+    # ── Phase 5 — strategies consuming the new data feeds (Sprint C)
+    StrategyMeta(
+        name="macro_kalshi_v2",
+        asset_classes=["PREDICTION"], venue="kalshi",
+        # Starts at 2% — bigger than v1 (3% existing) wouldn't be safe
+        # until we have a few weeks of paper P&L confirming the CME-vs-
+        # Kalshi divergence actually drives wins. Champion tier auto-
+        # promotes to higher alloc once Sharpe ≥ 1.0 + 10 trades.
+        target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.01,
+        description="Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)",
+    ),
 ]
 
 # Backward compat alias used by older test scripts
@@ -228,6 +240,8 @@ def build_strategies(brokers):
         ks = brokers["kalshi"]
         instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
         instances["macro_kalshi"] = MacroKalshi(ks)
+        # Phase 5 — first strategy to consume the new CME data feed
+        instances["macro_kalshi_v2"] = MacroKalshiV2(ks)
     return instances
 
 

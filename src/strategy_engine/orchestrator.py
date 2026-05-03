@@ -238,13 +238,39 @@ class Orchestrator:
             except Exception as e:
                 report.errors.append(f"[{name}] compute failed: {e}")
                 logger.exception(f"[{name}] strategy.compute raised")
+                # Sprint E1 wiring — record this strategy as failed for
+                # the consecutive-error tracker. Best-effort: tracking
+                # itself raising must not break the cycle.
+                err_msg = f"compute: {type(e).__name__}: {str(e)[:160]}"
+                self._record_strategy_outcome(name, had_error=True,
+                                                error_text=err_msg)
                 continue
+
+            # Strategy compute succeeded → record clean cycle for the
+            # consecutive-error tracker. Resets the count if it was
+            # accumulating.
+            self._record_strategy_outcome(name, had_error=False)
 
             report.proposals_total += len(proposals)
             for p in proposals:
                 self._handle_proposal(p, state, report, strategy)
 
         return report
+
+    @staticmethod
+    def _record_strategy_outcome(name: str, *, had_error: bool,
+                                   error_text: str | None = None) -> None:
+        """Wrapper around common.strategy_alerts.record_cycle_outcome
+        that swallows all exceptions — alerting must never break the
+        cycle. Lazy-imported so test fixtures that don't need the
+        alert DB don't pay the import cost."""
+        try:
+            from common.strategy_alerts import record_cycle_outcome
+            record_cycle_outcome(
+                name, had_error=had_error, error_text=error_text,
+            )
+        except Exception as e:    # noqa: BLE001
+            logger.debug(f"strategy_alerts hook failed for {name}: {e}")
 
     # ── Helpers ----------------------------------------------------------
 
