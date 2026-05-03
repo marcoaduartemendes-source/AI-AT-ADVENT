@@ -79,6 +79,82 @@ def make_strategies(granularity: str):
 # ─── Live data ────────────────────────────────────────────────────────────────
 
 
+# Strategies that predate the orchestrator. They trade live on
+# Coinbase via main_trading.py and aren't in ALL_STRATEGIES, so
+# without an explicit override their realized P&L lands in a phantom
+# "legacy" bucket instead of "coinbase". This caused the dashboard
+# to show $0 realized P&L on Coinbase even though the bot was
+# actively closing trades.
+LEGACY_STRATEGY_TO_VENUE: dict[str, str] = {
+    "Momentum":           "coinbase",
+    "MeanReversion":      "coinbase",
+    "VolatilityBreakout": "coinbase",
+}
+
+
+def _build_strategy_to_venue() -> dict[str, str]:
+    """Strategy-name → venue map. Legacy + orchestrator-registered.
+
+    Pulled from run_orchestrator.ALL_STRATEGIES at runtime so newly
+    added strategies are picked up automatically. Legacy strategies
+    are anchored to coinbase via LEGACY_STRATEGY_TO_VENUE so their
+    P&L attributes correctly even though they aren't registered."""
+    out: dict[str, str] = dict(LEGACY_STRATEGY_TO_VENUE)
+    try:
+        from run_orchestrator import ALL_STRATEGIES
+        for meta in ALL_STRATEGIES:
+            out[meta.name] = meta.venue
+    except ImportError:
+        pass
+    return out
+
+
+def _attribute_broker_pnl(
+    by_broker: dict[str, dict],
+    all_trades: list[dict],
+    strategy_to_venue: dict[str, str] | None = None,
+) -> None:
+    """Mutates `by_broker` in place: adds realized_pnl_usd,
+    n_trades_closed, and total_pnl_usd (realized + unrealized) keys
+    for every venue any trade touches.
+
+    Trades whose strategy isn't in `strategy_to_venue` fall into a
+    "legacy" bucket. Pure function over `all_trades` — no DB or
+    network access — so it's the testable seam for the per-broker
+    attribution logic.
+    """
+    s2v = strategy_to_venue if strategy_to_venue is not None else _build_strategy_to_venue()
+
+    for t in all_trades:
+        if t.get("pnl_usd") is None:
+            continue
+        sname = t.get("strategy") or ""
+        venue = s2v.get(sname, "legacy")
+        if venue not in by_broker:
+            # Unknown strategy or broker not constructed — track separately
+            by_broker[venue] = {
+                "venue": venue, "cash_usd": 0, "buying_power_usd": 0,
+                "equity_usd": 0, "invested_usd": 0,
+                "unrealized_pnl_usd": 0, "n_positions": 0,
+                "n_open_orders": 0, "available_pct": 0,
+                "last_ok_at": None, "error": None,
+            }
+        by_broker[venue].setdefault("realized_pnl_usd", 0.0)
+        by_broker[venue]["realized_pnl_usd"] += t["pnl_usd"]
+        by_broker[venue].setdefault("n_trades_closed", 0)
+        by_broker[venue]["n_trades_closed"] += 1
+
+    # Total = realized + unrealized for every broker (even ones with
+    # no closed trades — they still get the explicit zero so the
+    # dashboard displays "$0.00" rather than "—").
+    for b in by_broker.values():
+        b["realized_pnl_usd"] = b.get("realized_pnl_usd", 0.0)
+        b["n_trades_closed"] = b.get("n_trades_closed", 0)
+        b["total_pnl_usd"] = (
+            b["realized_pnl_usd"] + b.get("unrealized_pnl_usd", 0.0)
+        )
+
+
 def load_live_data() -> dict:
     """Pull all live trades + open positions from the bot's SQLite DB."""
     db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
@@ -271,52 +347,8 @@ def load_live_data() -> dict:
         reverse=True,
     )
 
-    # Per-broker realized P&L attribution. The trades table doesn't
-    # carry a venue column; we map strategy → venue via the
-    # orchestrator's strategy registry. Trades whose strategy isn't
-    # registered (e.g. legacy bot's Momentum/MeanReversion) attribute
-    # to the legacy bucket.
-    strategy_to_venue: dict[str, str] = {}
-    try:
-        from run_orchestrator import ALL_STRATEGIES
-        for meta in ALL_STRATEGIES:
-            strategy_to_venue[meta.name] = meta.venue
-    except ImportError:
-        pass
-
-    for t in all_trades:
-        if t.get("pnl_usd") is None:
-            continue
-        sname = t.get("strategy") or ""
-        venue = strategy_to_venue.get(sname, "legacy")
-        if venue not in by_broker:
-            # The legacy bot or an unknown strategy — track separately
-            by_broker.setdefault(venue, {
-                "venue": venue, "cash_usd": 0, "buying_power_usd": 0,
-                "equity_usd": 0, "invested_usd": 0,
-                "unrealized_pnl_usd": 0, "n_positions": 0,
-                "n_open_orders": 0, "available_pct": 0,
-                "last_ok_at": None, "error": None,
-            })
-        by_broker[venue].setdefault("realized_pnl_usd", 0.0)
-        by_broker[venue]["realized_pnl_usd"] += t["pnl_usd"]
-
-    # Trade counts per broker (filled SELLs)
-    for t in all_trades:
-        sname = t.get("strategy") or ""
-        venue = strategy_to_venue.get(sname, "legacy")
-        if venue in by_broker:
-            by_broker[venue].setdefault("n_trades_closed", 0)
-            if t.get("pnl_usd") is not None:
-                by_broker[venue]["n_trades_closed"] += 1
-
-    # Compute total_pnl_usd per broker as realized + unrealized
-    for b in by_broker.values():
-        b["realized_pnl_usd"] = b.get("realized_pnl_usd", 0.0)
-        b["n_trades_closed"] = b.get("n_trades_closed", 0)
-        b["total_pnl_usd"] = (
-            b["realized_pnl_usd"] + b.get("unrealized_pnl_usd", 0.0)
-        )
+    # Per-broker realized P&L attribution + trade counts.
+    _attribute_broker_pnl(by_broker, all_trades)
 
     return {
         "trades": all_trades_sorted,

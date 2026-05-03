@@ -1,0 +1,32 @@
+[Unit]
+Description=AI-AT-ADVENT daily DB backup → DigitalOcean Spaces
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+TimeoutStartSec=600
+# Source the env file via bash wrapper so multi-line PEMs survive,
+# matching the orchestrator pattern.
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/deploy/scripts/db_backup.sh'
+
+# Same hardening profile as the orchestrator. The backup script needs:
+#   /opt/ai-at-advent/data  (read DBs)
+#   /tmp + /run             (working tar archive)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/ai-at-advent/data
+
+# Don't auto-restart — backup is daily and idempotent. If it failed,
+# the next day's run will try again. Persistent failure shows in
+# journalctl + the missing snapshot in the Spaces bucket.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

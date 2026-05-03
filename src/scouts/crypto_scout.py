@@ -32,11 +32,12 @@ from .base import ScoutAgent, ScoutSignal
 logger = logging.getLogger(__name__)
 
 
-# Pairs we monitor (must match strategies/crypto_funding_carry.py)
+# Pairs we monitor (must match strategies/crypto_funding_carry.py).
+# Sprint B1: use real Coinbase Intl perp tickers (was placeholders).
 PAIRS = [
-    ("BTC-USD", "BIT-PERP-INTX"),
-    ("ETH-USD", "ETP-PERP-INTX"),
-    ("SOL-USD", "SLP-PERP-INTX"),
+    ("BTC-USD", "BTC-PERP-INTX"),
+    ("ETH-USD", "ETH-PERP-INTX"),
+    ("SOL-USD", "SOL-PERP-INTX"),
 ]
 
 COINBASE_PUBLIC = "https://api.coinbase.com/api/v3/brokerage/market"

@@ -28,13 +28,90 @@ from .base import ScoutAgent, ScoutSignal
 logger = logging.getLogger(__name__)
 
 
-# Static FOMC calendar for 2026 (manually curated, refresh annually).
+# Static FOMC fallback calendar. Used only when the live federalreserve.gov
+# scrape fails. Sprint B4 audit fix: previously this was the ONLY source —
+# the list silently expires every January. Now we attempt to scrape the
+# live page first; the static list is a backstop so the scout still works
+# offline / when fed.gov is down. Refresh annually as a sanity check.
 # Source: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
-_FOMC_2026 = [
+_FOMC_FALLBACK_2026 = [
     "2026-01-28", "2026-03-18", "2026-04-29",
     "2026-06-17", "2026-07-29", "2026-09-16",
     "2026-11-04", "2026-12-09",
 ]
+# 2027 placeholder: keep current list valid past Jan 2027 even if the
+# scrape fails. Refresh when the Fed publishes its 2027 calendar.
+_FOMC_FALLBACK_2027 = [
+    "2027-01-27", "2027-03-17", "2027-04-28",
+    "2027-06-16", "2027-07-28", "2027-09-22",
+    "2027-11-03", "2027-12-15",
+]
+# Combined fallback covers two full calendar years; emits a warning
+# when today is past the last entry so we notice in journalctl before
+# the calendar runs dry.
+_FOMC_FALLBACK = _FOMC_FALLBACK_2026 + _FOMC_FALLBACK_2027
+
+
+def _fetch_fomc_calendar() -> list[str]:
+    """Return upcoming FOMC meeting dates as ISO strings.
+
+    Tries the live federalreserve.gov page first (free, no auth);
+    falls back to the curated static list when the scrape fails.
+    Cached for 24h via cached_get since the page rarely changes.
+    """
+    today = datetime.now(UTC).date()
+    try:
+        # The fed publishes the calendar as a structured HTML page.
+        # We don't parse the full HTML — we extract the date strings
+        # via a defensive regex against `id="article"` content. This
+        # is brittle by design: if the page changes, the regex won't
+        # match, and we fall back gracefully to the static list.
+        body = cached_get(
+            "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; MacroScout/1.0)"},
+            ttl_seconds=86400,
+        )
+    except Exception:
+        body = None
+
+    parsed: list[str] = []
+    if isinstance(body, dict):     # cached_get returns json; this page is HTML
+        body = None                 # which means parse failed → fall back
+
+    if isinstance(body, str):
+        import re
+        # Look for date patterns like 'January 28, 2026' or '1/28-29, 2026'.
+        # Capture the month, day, year and normalize to YYYY-MM-DD.
+        months = ("January February March April May June July August "
+                   "September October November December").split()
+        rx = re.compile(
+            r"(" + "|".join(months) + r")\s+(\d{1,2})(?:[-–](\d{1,2}))?,\s*(\d{4})"
+        )
+        for m_name, day, end_day, year in rx.findall(body):
+            try:
+                month_idx = months.index(m_name) + 1
+                # Two-day FOMC meetings: use the second day (announcement day)
+                day_int = int(end_day) if end_day else int(day)
+                d = datetime(int(year), month_idx, day_int).date()
+                if d >= today:
+                    parsed.append(d.isoformat())
+            except (ValueError, IndexError):
+                continue
+
+    # If scrape gave us at least 1 future meeting, prefer it. Otherwise
+    # fall back to the curated static list.
+    if parsed:
+        # Dedupe & sort
+        return sorted(set(parsed))
+
+    fallback = [d for d in _FOMC_FALLBACK
+                if datetime.strptime(d, "%Y-%m-%d").date() >= today]
+    if not fallback:
+        logger.warning(
+            "FOMC fallback calendar exhausted — refresh _FOMC_FALLBACK "
+            "with the next year's meeting dates"
+        )
+    return fallback
 
 
 class MacroScout(ScoutAgent):
@@ -139,11 +216,11 @@ class MacroScout(ScoutAgent):
 
     def _fomc_window_signal(self) -> ScoutSignal:
         today = datetime.now(UTC).date()
-        upcoming = []
-        for d in _FOMC_2026:
-            dt = datetime.strptime(d, "%Y-%m-%d").date()
-            if dt >= today:
-                upcoming.append(d)
+        # Sprint B4: pull from federalreserve.gov when reachable;
+        # the static fallback inside _fetch_fomc_calendar handles
+        # offline / scrape-broken cases.
+        upcoming = _fetch_fomc_calendar()
+        # _fetch_fomc_calendar already filters >= today; no need to re-filter
         if not upcoming:
             return ScoutSignal(
                 venue="macro", signal_type="fomc_window",

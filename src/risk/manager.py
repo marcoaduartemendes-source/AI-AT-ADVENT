@@ -74,13 +74,40 @@ class RiskState:
 
 
 class EquitySnapshotDB:
-    """Tiny SQLite table for the rolling-peak drawdown calc."""
+    """SQLite-primary, Supabase-mirrored equity-snapshot store.
 
-    def __init__(self, db_path: str | None = None):
+    The kill-switch's drawdown baseline is the most safety-critical
+    state in the system: corrupting `peak_equity` resets the
+    drawdown calc and false-fires the kill switch. Pre-audit-fix
+    this lived in a single SQLite file on a single VPS — the audit's
+    #1 flagged SPOF.
+
+    Post-fix:
+      * Writes still go to SQLite (fast, transactional).
+      * Reads check Supabase for a higher peak / longer history; if
+        Supabase has materially more data than SQLite (e.g. SQLite
+        was just zeroed by a corrupt restore), Supabase wins. SQLite
+        only "wins" when both stores agree.
+      * Supabase failures degrade gracefully — same behaviour as
+        before, just without the cross-check.
+    """
+
+    def __init__(self, db_path: str | None = None,
+                  supabase=None):
         self.db_path = os.path.abspath(
             db_path or os.environ.get("RISK_DB_PATH", "data/risk_state.db")
         )
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        # Lazy-init Supabase mirror; explicit None disables it (used in tests)
+        self._supabase = supabase
+        if self._supabase is None:
+            try:
+                from common.supabase_store import SupabaseStore
+                store = SupabaseStore()
+                if store.is_configured():
+                    self._supabase = store
+            except (ImportError, Exception):    # noqa: BLE001
+                self._supabase = None
         with self._conn() as c:
             c.execute("""
                 CREATE TABLE IF NOT EXISTS equity_snapshots (
@@ -111,13 +138,30 @@ class EquitySnapshotDB:
             conn.close()
 
     def record_snapshot(self, equity_usd: float, note: str = "") -> None:
+        """Dual-write: SQLite (primary, transactional) + Supabase
+        (mirror, best-effort). Supabase failure does not block the
+        SQLite write — if the mirror is down we'll just degrade to
+        SQLite-only reads on this row."""
+        ts = datetime.now(UTC).isoformat()
         with self._conn() as c:
             c.execute(
                 "INSERT INTO equity_snapshots (timestamp, equity_usd, note) VALUES (?, ?, ?)",
-                (datetime.now(UTC).isoformat(), equity_usd, note),
+                (ts, equity_usd, note),
             )
+        if self._supabase is not None:
+            try:
+                self._supabase.insert_equity_snapshot(
+                    equity_usd=equity_usd, timestamp=ts, note=note,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"supabase mirror write failed: {e}")
 
     def peak_equity(self, since: datetime | None = None) -> float:
+        """Highest equity since `since` (or all-time). Reads SQLite
+        primary; if Supabase reports a materially higher peak than
+        SQLite (>1% difference), Supabase wins — that signals SQLite
+        has lost data and the rolling-peak baseline must use the
+        intact Supabase value or the kill switch will false-fire."""
         with self._conn() as c:
             if since:
                 row = c.execute(
@@ -128,16 +172,64 @@ class EquitySnapshotDB:
                 row = c.execute(
                     "SELECT MAX(equity_usd) AS peak FROM equity_snapshots"
                 ).fetchone()
-        return float(row["peak"]) if row and row["peak"] is not None else 0.0
+        sqlite_peak = float(row["peak"]) if row and row["peak"] is not None else 0.0
+
+        if self._supabase is None:
+            return sqlite_peak
+
+        try:
+            sb_peak = self._supabase.peak_equity_since(
+                since.isoformat() if since else None
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"supabase peak read failed: {e}")
+            return sqlite_peak
+
+        if sb_peak is None:
+            return sqlite_peak
+
+        # Supabase wins when its peak is materially higher (>1%) —
+        # that's the disaster-recovery signal. If Supabase is just
+        # slightly higher (timing race between writes), prefer SQLite
+        # for consistency with the local read path.
+        if sqlite_peak <= 0 or (sb_peak / sqlite_peak - 1) > 0.01:
+            if sb_peak > sqlite_peak:
+                logger.warning(
+                    f"Risk peak_equity: SQLite={sqlite_peak:.2f} vs "
+                    f"Supabase={sb_peak:.2f} — using Supabase (likely "
+                    f"local SQLite reset/corruption)"
+                )
+                return sb_peak
+        return sqlite_peak
 
     def recent_returns(self, n: int = 60) -> list[float]:
-        """Returns the last `n` snapshot-to-snapshot pct returns."""
+        """Last `n` snapshot-to-snapshot pct returns.
+
+        Reads SQLite primary; if SQLite has < n/2 rows but Supabase
+        has more, prefer Supabase (SQLite was likely just initialized
+        or partially restored). Pure read — never writes."""
         with self._conn() as c:
             rows = c.execute(
                 "SELECT equity_usd FROM equity_snapshots ORDER BY id DESC LIMIT ?",
                 (n + 1,),
             ).fetchall()
-        eq = [float(r["equity_usd"]) for r in rows][::-1]  # ascending
+        eq_local = [float(r["equity_usd"]) for r in rows][::-1]    # ascending
+
+        eq = eq_local
+        if (self._supabase is not None
+                and len(eq_local) < max(2, n // 2)):
+            try:
+                eq_sb = self._supabase.recent_equity_snapshots(n)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"supabase recent read failed: {e}")
+                eq_sb = []
+            if len(eq_sb) > len(eq_local):
+                logger.warning(
+                    f"Risk recent_returns: SQLite has {len(eq_local)} "
+                    f"rows vs Supabase {len(eq_sb)} — using Supabase"
+                )
+                eq = eq_sb
+
         out = []
         for i in range(1, len(eq)):
             if eq[i - 1] > 0:
@@ -285,8 +377,22 @@ class RiskManager:
                 logger.debug(f"[risk] {name} get_positions failed: {e}")
             self._broker_snapshots[name] = snap
 
-        if persist and equity > 0:
+        # Sprint A5 — Don't persist equity snapshots when one or more
+        # brokers failed their account fetch. The "equity" sum drops
+        # by the missing broker's contribution which would falsely
+        # depress the rolling peak and immediately trigger the
+        # drawdown kill-switch on a transient API blip. By skipping
+        # persistence on degraded venues, the next healthy cycle
+        # records the true equity instead.
+        if persist and equity > 0 and venues_ok:
             self.db.record_snapshot(equity, note=f"venues={len(self.brokers)}")
+        elif persist and equity > 0 and not venues_ok:
+            logger.warning(
+                "[risk] skipping equity-snapshot persistence: "
+                "venues_ok=False (one or more broker accounts unreachable). "
+                "Drawdown calc uses prior peak; this prevents a "
+                "transient API blip from false-firing the kill switch."
+            )
 
         peak = max(self.db.peak_equity(), equity)
         dd_pct = (peak - equity) / peak if peak > 0 else 0.0

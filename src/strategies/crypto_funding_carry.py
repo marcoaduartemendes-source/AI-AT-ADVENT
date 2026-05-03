@@ -29,10 +29,18 @@ logger = logging.getLogger(__name__)
 
 
 # Pairs we'll trade. (spot_symbol, perp_symbol)
+#
+# Sprint B1 audit fix: the previous tickers (BIT/ETP/SLP-PERP-INTX)
+# were placeholder strings that don't exist on Coinbase International
+# Exchange — orders against them would be rejected immediately. The
+# real Coinbase Intl perp tickers preserve the spot symbol prefix:
+#   BTC-PERP-INTX  ETH-PERP-INTX  SOL-PERP-INTX
+# Source: https://api.coinbase.com/api/v3/brokerage/market/products
+# filtered to product_type=FUTURE & contract_expiry_type=PERPETUAL.
 DEFAULT_PAIRS = [
-    ("BTC-USD", "BIT-PERP-INTX"),
-    ("ETH-USD", "ETP-PERP-INTX"),
-    ("SOL-USD", "SLP-PERP-INTX"),
+    ("BTC-USD", "BTC-PERP-INTX"),
+    ("ETH-USD", "ETH-PERP-INTX"),
+    ("SOL-USD", "SOL-PERP-INTX"),
 ]
 
 # Annualized funding-rate thresholds for entry / exit.

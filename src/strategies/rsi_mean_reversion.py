@@ -74,30 +74,57 @@ class RSIMeanReversion(Strategy):
         slots_remaining = MAX_CONCURRENT_POSITIONS - len(held_symbols)
         size_per_slot = ctx.target_alloc_usd / MAX_CONCURRENT_POSITIONS
 
-        # ── Exits: holding period or RSI normalization ────────────────
+        # ── Exits: stop-loss FIRST, then holding period, then RSI ─────
+        # Sprint B2 audit fix: STOP_LOSS_PCT = 3% was declared but
+        # never enforced — a 2-day-RSI-bounce strategy can run -8%
+        # against you on a single bad earnings day. The stop-loss
+        # check below uses the position's entry_price vs the latest
+        # close. We check stop-loss BEFORE the time/RSI exits so a
+        # losing position closes via stop-loss reason, not a stale
+        # ">5d hold" reason that masks the loss.
         for sym, pos in ctx.open_positions.items():
             qty = pos.get("quantity") or 0
             if qty <= 0:
                 continue
-            entry_time = pos.get("entry_time")
             should_exit, reason = False, ""
-            if entry_time:
-                try:
-                    et = (datetime.fromisoformat(entry_time)
-                          if isinstance(entry_time, str) else entry_time)
-                    if datetime.now(UTC) - et > timedelta(days=MAX_HOLD_DAYS):
-                        should_exit, reason = True, f">{MAX_HOLD_DAYS}d hold"
-                except (ValueError, TypeError):
-                    pass
+
+            # Stop-loss check
+            entry_price = pos.get("entry_price")
+            if entry_price and entry_price > 0:
+                last_price = self._last_price(sym)
+                if last_price is not None:
+                    pct_move = (last_price - entry_price) / entry_price
+                    if pct_move <= -STOP_LOSS_PCT:
+                        should_exit = True
+                        reason = (f"STOP-LOSS {pct_move * 100:+.2f}% "
+                                  f"≤ -{STOP_LOSS_PCT * 100:.0f}%")
+
+            # Time-based exit
+            if not should_exit:
+                entry_time = pos.get("entry_time")
+                if entry_time:
+                    try:
+                        et = (datetime.fromisoformat(entry_time)
+                              if isinstance(entry_time, str) else entry_time)
+                        if datetime.now(UTC) - et > timedelta(days=MAX_HOLD_DAYS):
+                            should_exit, reason = True, f">{MAX_HOLD_DAYS}d hold"
+                    except (ValueError, TypeError):
+                        pass
+
+            # RSI normalization exit
             if not should_exit:
                 rsi = self._rsi(sym, RSI_PERIOD)
                 if rsi is not None and rsi >= RSI_OVERBOUGHT:
                     should_exit, reason = True, f"RSI({RSI_PERIOD})={rsi:.0f}≥{RSI_OVERBOUGHT}"
+
             if should_exit:
                 proposals.append(TradeProposal(
                     strategy=self.name, venue=self.venue, symbol=sym,
                     side=OrderSide.SELL, order_type=OrderType.MARKET,
-                    quantity=qty, confidence=0.9,
+                    quantity=qty,
+                    # Stop-loss exits run at confidence=1.0 to bypass
+                    # min_confidence gating in the portfolio manager.
+                    confidence=1.0 if "STOP-LOSS" in reason else 0.9,
                     reason=reason, is_closing=True,
                 ))
 

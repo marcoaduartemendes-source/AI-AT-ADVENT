@@ -18,7 +18,13 @@ WorkingDirectory=/opt/ai-at-advent
 # env file in a wrapper shell which DOES handle bash-style quoting,
 # then exec into Python.
 TimeoutStartSec=240
-ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_orchestrator.py --once'
+# Sprint A3 — Per-cycle flock prevents overlap when a previous cycle
+# is still running. flock waits up to 60s for the lock; if it's
+# still held after that, this cycle exits cleanly (exit 0 via
+# --conflict-exit-code) rather than racing the prior one and
+# double-trading. /run/lock is a tmpfs so the lock auto-clears on
+# reboot — no stale-lock risk.
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /usr/bin/flock --wait 60 --conflict-exit-code 0 /run/lock/aaa-orchestrator.lock /opt/ai-at-advent/.venv/bin/python src/run_orchestrator.py --once'
 
 # Hardening: the trading bot doesn't need any of these capabilities.
 # Reduce blast radius if the process is ever compromised.
@@ -34,7 +40,8 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=yes
 LockPersonality=yes
 # Allow writing only to /opt/ai-at-advent/data (the SQLite state)
-ReadWritePaths=/opt/ai-at-advent/data /opt/ai-at-advent/docs
+# and /run/lock for the per-cycle flock from Sprint A3.
+ReadWritePaths=/opt/ai-at-advent/data /opt/ai-at-advent/docs /run/lock
 
 # Restart on transient failure but only a few times — if 3
 # consecutive cycles fail, leave it stopped so the user notices

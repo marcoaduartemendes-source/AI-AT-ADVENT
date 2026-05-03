@@ -367,6 +367,12 @@ def main():
 
     # ── Run one cycle
     logger.info(f"Starting cycle  dry_run={dry_run}  brokers={sorted(brokers.keys())}")
+    # Sprint A4 — record cycle start with heartbeat. Allows the
+    # dead-man's switch alert to differentiate "process never woke"
+    # from "process woke but is stuck in cycle".
+    from common.heartbeat import ping_fail, ping_start, ping_success
+    ping_start("orchestrator")
+
     report = orchestrator.run_cycle(scout_signals={})  # scouts wired in W2
 
     logger.info(f"Cycle complete: {report.proposals_total} proposals, "
@@ -380,6 +386,18 @@ def main():
         latest_alloc = allocator.rebalance(portfolio_equity_usd=report.risk.equity_usd) \
             if report.rebalanced else None
         write_step_summary(report, latest_alloc, report.risk)
+
+    # Sprint A4 — emit a /fail ping when the cycle had any errors so
+    # healthchecks pages us; emit a /success ping otherwise. Both
+    # carry a 1-line summary that shows up in HC's dashboard.
+    summary = (
+        f"proposals={report.proposals_total} approved={report.proposals_approved} "
+        f"submitted={report.trades_submitted} errors={len(report.errors)}"
+    )
+    if report.errors:
+        ping_fail("orchestrator", message=f"{summary}; first_error={report.errors[0]}")
+    else:
+        ping_success("orchestrator", message=summary)
 
     return 0 if not report.errors else 2
 

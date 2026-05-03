@@ -181,6 +181,45 @@ class SupabaseStore:
             "note": note,
         })
 
+    # ── Read helpers — used by EquitySnapshotDB so the kill-switch
+    # baseline can survive a corrupted local SQLite. SQLite stays the
+    # write-and-read primary; Supabase is consulted ONLY if SQLite
+    # appears to be missing or has materially less history (audit-fix
+    # for the #1 audit-flagged single-point-of-failure).
+
+    def peak_equity_since(self, since_iso: str | None = None) -> float | None:
+        """MAX(equity_usd) over all snapshots, or just those at/after
+        `since_iso`. Returns None if Supabase is unconfigured or the
+        table is empty/unreachable."""
+        if not self.is_configured():
+            return None
+        # PostgREST sort + limit — pull the single largest row.
+        query = "select=equity_usd&order=equity_usd.desc&limit=1"
+        if since_iso:
+            query += f"&timestamp=gte.{since_iso}"
+        rows = self._select("equity_snapshots", query)
+        if not rows:
+            return None
+        try:
+            return float(rows[0].get("equity_usd"))
+        except (TypeError, ValueError):
+            return None
+
+    def recent_equity_snapshots(self, n: int = 60) -> list[float]:
+        """Last `n` equity_usd values, oldest first. Returns empty list
+        on any error so callers can fall back to SQLite cleanly."""
+        if not self.is_configured():
+            return []
+        query = f"select=equity_usd,timestamp&order=timestamp.desc&limit={n + 1}"
+        rows = self._select("equity_snapshots", query)
+        out: list[float] = []
+        for r in reversed(rows):    # oldest first
+            try:
+                out.append(float(r.get("equity_usd")))
+            except (TypeError, ValueError):
+                continue
+        return out
+
     def insert_allocation(self, row: dict[str, Any]) -> bool:
         """Row matches `allocations` table columns."""
         return self._post("allocations", row)
