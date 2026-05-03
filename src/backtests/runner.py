@@ -547,6 +547,29 @@ def _internationals_rotation_dispatch(window_days: int) -> BacktestSummary:
     return backtest_internationals_rotation(window_days)
 
 
+def _earnings_momentum_dispatch(window_days: int) -> BacktestSummary:
+    """earnings_momentum is the live counterpart of `pead` — same data
+    source (FMP /historical/earning_calendar), same surprise threshold
+    (≥5%), same hold (30d). Dispatch through pead's backtest and
+    rebrand the strategy field so the dashboard attributes correctly.
+    The minor sizing difference ($4k vs $5k per trade) is uniform
+    scaling, so directional results are identical."""
+    summary = _pead_dispatch(window_days)
+    summary.strategy = "earnings_momentum"
+    if summary.note and "earning" in summary.note.lower():
+        summary.note = (
+            "Shares the FMP earnings-surprise edge with `pead`; "
+            "directional results identical, sizing scaled. " + summary.note
+        )
+    elif not summary.note:
+        summary.note = (
+            "Shares the FMP earnings-surprise edge with `pead`; "
+            "live strategy uses $4k/trade vs backtest $5k (uniform "
+            "scaling, identical Sharpe/win-rate)."
+        )
+    return summary
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "risk_parity_etf": backtest_risk_parity_etf,
@@ -568,6 +591,8 @@ _STRATEGY_BACKTESTS = {
     "pairs_trading": _pairs_trading_dispatch,
     "dividend_growth": _dividend_growth_dispatch,
     "internationals_rotation": _internationals_rotation_dispatch,
+    # Reuses pead's FMP-driven backtest with earnings_momentum branding
+    "earnings_momentum": _earnings_momentum_dispatch,
 }
 
 

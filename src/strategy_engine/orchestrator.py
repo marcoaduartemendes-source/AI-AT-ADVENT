@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -96,32 +97,18 @@ class Orchestrator:
         # trading_performance.db so the dashboard can render live P&L.
         try:
             self._tracker = PerformanceTracker()
-        except Exception as e:
+        except (OSError, sqlite3.Error) as e:
             logger.warning(f"PerformanceTracker init failed: {e}")
             self._tracker = None
 
-        # ── One-time PnL sanitation ─────────────────────────────────────
-        # Trades recorded before commit fc9640f had pnl_usd computed with
-        # price=0 (orders captured at submission, before fill). That
-        # produced phantom losses like (0 − $85) × 67 = −$5,746. Null
-        # those rows out at the DB level so every consumer (dashboard,
-        # strategic reviewer, allocator metrics) sees consistent state.
-        # Idempotent — only touches rows where price=0 AND pnl_usd != NULL.
+        # ── DB migrations (audit fix: previously this was an inline
+        # UPDATE running on every init at debug-level on failure).
+        # Now: marker-row-gated, runs at most once per migration name,
+        # WARNING-level on per-migration errors so journalctl surfaces
+        # schema drift instead of silently swallowing it.
         if self._tracker is not None:
-            try:
-                import sqlite3 as _sql
-                conn = _sql.connect(self._tracker.db_path)
-                cur = conn.execute(
-                    "UPDATE trades SET pnl_usd = NULL "
-                    "WHERE pnl_usd IS NOT NULL AND (price IS NULL OR price = 0)"
-                )
-                if cur.rowcount > 0:
-                    logger.info(f"PnL migration: nulled {cur.rowcount} "
-                                f"phantom-loss row(s) (price=0)")
-                conn.commit()
-                conn.close()
-            except Exception as e:
-                logger.warning(f"PnL migration skipped: {e}")
+            from trading.migrations import apply_pending
+            apply_pending(self._tracker.db_path)
 
     # ── One cycle ----------------------------------------------------------
 
@@ -189,7 +176,10 @@ class Orchestrator:
                     severity="critical",
                 )
             except Exception as e:
-                logger.debug(f"alert dispatch failed: {e}")
+                # Audit fix: was debug — alert pipeline failure is
+                # itself an alertable condition; we just can't alert
+                # about it. Log loud so journalctl shows it.
+                logger.warning(f"alert dispatch failed: {e}")
             self._emergency_close_all(report, state)
             return report
 
@@ -299,7 +289,10 @@ class Orchestrator:
         try:
             orders = adapter.get_open_orders()
         except Exception as e:
-            logger.debug(f"[{venue}] get_open_orders failed: {e}")
+            # Audit fix: was debug — broker outage matters and silently
+            # falling back to "no pending orders" can let strategies
+            # double-fire across cycles. Surface at WARNING.
+            logger.warning(f"[{venue}] get_open_orders failed: {e}")
             if cache is not None: cache[venue] = {}
             return {}
         out: dict[str, dict] = {}
@@ -701,7 +694,10 @@ class Orchestrator:
         try:
             self._sanity_check_realized_pnl()
         except Exception as e:
-            logger.debug(f"sanity_check_realized_pnl failed: {e}")
+            # Audit fix: was debug — this is the "second brain" that
+            # catches phantom-loss-style consistency bugs. Silent
+            # failure here is exactly what the previous regression hid.
+            logger.warning(f"sanity_check_realized_pnl failed: {e}")
 
     def _sanity_check_realized_pnl(self) -> None:
         """Compare DB-stored realized PnL (sum of pnl_usd) against an
@@ -744,7 +740,10 @@ class Orchestrator:
                     severity=sev,
                 )
             except Exception as e:
-                logger.debug(f"alert dispatch failed: {e}")
+                # Audit fix: was debug — alert pipeline failure is
+                # itself an alertable condition; we just can't alert
+                # about it. Log loud so journalctl shows it.
+                logger.warning(f"alert dispatch failed: {e}")
         else:
             logger.debug(
                 f"PnL sanity OK: DB ${db_total:+.2f} == "

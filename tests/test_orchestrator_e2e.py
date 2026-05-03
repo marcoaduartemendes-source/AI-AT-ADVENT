@@ -145,3 +145,175 @@ class TestOrchestratorWashTradeGuard:
             "Expected the second strategy's opposite-side SELL on SPY "
             "to be skipped by the intra-cycle wash-trade guard."
         )
+
+
+# ─── Audit-gap coverage ───────────────────────────────────────────────
+
+
+class TestFillStatusInvariant:
+    """Audit fix #2 invariant: pnl_usd is only stored when
+    fill_status='FILLED'. The 770-stuck-PENDING production bug was
+    caused by losing this invariant during a refactor. These tests
+    pin it down end-to-end."""
+
+    def test_opening_buy_filled_with_no_pnl(self, tmp_path):
+        """Opening BUY: gets filled, but realized P&L stays None
+        (we haven't closed yet). The previous regression set pnl_usd
+        to a phantom non-null value here."""
+        from trading.performance import PerformanceTracker
+        from trading.portfolio import TradeRecord
+        from datetime import datetime
+        import sqlite3
+
+        db = str(tmp_path / "trades.db")
+        tracker = PerformanceTracker(db_path=db)
+
+        rec = TradeRecord(
+            timestamp=datetime.utcnow(),
+            strategy="x", product_id="SPY", side="BUY",
+            amount_usd=1000, quantity=2.0, price=500.0,
+            order_id="o-1", pnl_usd=None,
+            fill_status="PENDING",
+        )
+        tracker.record_trade(rec)
+        # Look up the row's auto-incremented id so we can update by id
+        with sqlite3.connect(db) as c:
+            trade_id = c.execute(
+                "SELECT id FROM trades WHERE order_id='o-1'"
+            ).fetchone()[0]
+        tracker.update_trade_fill(
+            trade_id=trade_id, price=500.0, quantity=2.0,
+            amount_usd=1000.0, pnl_usd=None,
+            fill_status="FILLED",
+        )
+        with sqlite3.connect(db) as c:
+            row = c.execute(
+                "SELECT fill_status, pnl_usd FROM trades "
+                "WHERE order_id='o-1'"
+            ).fetchone()
+        assert row[0] == "FILLED"
+        assert row[1] is None    # opening BUY → no realized
+
+    def test_pnl_zeroed_on_pending_update(self, tmp_path):
+        """Updates that report pnl_usd but leave fill_status=PENDING
+        must have pnl_usd nulled — only FILLED rows store realized."""
+        from trading.performance import PerformanceTracker
+        from trading.portfolio import TradeRecord
+        from datetime import datetime
+        import sqlite3
+
+        db = str(tmp_path / "trades.db")
+        tracker = PerformanceTracker(db_path=db)
+        rec = TradeRecord(
+            timestamp=datetime.utcnow(),
+            strategy="x", product_id="SPY", side="SELL",
+            amount_usd=1100, quantity=2.0, price=550.0,
+            order_id="o-2", pnl_usd=100.0,
+            fill_status="PENDING",
+        )
+        tracker.record_trade(rec)
+        with sqlite3.connect(db) as c:
+            trade_id = c.execute(
+                "SELECT id FROM trades WHERE order_id='o-2'"
+            ).fetchone()[0]
+        # Try to push a PnL value while still PENDING — invariant strips it
+        tracker.update_trade_fill(
+            trade_id=trade_id, price=550.0, quantity=2.0,
+            amount_usd=1100.0, pnl_usd=100.0,
+            fill_status="PENDING",
+        )
+        with sqlite3.connect(db) as c:
+            row = c.execute(
+                "SELECT fill_status, pnl_usd FROM trades "
+                "WHERE order_id='o-2'"
+            ).fetchone()
+        assert row[0] == "PENDING"
+        assert row[1] is None
+
+
+class TestStrategyErrorPath:
+    """Sprint E1 wiring: a strategy raising on compute() should NOT
+    break the cycle, should record the failure into the consecutive-
+    error tracker, and should NOT submit any orders for that strategy."""
+
+    def test_raising_strategy_does_not_break_cycle(
+        self, tmp_path, monkeypatch,
+    ):
+        # Isolate strategy_alerts state so this test doesn't touch
+        # production data.
+        monkeypatch.setenv("STRATEGY_ALERTS_DB",
+                            str(tmp_path / "alerts.db"))
+        broker = MockBroker(venue="alpaca", cash_usd=100_000)
+
+        class _BrokenStrategy(Strategy):
+            name = "broken"
+            venue = "alpaca"
+            def compute(self, ctx):
+                raise RuntimeError("simulated bug")
+
+        orch, _ = _make_orchestrator(
+            brokers={"alpaca": broker},
+            strategies={"broken": _BrokenStrategy(broker)},
+            dry_run=True,
+        )
+        report = orch.run_cycle()
+        # Cycle completed despite the strategy raising
+        assert report.risk is not None
+        # Error was captured in the report
+        assert any("compute failed" in e for e in report.errors)
+        # No orders were submitted on a failed compute
+        assert broker.placed_orders == []
+
+        # Strategy-alerts tracker incremented for "broken"
+        from common.strategy_alerts import all_states
+        states = {s["strategy"]: s for s in all_states()}
+        assert "broken" in states
+        assert states["broken"]["consecutive_errors"] >= 1
+
+    def test_clean_strategy_resets_error_count(
+        self, tmp_path, monkeypatch,
+    ):
+        """A strategy that errors once then succeeds must have its
+        consecutive-error counter reset to 0."""
+        monkeypatch.setenv("STRATEGY_ALERTS_DB",
+                            str(tmp_path / "alerts.db"))
+        # Pre-seed the tracker with a failing run
+        from common.strategy_alerts import (
+            all_states,
+            record_cycle_outcome,
+        )
+        from unittest.mock import MagicMock
+        record_cycle_outcome(
+            "flaky", had_error=True, error_text="prior",
+            alert_fn=MagicMock(),
+        )
+        record_cycle_outcome(
+            "flaky", had_error=True, error_text="prior",
+            alert_fn=MagicMock(),
+        )
+        states = {s["strategy"]: s for s in all_states()}
+        assert states["flaky"]["consecutive_errors"] == 2
+
+        # Now run the orchestrator with a clean compute() — count resets
+        broker = MockBroker(venue="alpaca", cash_usd=100_000)
+
+        class _OkStrategy(Strategy):
+            name = "flaky"
+            venue = "alpaca"
+            def compute(self, ctx): return []
+
+        orch, _ = _make_orchestrator(
+            brokers={"alpaca": broker},
+            strategies={"flaky": _OkStrategy(broker)},
+            dry_run=True,
+        )
+        orch.run_cycle()
+        states = {s["strategy"]: s for s in all_states()}
+        assert states["flaky"]["consecutive_errors"] == 0
+
+
+# Migration-on-init E2E coverage lives in tests/test_db_migrations.py
+# — that suite exercises apply_pending() directly, which is the same
+# call path the Orchestrator uses on every boot. Adding a redundant
+# Orchestrator-level integration test would duplicate without adding
+# coverage of the actual code that could fail (apply_pending itself).
