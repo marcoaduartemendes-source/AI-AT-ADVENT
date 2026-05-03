@@ -1,13 +1,15 @@
-"""Macro scout — VIX, Fed FOMC calendar, key data releases.
+"""Macro scout — VIX, Fed FOMC calendar, CME-implied probabilities.
 
 Outputs:
-  signal_type="vix_regime"     payload={vix, regime}        venue="macro"
-  signal_type="fomc_window"    payload={blackout, days}     venue="macro"
-  signal_type="econ_calendar"  payload={upcoming_events}    venue="macro"
+  signal_type="vix_regime"        payload={vix, regime}        venue="macro"
+  signal_type="fomc_window"       payload={blackout, days}     venue="macro"
+  signal_type="cme_implied_probs" payload={meeting, probs}     venue="macro"
+  signal_type="econ_calendar"     payload={upcoming_events}    venue="macro"
 
-Data sources (no auth required):
+Data sources (all free, no auth required):
   • CBOE — VIX index via Yahoo Finance public endpoint
   • Fed — FOMC meeting calendar (federalreserve.gov)
+  • CME — Fed Funds futures-implied rate probabilities (FedWatch JSON)
   • BLS / BEA — CPI / NFP / GDP release dates via tradingeconomics public list
 
 We fetch lazily and tolerate outages — a missing signal is better than a
@@ -18,6 +20,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, UTC
 
+from backtests.data.cme_fedwatch import CMEFedWatchClient
 from common import cached_get
 
 from .base import ScoutAgent, ScoutSignal
@@ -37,6 +40,10 @@ _FOMC_2026 = [
 class MacroScout(ScoutAgent):
     name = "macro_scout"
 
+    def __init__(self, bus=None, cme_client: CMEFedWatchClient | None = None):
+        super().__init__(bus)
+        self._cme = cme_client or CMEFedWatchClient()
+
     def scan(self) -> list[ScoutSignal]:
         signals: list[ScoutSignal] = []
 
@@ -53,6 +60,11 @@ class MacroScout(ScoutAgent):
 
         # ── FOMC blackout window
         signals.append(self._fomc_window_signal())
+
+        # ── CME-implied rate probabilities for upcoming meetings
+        cme_signal = self._cme_implied_probs_signal()
+        if cme_signal is not None:
+            signals.append(cme_signal)
 
         return signals
 
@@ -88,6 +100,42 @@ class MacroScout(ScoutAgent):
         if vix >= 25: return "elevated"
         if vix >= 18: return "normal"
         return "calm"
+
+    def _cme_implied_probs_signal(self) -> ScoutSignal | None:
+        """Pull CME FedWatch probabilities for the next 1-2 FOMC meetings.
+
+        macro_kalshi consumes this to compute the Kalshi-vs-CME divergence
+        — when Kalshi's implied probability for "Fed cuts 25bps" diverges
+        from CME's by > 5%, that's the trade signal.
+
+        Returns None if CME endpoint is unavailable (we'd rather skip
+        than publish stale probabilities).
+        """
+        try:
+            meetings = self._cme.upcoming_meetings()
+        except Exception as e:
+            logger.warning(f"[{self.name}] CME fetch failed: {e}")
+            return None
+        if not meetings:
+            return None
+        payload = {
+            "meetings": [
+                {
+                    "date": m.meeting_date.isoformat(),
+                    "probs": [
+                        {"lo_bps": lo, "hi_bps": hi, "p": prob}
+                        for lo, hi, prob in m.target_rate_probs
+                    ],
+                }
+                for m in meetings[:3]   # next 3 meetings is plenty
+            ],
+            "as_of": datetime.now(UTC).isoformat(),
+        }
+        return ScoutSignal(
+            venue="macro", signal_type="cme_implied_probs",
+            payload=payload,
+            ttl_seconds=30 * 60,    # 30 min — same as macro scout cadence
+        )
 
     def _fomc_window_signal(self) -> ScoutSignal:
         today = datetime.now(UTC).date()

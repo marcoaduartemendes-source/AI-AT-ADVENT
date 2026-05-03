@@ -1,16 +1,21 @@
-"""Equities scout — earnings calendar + simple sentiment heuristics.
+"""Equities scout — earnings calendar, momentum, news headline alerts.
 
 Outputs:
-  signal_type="earnings_upcoming" payload=[{symbol, date, time}, …]
+  signal_type="earnings_upcoming"        payload=[{symbol, date, time}, …]
   signal_type="cross_sectional_momentum" payload=[{symbol, return_30d,
                                                      percentile}, …]
+  signal_type="ticker_news"              payload=[{symbol, headlines: […]}]
 
 V1 fetches:
-  • Upcoming earnings via Nasdaq's public calendar (no auth)
-  • Cross-sectional momentum on a curated S&P-500-ETF basket via Alpaca
+  • Upcoming earnings via Nasdaq's public earnings calendar (no auth)
+  • Cross-sectional momentum on a curated S&P-500 basket via Alpaca
+  • News headlines mentioning universe tickers via free RSS aggregator
 
-The earnings list will trigger PEAD strategy work in W3.
-The momentum table feeds Phase-2 cross-sectional momentum strategy.
+The news payload feeds earnings_momentum (post-print headline catalysts)
+and sector_rotation (sector-shift triggers). It is not a sentiment-
+scoring engine — strategies receive raw headlines and decide what to
+do. A paid alternative (Benzinga Pro / RavenPack) would add structured
+sentiment tags and sub-second latency; not justified at our cadence.
 """
 from __future__ import annotations
 
@@ -19,6 +24,7 @@ from datetime import datetime, timedelta, UTC
 
 import requests
 
+from backtests.data.news_rss import NewsRSSClient
 from brokers.registry import get_broker
 
 from .base import ScoutAgent, ScoutSignal
@@ -43,9 +49,11 @@ MOMENTUM_LOOKBACK_DAYS = 30
 class EquitiesScout(ScoutAgent):
     name = "equities_scout"
 
-    def __init__(self, bus=None, universe: list[str] | None = None):
+    def __init__(self, bus=None, universe: list[str] | None = None,
+                  news_client: NewsRSSClient | None = None):
         super().__init__(bus=bus)
         self.universe = universe or DEFAULT_UNIVERSE
+        self._news = news_client or NewsRSSClient()
 
     def scan(self) -> list[ScoutSignal]:
         signals: list[ScoutSignal] = []
@@ -64,6 +72,15 @@ class EquitiesScout(ScoutAgent):
             signals.append(ScoutSignal(
                 venue="alpaca", signal_type="cross_sectional_momentum",
                 payload=xsmom, ttl_seconds=24 * 3600,
+            ))
+
+        # Ticker-mentioned news headlines (last 24h)
+        ticker_news = self._fetch_ticker_news()
+        if ticker_news:
+            signals.append(ScoutSignal(
+                venue="alpaca", signal_type="ticker_news",
+                payload=ticker_news,
+                ttl_seconds=2 * 3600,    # refresh every 2h
             ))
 
         return signals
@@ -101,6 +118,46 @@ class EquitiesScout(ScoutAgent):
                     })
             except Exception as e:
                 logger.warning(f"[{self.name}] earnings {d} failed: {e}")
+        return out
+
+    def _fetch_ticker_news(self, within_hours: int = 24) -> list[dict]:
+        """Pull recent news headlines mentioning any universe ticker.
+
+        Returns one entry per ticker with matches; up to 5 most-recent
+        headlines per ticker. Failures are logged & skipped, not raised.
+        """
+        try:
+            items = self._news.fetch_all()
+        except Exception as e:
+            logger.info(f"[{self.name}] news fetch failed (skipping): {e}")
+            return []
+        if not items:
+            return []
+        try:
+            mapped = self._news.search_tickers(
+                self.universe, items=items, within_hours=within_hours,
+            )
+        except Exception as e:
+            logger.info(f"[{self.name}] news ticker-match failed: {e}")
+            return []
+        out: list[dict] = []
+        for sym, news_items in mapped.items():
+            out.append({
+                "symbol": sym,
+                "n_headlines": len(news_items),
+                "headlines": [
+                    {
+                        "title": n.title,
+                        "url": n.url,
+                        "source": n.source,
+                        "published_at":
+                            n.published_at.isoformat() if n.published_at else None,
+                    }
+                    for n in news_items[:5]
+                ],
+            })
+        # Sort by headline count, descending — most-mentioned first
+        out.sort(key=lambda r: r["n_headlines"], reverse=True)
         return out
 
     def _fetch_cross_sectional_momentum(self) -> list[dict]:
