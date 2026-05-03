@@ -162,14 +162,14 @@ class TestFillStatusInvariant:
         to a phantom non-null value here."""
         from trading.performance import PerformanceTracker
         from trading.portfolio import TradeRecord
-        from datetime import datetime
+        from datetime import UTC, datetime
         import sqlite3
 
         db = str(tmp_path / "trades.db")
         tracker = PerformanceTracker(db_path=db)
 
         rec = TradeRecord(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             strategy="x", product_id="SPY", side="BUY",
             amount_usd=1000, quantity=2.0, price=500.0,
             order_id="o-1", pnl_usd=None,
@@ -199,13 +199,13 @@ class TestFillStatusInvariant:
         must have pnl_usd nulled — only FILLED rows store realized."""
         from trading.performance import PerformanceTracker
         from trading.portfolio import TradeRecord
-        from datetime import datetime
+        from datetime import UTC, datetime
         import sqlite3
 
         db = str(tmp_path / "trades.db")
         tracker = PerformanceTracker(db_path=db)
         rec = TradeRecord(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(UTC),
             strategy="x", product_id="SPY", side="SELL",
             amount_usd=1100, quantity=2.0, price=550.0,
             order_id="o-2", pnl_usd=100.0,
