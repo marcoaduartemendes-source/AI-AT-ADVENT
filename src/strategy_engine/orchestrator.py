@@ -729,14 +729,24 @@ class Orchestrator:
             # Drift > $1 means our P&L is wrong somewhere — page the
             # human. Severity escalates by magnitude so a 5-cent drift
             # doesn't ping the same channel as a $1k drift.
+            #
+            # Audit fix (alert spam): the alert text now ROUNDS the
+            # drift dollars to the nearest $5 bucket so persistent
+            # ~$5 drift collapses to one Pushover via the dedup
+            # cache. Only NEW drift magnitude (or sign flip) bypasses
+            # dedup. Without this, a stable phantom-loss row caused
+            # 12 identical alerts/hour for the user.
             try:
                 from common.alerts import alert
                 sev = ("critical" if drift > 100 else
                        "warning" if drift > 10 else "info")
+                # Bucket the drift into $5 increments so the message
+                # text is stable across cycles when the underlying
+                # mismatch is the same row.
+                bucket = round(drift / 5.0) * 5.0
                 alert(
-                    f"PnL drift ${drift:.2f}: DB ${db_total:+.2f} "
-                    f"vs FIFO ${recomputed_total:+.2f}. "
-                    f"Per-strategy: {per_strategy_drift}",
+                    f"PnL drift ~${bucket:.0f} (actual ${drift:.2f}): "
+                    f"DB ${db_total:+.2f} vs FIFO ${recomputed_total:+.2f}",
                     severity=sev,
                 )
             except Exception as e:

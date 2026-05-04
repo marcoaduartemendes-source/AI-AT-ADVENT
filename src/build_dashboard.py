@@ -1188,8 +1188,27 @@ function render(tab) {
   // amount invested (market value of positions), and unrealized P&L
   // for each broker. Lets the user see at a glance how much capital
   // is sitting idle vs deployed on each venue.
+  //
+  // Real-money vs paper-money color coding:
+  //   coinbase  → real money (red border + 💰 badge)
+  //   alpaca    → paper account (blue border + 📝 PAPER badge)
+  //   kalshi    → paper account (blue border + 📝 PAPER badge)
+  //   legacy    → fallback bucket for un-attributed rows
+  // Visual distinction matters because the user trades both at once
+  // and a casual glance shouldn't confuse the two.
+  const isRealMoney = (venue) => venue === "coinbase";
+  const venueBadge = (venue) => {
+    if (venue === "coinbase") {
+      return `<span class="pill" style="background:rgba(244,113,116,0.20);color:#f47174;font-size:11px;" title="Real money — Coinbase live account">💰 LIVE</span>`;
+    }
+    if (venue === "alpaca" || venue === "kalshi") {
+      return `<span class="pill" style="background:rgba(88,166,255,0.18);color:#58a6ff;font-size:11px;" title="Paper / sandbox account">📝 PAPER</span>`;
+    }
+    return `<span class="pill" style="background:rgba(125,133,144,0.15);color:var(--muted);font-size:11px;">legacy</span>`;
+  };
+
   if (isLive && d.by_broker && Object.keys(d.by_broker).length) {
-    html += `<div class="panel"><h2>By broker — capital + P&L</h2>`;
+    html += `<div class="panel"><h2>By broker — capital + P&L <span style="color:var(--muted);font-weight:400;font-size:12px;">(💰 = real money · 📝 = paper)</span></h2>`;
     html += `<table><thead><tr>
       <th>Broker</th>
       <th class="num">Cash</th>
@@ -1208,11 +1227,17 @@ function render(tab) {
       const errBadge = b.error
         ? ` <span class="pill stop" title="${b.error}">err</span>`
         : "";
+      // Highlight Coinbase (live trading) row with a left border
+      const rowStyle = isRealMoney(b.venue)
+        ? `style="border-left: 3px solid #f47174;"`
+        : (b.venue === "alpaca" || b.venue === "kalshi"
+            ? `style="border-left: 3px solid #58a6ff;"`
+            : ``);
       const totalPnl = (b.total_pnl_usd != null
         ? b.total_pnl_usd
         : (b.realized_pnl_usd || 0) + (b.unrealized_pnl_usd || 0));
-      html += `<tr>
-        <td><strong>${b.venue}</strong>${errBadge}</td>
+      html += `<tr ${rowStyle}>
+        <td><strong>${b.venue}</strong> ${venueBadge(b.venue)}${errBadge}</td>
         <td class="num">${fmtUSD(b.cash_usd)}</td>
         <td class="num">${fmtUSD(b.invested_usd)}</td>
         <td class="num">${fmtUSD(b.equity_usd)}</td>
@@ -1357,12 +1382,18 @@ function render(tab) {
   };
 
   // Per-strategy summary table + EXPANDABLE TRADE DETAILS per row
-  html += `<div class="panel"><h2>By strategy — ranked by P&L · click a row to see every trade</h2>`;
+  html += `<div class="panel"><h2>By strategy — ranked by P&L · click a row to see every trade · 🛑 to freeze</h2>`;
   html += `<table><thead><tr>
     <th>#</th><th>Strategy</th><th>State</th><th>Trades</th>
     <th>Win rate</th><th class="num">Total P&L</th>
     <th class="num">Volume</th><th class="num">Return on volume</th>
-    <th class="num">Avg/trade</th><th>Last trade</th></tr></thead><tbody>`;
+    <th class="num">Avg/trade</th><th>Last trade</th><th>Kill</th></tr></thead><tbody>`;
+  // GitHub Actions URL for the freeze_strategy workflow. Each row's
+  // 🛑 button links here pre-filled with that strategy's name. Falls
+  // back to "#" when DATA.config.repo isn't set (local dev).
+  const freezeBaseUrl = DATA.config.repo
+    ? `https://github.com/${DATA.config.repo}/actions/workflows/freeze_strategy.yml`
+    : "#";
   // Rank by total P&L descending. Ties broken by recency of last
   // trade so a recently-active flat strategy ranks above a dormant
   // flat one. Strategies that have never traded (last_trade_at=null)
@@ -1398,6 +1429,16 @@ function render(tab) {
     } else if (idx < 3 && x.total_pnl_usd > 0) {
       rankCell = `<span title="Top 3">⚡ ${idx+1}</span>`;
     }
+    // Per-strategy kill switch — opens GitHub Actions page for the
+    // freeze_strategy workflow. The user clicks 🛑 → "Run workflow"
+    // → confirms strategy name (auto-filled in the URL hash) → run.
+    // Effective on the next orchestrator cycle (≤5 min).
+    const isFrozen = pod && pod.state === "FROZEN";
+    const killHref = freezeBaseUrl !== "#"
+      ? `${freezeBaseUrl}` : "#";
+    const killBtn = isFrozen
+      ? `<a href="${killHref}" target="_blank" rel="noopener" title="Currently FROZEN — click to unfreeze" style="text-decoration:none;font-size:14px;" onclick="event.stopPropagation()">▶</a>`
+      : `<a href="${killHref}" target="_blank" rel="noopener" title="Freeze ${x.strategy} (opens GitHub Actions; type strategy name + 'freeze')" style="text-decoration:none;font-size:14px;" onclick="event.stopPropagation()">🛑</a>`;
     html += `<tr style="cursor: pointer;" onclick="document.getElementById('${safeId}').open = !document.getElementById('${safeId}').open">
       <td>${rankCell}</td>
       <td><strong>${x.strategy}</strong></td>
@@ -1409,6 +1450,7 @@ function render(tab) {
       <td class="num ${cls(x.return_on_volume_pct)}">${fmtPct(x.return_on_volume_pct)}</td>
       <td class="num ${cls(x.avg_pnl_usd)}">${fmtUSD(x.avg_pnl_usd)}</td>
       <td>${lastTrade}</td>
+      <td style="text-align:center;">${killBtn}</td>
     </tr>`;
     // Expandable trade detail row
     const stTrades = (st.trades || []).slice().sort((a,b) => {
@@ -1416,7 +1458,7 @@ function render(tab) {
       const tb = b.close_time || b.open_time || b.timestamp;
       return tb.localeCompare(ta);
     });
-    html += `<tr><td colspan="10" style="padding: 0; background: var(--panel-2);">
+    html += `<tr><td colspan="11" style="padding: 0; background: var(--panel-2);">
       <details id="${safeId}" style="border: none; background: transparent; padding: 0;">
         <summary style="padding: 10px 14px;">${stTrades.length} trade(s) for <strong>${x.strategy}</strong></summary>
         <div class="scroll" style="max-height: 280px;"><table style="margin: 0;"><thead><tr>
@@ -1446,7 +1488,7 @@ function render(tab) {
       </tr>`;
     });
     if (stTrades.length === 0) {
-      html += `<tr><td colspan="10" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
+      html += `<tr><td colspan="11" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
     }
     html += `</tbody></table></div></details></td></tr>`;
   });

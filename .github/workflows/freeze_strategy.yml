@@ -1,0 +1,98 @@
+name: Freeze / unfreeze strategy
+
+# Per-strategy kill switch. The dashboard's "By strategy" panel has a
+# 🛑 button per row that links to a pre-filled run of this workflow.
+# The workflow SSHes to the VPS and flips the strategy's lifecycle
+# state via a tiny Python script — the orchestrator picks up the
+# new state on the next 5-min tick and stops emitting proposals.
+#
+# Why this exists:
+#   - The dashboard is static HTML; it can't write to SQLite from the
+#     browser. A workflow_dispatch link is the cleanest "click a
+#     button to freeze a misbehaving strategy" path.
+#   - This is faster than a full code redeploy (~30s vs ~3 min) and
+#     the change is reversible from the same UI.
+
+on:
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: "Strategy name (e.g. rsi_mean_reversion)"
+        required: true
+        type: string
+      action:
+        description: "freeze | unfreeze | retire"
+        required: true
+        default: "freeze"
+        type: choice
+        options:
+          - freeze
+          - unfreeze
+          - retire
+      reason:
+        description: "Optional note (shown in lifecycle log)"
+        required: false
+        type: string
+        default: "manual via dashboard"
+
+concurrency:
+  # Serialize so two clicks in quick succession don't race
+  group: lifecycle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up SSH
+        env:
+          SSH_DEPLOY_KEY: ${{ secrets.SSH_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H -t ed25519 "${{ vars.DROPLET_IP || secrets.DROPLET_IP }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Flip strategy state on the VPS
+        env:
+          DROPLET_IP: ${{ vars.DROPLET_IP || secrets.DROPLET_IP }}
+          STRATEGY: ${{ github.event.inputs.strategy }}
+          ACTION:   ${{ github.event.inputs.action }}
+          REASON:   ${{ github.event.inputs.reason }}
+        run: |
+          set -euo pipefail
+          # Map button action → StrategyState enum value
+          case "$ACTION" in
+            freeze)   NEW_STATE="FROZEN" ;;
+            unfreeze) NEW_STATE="ACTIVE" ;;
+            retire)   NEW_STATE="RETIRED" ;;
+            *) echo "Unknown action $ACTION"; exit 1 ;;
+          esac
+
+          # The orchestrator already exposes set_state() on the
+          # registry. We just need to invoke it once on the VPS.
+          REMOTE_CMD=$(cat <<EOF
+          set -a; . /etc/aaa.env; set +a
+          cd /opt/ai-at-advent
+          /opt/ai-at-advent/.venv/bin/python -c "
+          from allocator.lifecycle import StrategyRegistry, StrategyState
+          reg = StrategyRegistry()
+          state = StrategyState.${NEW_STATE}
+          reg.set_state('${STRATEGY}', state, reason='${REASON}')
+          print(f'OK: {state.value} → ${STRATEGY}')
+          "
+          EOF
+          )
+          ssh -i ~/.ssh/deploy_key root@$DROPLET_IP "$REMOTE_CMD"
+
+      - name: Summary
+        env:
+          STRATEGY: ${{ github.event.inputs.strategy }}
+          ACTION:   ${{ github.event.inputs.action }}
+        run: |
+          echo "## Strategy lifecycle change" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Strategy:** \`$STRATEGY\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action:** $ACTION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Effective:** next orchestrator cycle (≤5 min)" >> $GITHUB_STEP_SUMMARY

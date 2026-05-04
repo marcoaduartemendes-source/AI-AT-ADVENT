@@ -35,14 +35,17 @@ Usage:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import smtplib
 import socket
+import sqlite3
 import ssl
 import time
 from email.mime.text import MIMEText
+from pathlib import Path
 from threading import Lock
 
 import requests
@@ -54,6 +57,113 @@ logger = logging.getLogger(__name__)
 _RATE_LIMIT_PER_60S = 10
 _recent_calls: list[float] = []
 _lock = Lock()
+
+
+# ── Cross-cycle dedup ────────────────────────────────────────────────
+# The orchestrator runs as systemd oneshot — every cycle is a NEW
+# process, so the in-memory rate limit above resets every 5 min.
+# That meant a persistent drift alert (or any recurring warning)
+# fired ~12 times/hour to Pushover. The dedup cache below records
+# (message_hash, last_sent_at) on disk and suppresses re-fires
+# within ALERT_DEDUP_COOLDOWN_SECONDS (default 1 hour).
+#
+# Critical alerts (severity="critical") bypass dedup so a real
+# kill-switch can't be muted by a recent drift warning.
+
+def _cooldown_seconds() -> int:
+    """Read ALERT_DEDUP_COOLDOWN_SECONDS at call time (not import
+    time) so tests + runtime config changes take effect immediately."""
+    try:
+        return int(os.environ.get("ALERT_DEDUP_COOLDOWN_SECONDS", "3600"))
+    except ValueError:
+        return 3600
+
+
+def _dedup_db_path() -> str:
+    return os.environ.get("ALERT_DEDUP_DB", "data/alert_dedup.db")
+
+
+def _dedup_db_conn() -> sqlite3.Connection | None:
+    """Open the dedup DB; create the table on first call. Returns None
+    when the path is unwritable (silently disables dedup — better to
+    over-alert than to crash the alert path itself)."""
+    try:
+        path = _dedup_db_path()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        c = sqlite3.connect(path)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS alert_dedup (
+                msg_hash TEXT PRIMARY KEY,
+                first_sent_at REAL NOT NULL,
+                last_sent_at  REAL NOT NULL,
+                count         INTEGER NOT NULL DEFAULT 1,
+                last_text     TEXT
+            )
+        """)
+        return c
+    except (sqlite3.Error, OSError):
+        return None
+
+
+def _should_suppress(text: str, severity: str) -> tuple[bool, int]:
+    """Returns (suppress, dedup_count). Critical alerts always pass.
+
+    Cooldown is keyed by SHA256(text) so identical recurring messages
+    are suppressed; a different message body bypasses dedup. Strategy
+    name + drift amount changing → new hash → new alert.
+
+    Set ALERT_DEDUP_COOLDOWN_SECONDS=0 to disable dedup entirely
+    (every alert fires regardless of recent history). Tests use this
+    to exercise the rate-limiter independently."""
+    if severity == "critical":
+        return (False, 0)
+    cooldown = _cooldown_seconds()
+    if cooldown <= 0:
+        return (False, 0)    # dedup disabled
+    msg_hash = hashlib.sha256(text.encode()).hexdigest()[:24]
+    now = time.time()
+    conn = _dedup_db_conn()
+    if conn is None:
+        return (False, 0)    # dedup unavailable → fall through
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT last_sent_at, count FROM alert_dedup "
+                "WHERE msg_hash = ?",
+                (msg_hash,),
+            ).fetchone()
+            if row:
+                last_sent, count = row
+                if now - last_sent < _cooldown_seconds():
+                    # Suppress — bump the counter so we know how many
+                    # we silenced when we eventually do fire.
+                    conn.execute(
+                        "UPDATE alert_dedup SET count = count + 1 "
+                        "WHERE msg_hash = ?",
+                        (msg_hash,),
+                    )
+                    return (True, count + 1)
+                # Cooldown expired — reset and fire
+                conn.execute(
+                    "UPDATE alert_dedup SET last_sent_at = ?, "
+                    "  count = 1, last_text = ? "
+                    "WHERE msg_hash = ?",
+                    (now, text[:500], msg_hash),
+                )
+                return (False, count + 1)
+            # First time seeing this message
+            conn.execute(
+                "INSERT INTO alert_dedup "
+                "(msg_hash, first_sent_at, last_sent_at, count, last_text) "
+                "VALUES (?, ?, ?, 1, ?)",
+                (msg_hash, now, now, text[:500]),
+            )
+            return (False, 1)
+    except sqlite3.Error as e:
+        logger.debug(f"alert dedup failed: {e}")
+        return (False, 0)
+    finally:
+        conn.close()
 
 
 def _classify_webhook(url: str) -> str:
@@ -121,6 +231,35 @@ def alert(text: str, severity: str = "info", *, timeout: float = 5.0) -> bool:
         (or none were configured). Caller should NOT raise on
         False — alerting is best-effort.
     """
+    # ── Panic switch ─────────────────────────────────────────────
+    # ALERTS_MUTE=1 silences EVERYTHING except critical kill-switch
+    # alerts. Set this when the user is getting alert spam and needs
+    # peace right now while we debug. Critical alerts still fire
+    # because the kill switch is a safety mechanism we can't mute.
+    if os.environ.get("ALERTS_MUTE", "").lower() in ("1", "true", "yes"):
+        if severity != "critical":
+            logger.info(f"[alert/{severity}] MUTED via ALERTS_MUTE: {text[:120]}")
+            return False
+
+    # ── Cross-cycle dedup ────────────────────────────────────────
+    # Suppress identical messages within ALERT_DEDUP_COOLDOWN_SECONDS.
+    # The orchestrator's PnL-drift sanity check fires the same alert
+    # every 5 min when drift persists; without dedup that's 12/hour
+    # of identical Pushover spam.
+    suppress, dedup_count = _should_suppress(text, severity)
+    cooldown = _cooldown_seconds()
+    if suppress:
+        logger.info(
+            f"[alert/{severity}] DEDUPED (#{dedup_count}, cooldown "
+            f"{cooldown}s): {text[:120]}"
+        )
+        return False
+    # If we're firing a previously-suppressed message, append a hint
+    # so the user knows how many were suppressed
+    if dedup_count > 1:
+        text = (f"{text}\n\n[suppressed {dedup_count - 1} identical "
+                f"alert(s) in last {cooldown // 60}m]")
+
     # Rate limit at the entry point so a runaway loop can't spam
     # multiple sinks in parallel.
     now = time.time()
