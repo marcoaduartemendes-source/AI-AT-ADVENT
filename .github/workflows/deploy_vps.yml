@@ -151,8 +151,15 @@ jobs:
           SMTP_PASSWORD:       ${{ secrets.SMTP_PASSWORD }}
           # Trading config (variables, not secrets)
           DRY_RUN:             ${{ vars.ORCHESTRATOR_DRY_RUN || 'true' }}
-          DRY_RUN_ALPACA:      ${{ vars.DRY_RUN_ALPACA }}
+          DRY_RUN_ALPACA:      ${{ vars.DRY_RUN_ALPACA || 'false' }}
+          DRY_RUN_KALSHI:      ${{ vars.DRY_RUN_KALSHI || 'false' }}
+          DRY_RUN_COINBASE:    ${{ vars.DRY_RUN_COINBASE }}
           LIVE_STRATEGIES:     ${{ vars.LIVE_STRATEGIES }}
+          # Alert spam control — set ALERTS_MUTE=1 in repo Variables
+          # to silence non-critical Pushover/email alerts. Critical
+          # alerts still fire regardless. Use when debugging.
+          ALERTS_MUTE:         ${{ vars.ALERTS_MUTE }}
+          ALERT_DEDUP_COOLDOWN_SECONDS: ${{ vars.ALERT_DEDUP_COOLDOWN_SECONDS || '3600' }}
           MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '5000' }}
           MAX_TRADE_USD_COINBASE:  ${{ vars.MAX_TRADE_USD_COINBASE }}
           MAX_TRADE_USD_ALPACA:    ${{ vars.MAX_TRADE_USD_ALPACA }}
@@ -175,7 +182,8 @@ jobs:
               "ALPACA_API_KEY_ID", "ALPACA_SECRET_KEY", "ALPACA_ENDPOINT",
               "KALSHI_KEY_ID", "KALSHI_PRIVATE_KEY", "KALSHI_ENDPOINT",
               "ANTHROPIC_API_KEY", "FMP_API_KEY", "FRED_API_KEY",
-              "DRY_RUN", "DRY_RUN_ALPACA", "LIVE_STRATEGIES",
+              "DRY_RUN", "DRY_RUN_ALPACA", "DRY_RUN_KALSHI",
+              "DRY_RUN_COINBASE", "LIVE_STRATEGIES",
               "MAX_TRADE_USD_GLOBAL", "MAX_TRADE_USD_COINBASE", "MAX_TRADE_USD_ALPACA",
               "TARGET_PORTFOLIO_VOL",
               "KILL_DD_PCT", "CRITICAL_DD_PCT", "WARNING_DD_PCT",
@@ -183,6 +191,7 @@ jobs:
               "ALERT_WEBHOOK_URL", "ALERT_WEBHOOK_TYPE",
               "ALERT_EMAIL_TO", "SMTP_PASSWORD",
               "SUPABASE_URL", "SUPABASE_SERVICE_KEY",
+              "ALERTS_MUTE", "ALERT_DEDUP_COOLDOWN_SECONDS",
           ]
 
           lines = [

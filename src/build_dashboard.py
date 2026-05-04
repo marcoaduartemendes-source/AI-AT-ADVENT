@@ -254,6 +254,53 @@ def load_live_data() -> dict:
                 summary["days_since_last_trade"] = None
         else:
             summary["days_since_last_trade"] = None
+
+        # ── Per-strategy net open positions (symbol → net qty)
+        # User-reported bug: lifetime P&L per strategy was stuck at
+        # zero for paper-trading strategies because UNREALIZED P&L
+        # from open Alpaca/Kalshi positions never got attributed back
+        # to the strategy that opened them. We compute the strategy's
+        # net qty per symbol from its trade ledger here; attribution
+        # of broker-side market_price + unrealized_pnl happens once
+        # the broker snapshot is loaded (further down).
+        net_qty_by_sym: dict[str, float] = {}
+        cost_basis_by_sym: dict[str, float] = {}
+        cost_qty_by_sym: dict[str, float] = {}
+        for t in strat_trades:
+            sym = t.get("product_id")
+            if not sym:
+                continue
+            qty = float(t.get("quantity") or 0)
+            side = (t.get("side") or "").upper()
+            price = float(t.get("price") or 0)
+            if side == "BUY":
+                net_qty_by_sym[sym] = net_qty_by_sym.get(sym, 0) + qty
+                # weighted cost basis on opens
+                if price > 0:
+                    cost_basis_by_sym[sym] = (
+                        cost_basis_by_sym.get(sym, 0) + qty * price
+                    )
+                    cost_qty_by_sym[sym] = (
+                        cost_qty_by_sym.get(sym, 0) + qty
+                    )
+            elif side == "SELL":
+                net_qty_by_sym[sym] = net_qty_by_sym.get(sym, 0) - qty
+        # Trim to symbols with non-trivial open quantity
+        summary["open_symbols"] = {
+            sym: round(q, 8) for sym, q in net_qty_by_sym.items()
+            if abs(q) > 1e-8
+        }
+        # Equity-curve sparkline (cumulative realized P&L by trade)
+        spark = []
+        cum = 0.0
+        for t in sorted(
+            strat_trades, key=lambda x: x.get("timestamp") or ""
+        ):
+            if t.get("pnl_usd") is not None:
+                cum += float(t["pnl_usd"])
+                spark.append(round(cum, 2))
+        summary["pnl_sparkline"] = spark[-50:]    # last 50 closed trades
+
         by_strategy[name] = {
             "summary": summary,
             "trades": strat_trades,
@@ -313,6 +360,59 @@ def load_live_data() -> dict:
                 by_broker[name] = snap
     except Exception as e:
         logger.warning(f"Could not fetch live broker positions: {e}")
+
+    # ── Per-strategy unrealized P&L attribution ────────────────────
+    # Broker positions don't carry a strategy field — the broker just
+    # knows it has 2 SPY shares, not that they came from `tsmom_etf`.
+    # We attribute back via the trade ledger: for each open broker
+    # position, find any strategy whose net open quantity in that
+    # symbol matches (proportionally), and split the position's
+    # unrealized P&L across them by quantity weight.
+    #
+    # This is the fix for the user-reported "lifetime P&L per strategy
+    # not updating" bug: paper strategies on Alpaca have entered
+    # positions but haven't closed yet, so realized=$0 and (without
+    # this) unrealized=$0 too → strategies look dormant on the dashboard
+    # even though they're actually holding profitable positions.
+    pos_by_sym: dict[str, list[dict]] = defaultdict(list)
+    for p in open_pos_raw:
+        sym = p.get("product_id")
+        if sym:
+            pos_by_sym[sym].append(p)
+
+    for _name, strat in by_strategy.items():
+        s = strat["summary"]
+        unrealized = 0.0
+        market_value = 0.0
+        for sym, strat_qty in (s.get("open_symbols") or {}).items():
+            if abs(strat_qty) < 1e-8:
+                continue
+            broker_positions = pos_by_sym.get(sym, [])
+            # Sum total open qty across all broker positions on this sym
+            total_broker_qty = sum(
+                abs(float(p.get("quantity") or 0)) for p in broker_positions
+            )
+            if total_broker_qty <= 0:
+                continue
+            # Strategy's share of the symbol's open qty
+            share = min(1.0, abs(strat_qty) / total_broker_qty)
+            for p in broker_positions:
+                pq = abs(float(p.get("quantity") or 0))
+                pnl = float(p.get("unrealized_pnl_usd") or 0)
+                mkt = pq * float(p.get("market_price") or 0)
+                # Weight by this position's share within strategy's claim
+                w = share * (pq / total_broker_qty if total_broker_qty else 0)
+                unrealized += pnl * w
+                market_value += mkt * w
+        s["unrealized_pnl_usd"] = round(unrealized, 2)
+        s["market_value_usd"] = round(market_value, 2)
+        # Lifetime P&L: realized + unrealized — what the user actually
+        # cares about. The pre-fix `total_pnl_usd` was realized only,
+        # which masked the strategy's true performance until trades
+        # round-tripped.
+        s["lifetime_pnl_usd"] = round(
+            float(s.get("total_pnl_usd", 0.0)) + unrealized, 2
+        )
 
     # Top-level totals — REALIZED + UNREALIZED so the dashboard reflects
     # the actual P&L state (open positions moving up/down right now),
@@ -901,6 +1001,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <span style="color:var(--muted);">(generated <span id="generated-at"></span>)</span>
       · <a style="color: var(--blue); text-decoration: none;" id="repo-link" href="#">View workflow</a>
       · <a style="color: var(--blue); text-decoration: none;" href="javascript:window.location.reload()">↻ refresh</a>
+      <span id="alerts-mute-badge" style="display:none;"></span>
     </div>
   </div>
   <div class="meta">
@@ -942,6 +1043,16 @@ const fmtRelTime = (iso) => {
 const cls = (v) => (v == null) ? "" : (v >= 0 ? "pos" : "neg");
 
 document.getElementById("generated-at").textContent = fmtTime(DATA.generated_at);
+
+// ALERTS_MUTE indicator — shows a yellow badge in the header when
+// non-critical alerts are silenced. User asked to silence Pushover
+// spam; this badge makes the muted state visible at-a-glance so
+// they don't forget to re-enable later.
+if (DATA.config.alerts_muted) {
+  const b = document.getElementById("alerts-mute-badge");
+  b.style.display = "inline";
+  b.innerHTML = ` · <span class="pill" style="background:rgba(218,165,32,0.20);color:#daa520;font-size:11px;" title="Non-critical Pushover/email alerts are silenced via ALERTS_MUTE=1. Critical kill-switch alerts still fire.">🔕 ALERTS MUTED</span>`;
+}
 
 // Live clock + page-age indicator. Updates every second so the user
 // always sees "data is N min old" even if the tab has been open a
@@ -1382,25 +1493,75 @@ function render(tab) {
   };
 
   // Per-strategy summary table + EXPANDABLE TRADE DETAILS per row
-  html += `<div class="panel"><h2>By strategy — ranked by P&L · click a row to see every trade · 🛑 to freeze</h2>`;
+  html += `<div class="panel"><h2>By strategy — ranked by lifetime P&L · click row for trades · 🛑 to freeze</h2>`;
   html += `<table><thead><tr>
-    <th>#</th><th>Strategy</th><th>State</th><th>Trades</th>
-    <th>Win rate</th><th class="num">Total P&L</th>
-    <th class="num">Volume</th><th class="num">Return on volume</th>
-    <th class="num">Avg/trade</th><th>Last trade</th><th>Kill</th></tr></thead><tbody>`;
+    <th>#</th><th>Strategy</th><th>Mode</th><th>State</th>
+    <th class="num">Lifetime P&L</th><th class="num">Realized</th><th class="num">Unrealized</th>
+    <th>Sparkline</th>
+    <th>Trades</th><th>Win rate</th>
+    <th class="num">Open value</th><th>Last trade</th><th>Kill</th></tr></thead><tbody>`;
   // GitHub Actions URL for the freeze_strategy workflow. Each row's
   // 🛑 button links here pre-filled with that strategy's name. Falls
   // back to "#" when DATA.config.repo isn't set (local dev).
   const freezeBaseUrl = DATA.config.repo
     ? `https://github.com/${DATA.config.repo}/actions/workflows/freeze_strategy.yml`
     : "#";
-  // Rank by total P&L descending. Ties broken by recency of last
-  // trade so a recently-active flat strategy ranks above a dormant
-  // flat one. Strategies that have never traded (last_trade_at=null)
-  // sink to the bottom.
+
+  // Trading mode badge per strategy. Indicates whether the strategy
+  // is actually firing orders (LIVE/PAPER) or just logging proposals
+  // (DRY). Drives the user's mental model: "DRY strategies will
+  // never produce P&L; if I want experiments, set DRY_RUN_*=false".
+  const modeBadge = (sname, venue) => {
+    const liveSet = DATA.config.live_strategies || [];
+    const dryDefault = DATA.config.dry_run !== false;
+    const venueDryFlag = DATA.config[`dry_run_${venue}`];
+    // Per-strategy live override → PAPER (or LIVE depending on broker)
+    if (liveSet.includes(sname)) {
+      return venue === "coinbase"
+        ? `<span class="pill" style="background:rgba(244,113,116,0.20);color:#f47174;font-size:10px;" title="Live trading on Coinbase real money">💰 LIVE</span>`
+        : `<span class="pill" style="background:rgba(78,201,176,0.18);color:#4ec9b0;font-size:10px;" title="Active paper trading">📝 PAPER</span>`;
+    }
+    if (venueDryFlag === false) {
+      return venue === "coinbase"
+        ? `<span class="pill" style="background:rgba(244,113,116,0.20);color:#f47174;font-size:10px;">💰 LIVE</span>`
+        : `<span class="pill" style="background:rgba(78,201,176,0.18);color:#4ec9b0;font-size:10px;">📝 PAPER</span>`;
+    }
+    if (dryDefault) {
+      return `<span class="pill" style="background:rgba(125,133,144,0.15);color:var(--muted);font-size:10px;" title="DRY mode — proposals logged but not submitted">DRY</span>`;
+    }
+    return venue === "coinbase"
+      ? `<span class="pill" style="background:rgba(244,113,116,0.20);color:#f47174;font-size:10px;">💰 LIVE</span>`
+      : `<span class="pill" style="background:rgba(78,201,176,0.18);color:#4ec9b0;font-size:10px;">📝 PAPER</span>`;
+  };
+
+  // Inline SVG sparkline of cumulative realized P&L per strategy.
+  // 50 most-recent closed trades; visual only, hover shows count.
+  const sparkline = (points) => {
+    if (!points || points.length < 2) {
+      return `<span style="color:var(--muted);font-size:11px;">—</span>`;
+    }
+    const w = 80, h = 22;
+    const min = Math.min(...points), max = Math.max(...points);
+    const range = (max - min) || 1;
+    const pts = points.map((v, i) => {
+      const x = (i / (points.length - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    const lastVal = points[points.length - 1];
+    const color = lastVal > 0 ? "#4ec9b0" : (lastVal < 0 ? "#f47174" : "#7d8590");
+    return `<svg width="${w}" height="${h}" style="vertical-align:middle;" title="${points.length} closed trades">
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/>
+    </svg>`;
+  };
+  // Rank by LIFETIME P&L (realized + unrealized) descending so paper
+  // strategies with profitable open positions rank above dormant ones
+  // even before round-trip. Ties broken by recency of last trade.
+  // Strategies that have never traded (last_trade_at=null) sink.
   const stratList = Object.values(d.by_strategy).slice().sort((a, b) => {
-    const pnlDiff = (b.summary.total_pnl_usd || 0)
-                  - (a.summary.total_pnl_usd || 0);
+    const pnlA = (a.summary.lifetime_pnl_usd ?? a.summary.total_pnl_usd ?? 0);
+    const pnlB = (b.summary.lifetime_pnl_usd ?? b.summary.total_pnl_usd ?? 0);
+    const pnlDiff = pnlB - pnlA;
     if (Math.abs(pnlDiff) > 0.01) return pnlDiff;
     const la = a.summary.last_trade_at;
     const lb = b.summary.last_trade_at;
@@ -1439,16 +1600,28 @@ function render(tab) {
     const killBtn = isFrozen
       ? `<a href="${killHref}" target="_blank" rel="noopener" title="Currently FROZEN — click to unfreeze" style="text-decoration:none;font-size:14px;" onclick="event.stopPropagation()">▶</a>`
       : `<a href="${killHref}" target="_blank" rel="noopener" title="Freeze ${x.strategy} (opens GitHub Actions; type strategy name + 'freeze')" style="text-decoration:none;font-size:14px;" onclick="event.stopPropagation()">🛑</a>`;
+    // Lookup strategy venue from registry so we can show the correct
+    // mode badge. ALL_STRATEGIES_META is injected by main() so the JS
+    // doesn't have to guess which venue a strategy lives on.
+    const strategyMeta = (DATA.config.strategies_meta || {})[x.strategy] || {};
+    const venue = strategyMeta.venue || "alpaca";
+    const lifetimePnl = (x.lifetime_pnl_usd ?? x.total_pnl_usd) || 0;
+    const realizedPnl = x.total_pnl_usd || 0;
+    const unrealizedPnl = x.unrealized_pnl_usd || 0;
+    const marketValue = x.market_value_usd || 0;
     html += `<tr style="cursor: pointer;" onclick="document.getElementById('${safeId}').open = !document.getElementById('${safeId}').open">
       <td>${rankCell}</td>
-      <td><strong>${x.strategy}</strong></td>
+      <td><strong>${x.strategy}</strong>
+        <div style="color:var(--muted);font-size:10px;margin-top:2px;">${venue}</div></td>
+      <td>${modeBadge(x.strategy, venue)}</td>
       <td>${stateCell}</td>
+      <td class="num ${cls(lifetimePnl)}"><strong>${fmtUSD(lifetimePnl)}</strong></td>
+      <td class="num ${cls(realizedPnl)}">${fmtUSD(realizedPnl)}</td>
+      <td class="num ${cls(unrealizedPnl)}">${fmtUSD(unrealizedPnl)}</td>
+      <td>${sparkline(x.pnl_sparkline)}</td>
       <td>${x.n_trades} (${x.wins}W/${x.losses}L)</td>
       <td>${(x.win_rate * 100).toFixed(1)}%</td>
-      <td class="num ${cls(x.total_pnl_usd)}">${fmtUSD(x.total_pnl_usd)}</td>
-      <td class="num">$${x.entry_volume_usd.toFixed(2)}</td>
-      <td class="num ${cls(x.return_on_volume_pct)}">${fmtPct(x.return_on_volume_pct)}</td>
-      <td class="num ${cls(x.avg_pnl_usd)}">${fmtUSD(x.avg_pnl_usd)}</td>
+      <td class="num">${marketValue > 0 ? "$" + marketValue.toFixed(0) : "—"}</td>
       <td>${lastTrade}</td>
       <td style="text-align:center;">${killBtn}</td>
     </tr>`;
@@ -1458,7 +1631,7 @@ function render(tab) {
       const tb = b.close_time || b.open_time || b.timestamp;
       return tb.localeCompare(ta);
     });
-    html += `<tr><td colspan="11" style="padding: 0; background: var(--panel-2);">
+    html += `<tr><td colspan="13" style="padding: 0; background: var(--panel-2);">
       <details id="${safeId}" style="border: none; background: transparent; padding: 0;">
         <summary style="padding: 10px 14px;">${stTrades.length} trade(s) for <strong>${x.strategy}</strong></summary>
         <div class="scroll" style="max-height: 280px;"><table style="margin: 0;"><thead><tr>
@@ -1488,7 +1661,7 @@ function render(tab) {
       </tr>`;
     });
     if (stTrades.length === 0) {
-      html += `<tr><td colspan="11" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
+      html += `<tr><td colspan="13" style="padding: 12px; color: var(--muted); text-align: center;">No trades yet for this strategy.</td></tr>`;
     }
     html += `</tbody></table></div></details></td></tr>`;
   });
@@ -1783,6 +1956,35 @@ def render_html(payload: dict, out_path: Path):
 
 def main():
     repo = os.environ.get("GITHUB_REPOSITORY", "")
+    # Pull strategy metadata + live-mode flags so the dashboard JS can
+    # render the right "Mode" badge per strategy (LIVE / PAPER / DRY).
+    # Without this metadata the user can't tell which strategies are
+    # actively trading vs just logging proposals.
+    strategies_meta: dict = {}
+    try:
+        from run_orchestrator import ALL_STRATEGIES
+        for meta in ALL_STRATEGIES:
+            strategies_meta[meta.name] = {
+                "venue": meta.venue,
+                "asset_classes": list(meta.asset_classes),
+                "target_alloc_pct": meta.target_alloc_pct,
+                "description": getattr(meta, "description", ""),
+            }
+    except ImportError:
+        pass
+
+    # Per-venue dry flags + global. The JS modeBadge() reads these to
+    # decide whether a strategy is firing real orders or just logging.
+    def _flag(name: str) -> bool | None:
+        v = os.environ.get(name)
+        if v is None or v == "":
+            return None
+        return v.lower() not in ("false", "0", "no")
+
+    live_strategies = [
+        s.strip() for s in os.environ.get("LIVE_STRATEGIES", "").split(",")
+        if s.strip()
+    ]
     config = {
         "stop_loss_pct": STOP_LOSS_PCT,
         "take_profit_pct": TAKE_PROFIT_PCT,
@@ -1793,6 +1995,14 @@ def main():
         "granularity": GRANULARITY,
         "fee_bps": FEE_BPS,
         "repo": repo,
+        "strategies_meta": strategies_meta,
+        "live_strategies": live_strategies,
+        "dry_run": _flag("DRY_RUN") if _flag("DRY_RUN") is not None else True,
+        "dry_run_coinbase": _flag("DRY_RUN_COINBASE"),
+        "dry_run_alpaca": _flag("DRY_RUN_ALPACA"),
+        "dry_run_kalshi": _flag("DRY_RUN_KALSHI"),
+        "alerts_muted": os.environ.get("ALERTS_MUTE", "").lower()
+                          in ("1", "true", "yes"),
     }
 
     logger.info("Loading live trades from SQLite…")
