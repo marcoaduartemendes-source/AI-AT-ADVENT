@@ -34,6 +34,9 @@ jobs:
             data/risk_state.db
             data/allocator.db
             data/trading_performance.db
+            data/alert_dedup.db
+            data/strategy_alert_state.db
+            data/signal_bus.db
           key: orchestrator-state-${{ github.run_number }}
           restore-keys: orchestrator-state-
 
@@ -92,4 +95,8 @@ jobs:
           # Tag rows with which deployment recorded them — useful
           # during the GH→Hetzner transition window.
           DEPLOY_ENV:              github-actions
+          # Alert dedup config (SQLite-backed; cached above so it
+          # works across cycles).
+          ALERTS_MUTE:                  ${{ vars.ALERTS_MUTE }}
+          ALERT_DEDUP_COOLDOWN_SECONDS: ${{ vars.ALERT_DEDUP_COOLDOWN_SECONDS || '3600' }}
         run: python src/run_orchestrator.py --once

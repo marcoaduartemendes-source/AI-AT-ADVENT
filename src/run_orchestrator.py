@@ -342,12 +342,23 @@ def main():
         return 1
 
     registry = StrategyRegistry()
+    skipped_by_venue: dict[str, list[str]] = {}
     for meta in PHASE_1_STRATEGIES:
         # Only register strategies whose venue is configured
         if meta.venue in brokers:
             registry.register(meta)
         else:
-            logger.warning(f"Skipping {meta.name}: venue {meta.venue} not configured")
+            skipped_by_venue.setdefault(meta.venue, []).append(meta.name)
+    # Log a SINGLE info line per missing venue instead of one warning
+    # per strategy. Without this batching, a CI run with two missing
+    # venues emitted ~20 yellow "Skipping" lines that visually looked
+    # like errors when they're expected on a partially-credentialed
+    # environment.
+    for venue, names in sorted(skipped_by_venue.items()):
+        logger.info(
+            f"Venue '{venue}' not configured — skipping "
+            f"{len(names)} strategies: {', '.join(sorted(names))}"
+        )
 
     risk_manager = RiskManager(brokers=brokers)
     allocator = MetaAllocator(registry=registry, performance=StrategyPerformance())
