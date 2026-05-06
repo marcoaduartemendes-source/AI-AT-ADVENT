@@ -10,6 +10,9 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: orchestrator
   cancel-in-progress: false
@@ -17,6 +20,11 @@ concurrency:
 jobs:
   cycle:
     runs-on: ubuntu-latest
+    # Hard-cap so a stuck cycle (broker timeout, retry loop) gets
+    # killed before the next 5-min cron tick — without this, runs
+    # queue up under cancel-in-progress: false and can race the
+    # actions/cache save under the same run_number.
+    timeout-minutes: 4
     permissions:
       contents: write       # allowed to save risk/allocator DBs to cache
     steps:
@@ -56,11 +64,18 @@ jobs:
           KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
           # Orchestrator config
           DRY_RUN:                 ${{ vars.ORCHESTRATOR_DRY_RUN || 'true' }}
+          # Two-key live-trading guard: even with DRY_RUN=false the
+          # orchestrator refuses to place real orders unless this is
+          # also '1'. Forces an explicit, recent decision rather than
+          # one stale "DRY_RUN=false" toggle accidentally going live.
+          ALLOW_LIVE_TRADING:      ${{ vars.ALLOW_LIVE_TRADING }}
           DRY_RUN_COINBASE:        ${{ vars.DRY_RUN_COINBASE }}
           DRY_RUN_ALPACA:          ${{ vars.DRY_RUN_ALPACA }}
           DRY_RUN_KALSHI:          ${{ vars.DRY_RUN_KALSHI }}
           LIVE_STRATEGIES:         ${{ vars.LIVE_STRATEGIES }}
-          MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '5000' }}
+          # Safe default ($50, not $5k) for forks / first-time setups.
+          # Override via repository var MAX_TRADE_USD_GLOBAL when ready.
+          MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '50' }}
           MAX_TRADE_USD_COINBASE:  ${{ vars.MAX_TRADE_USD_COINBASE }}
           MAX_TRADE_USD_ALPACA:    ${{ vars.MAX_TRADE_USD_ALPACA }}
           MAX_TRADE_USD_KALSHI:    ${{ vars.MAX_TRADE_USD_KALSHI }}
@@ -99,4 +114,25 @@ jobs:
           # works across cycles).
           ALERTS_MUTE:                  ${{ vars.ALERTS_MUTE }}
           ALERT_DEDUP_COOLDOWN_SECONDS: ${{ vars.ALERT_DEDUP_COOLDOWN_SECONDS || '3600' }}
+          # Healthchecks.io dead-man's-switch URLs. When set, the
+          # orchestrator pings start/success/fail at each cycle so a
+          # crashed runner / silent failure surfaces via Healthchecks
+          # alerting (out-of-band from the in-process alert sinks
+          # that wouldn't fire if the process itself died).
+          HEALTHCHECKS_PING_URL_ORCHESTRATOR: ${{ secrets.HEALTHCHECKS_PING_URL_ORCHESTRATOR }}
         run: python src/run_orchestrator.py --once
+
+      - name: Notify on workflow failure
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL:  ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_TYPE: ${{ vars.ALERT_WEBHOOK_TYPE }}
+        run: |
+          if [ -z "${ALERT_WEBHOOK_URL}" ]; then
+            echo "ALERT_WEBHOOK_URL not set; skipping failure notification"
+            exit 0
+          fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(printf '{"text":"\\u274c orchestrator workflow failed: %s"}' "$run_url")
+          curl -sS -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "$ALERT_WEBHOOK_URL" || true

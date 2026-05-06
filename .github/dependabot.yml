@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Python deps — bumps to requirements.txt; reviewer should ensure
+  # tests pass before merging. With a future requirements.lock + hash
+  # pinning, switch to `versioning-strategy: lockfile-only`.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies, python]
+
+  # GitHub Actions — keep third-party actions current AND make their
+  # bumps visible in PRs. The audit's first finding was that all
+  # actions were pinned to floating major tags; this is the smallest
+  # step toward visibility-then-SHA-pinning.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies, github-actions]

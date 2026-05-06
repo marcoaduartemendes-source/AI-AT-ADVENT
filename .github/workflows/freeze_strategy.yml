@@ -35,6 +35,9 @@ on:
         type: string
         default: "manual via dashboard"
 
+permissions:
+  contents: read
+
 concurrency:
   # Serialize so two clicks in quick succession don't race
   group: lifecycle-${{ github.ref }}
@@ -43,6 +46,7 @@ concurrency:
 jobs:
   flip:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Set up SSH
