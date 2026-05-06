@@ -34,6 +34,7 @@ from .base import (
     OrderType,
     Position,
     Quote,
+    redact_response_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,13 @@ class KalshiAdapter(BrokerAdapter):
                     )
                 self._private_key = key
             except Exception as e:
-                raise BrokerError(f"Kalshi PEM load failed: {e}") from e
+                # Don't include `e` in the message — the cryptography
+                # library sometimes echoes PEM bytes in its exception
+                # text, which then lands in journalctl. The original
+                # exception is still chained via `from e` for debugging.
+                raise BrokerError(
+                    "Kalshi PEM load failed (check KALSHI_PRIVATE_KEY format)"
+                ) from e
 
         self._session = requests.Session()
 
@@ -107,7 +114,10 @@ class KalshiAdapter(BrokerAdapter):
         except requests.RequestException as e:
             raise BrokerError(f"Kalshi network error: {e}") from e
         if r.status_code >= 400:
-            raise BrokerError(f"Kalshi {method} {path} HTTP {r.status_code}: {r.text[:200]}")
+            raise BrokerError(
+                f"Kalshi {method} {path} HTTP {r.status_code}: "
+                f"{redact_response_text(r.text)}"
+            )
         return r.json() if r.text else {}
 
     # ── Account ──────────────────────────────────────────────────────────

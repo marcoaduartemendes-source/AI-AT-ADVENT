@@ -104,10 +104,12 @@ class TestCheckIntracycleWash:
         assert o._check_intracycle_wash(prop, report) is False
         assert report.proposals_rejected == 0
 
-    def test_pending_order_skips_proposal(self):
+    def test_opposite_side_pending_skips_proposal(self):
+        """Pending BUY + new SELL proposal = wash-trade risk; skip."""
         o = _make_orch_stub()
         o._pending_orders_for = lambda v: {
-            "SPY": {"n_pending": 1, "buy_notional_usd": 1000},
+            "SPY": {"n_pending": 1, "n_buy_pending": 1, "n_sell_pending": 0,
+                    "buy_notional_usd": 1000, "sell_qty": 0.0},
         }
         prop = TradeProposal(
             strategy="x", venue="alpaca", symbol="SPY",
@@ -117,6 +119,24 @@ class TestCheckIntracycleWash:
         report = CycleReport(timestamp=MagicMock())
         assert o._check_intracycle_wash(prop, report) is True
         assert report.proposals_rejected == 1
+
+    def test_same_side_pending_passes_through(self):
+        """Pending BUY + new BUY proposal = same direction; allow.
+        This unblocks legitimate strategy aggregation (e.g. risk_parity
+        + tsmom both buying SPY in the same cycle)."""
+        o = _make_orch_stub()
+        o._pending_orders_for = lambda v: {
+            "SPY": {"n_pending": 1, "n_buy_pending": 1, "n_sell_pending": 0,
+                    "buy_notional_usd": 1000, "sell_qty": 0.0},
+        }
+        prop = TradeProposal(
+            strategy="x", venue="alpaca", symbol="SPY",
+            side=OrderSide.BUY, order_type=OrderType.MARKET,
+            notional_usd=500, confidence=0.8, reason="t",
+        )
+        report = CycleReport(timestamp=MagicMock())
+        assert o._check_intracycle_wash(prop, report) is False
+        assert report.proposals_rejected == 0
 
 
 # ─── _clamp_sell_quantity ────────────────────────────────────────────

@@ -17,7 +17,6 @@ Designed to be called once per cycle from the workflow (e.g. every 5 min).
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
 import time
 import uuid
@@ -50,6 +49,10 @@ class OrchestratorConfig:
     # `live_strategies={"crypto_funding_carry"}` to risk only that pod.
     # Strategies in this set ignore both global and per-broker DRY flags.
     live_strategies: set | None = None
+    # Cancel pending orders older than this many seconds at the top of
+    # each cycle. Was a bare env-var read inside run_cycle; now
+    # configurable via OrchestratorConfig and overridable via env.
+    stale_order_seconds: int = 1800
 
     def is_dry(self, venue: str, strategy: str | None = None) -> bool:
         # Per-strategy LIVE override wins over everything else.
@@ -117,20 +120,20 @@ class Orchestrator:
         # Cache pending orders per venue for the whole cycle so we don't
         # re-query the broker dozens of times.
         self._pending_cache: dict[str, dict] = {}
-
-        # Cancel pending orders older than the configured threshold.
-        # Prevents a backlog of stale orders from blocking new ones.
-        stale_threshold = int(os.environ.get("STALE_ORDER_SECONDS", "1800"))
-        for vname, adapter in self.brokers.items():
-            if not hasattr(adapter, "cancel_stale_orders"):
-                continue
-            try:
-                n = adapter.cancel_stale_orders(stale_threshold)
-                if n:
-                    logger.info(f"[{vname}] cancelled {n} stale order(s) "
-                                f"(>{stale_threshold}s old)")
-            except Exception as e:
-                logger.debug(f"[{vname}] cancel_stale_orders: {e}")
+        # Venues whose pending-orders read failed this cycle. Strategies
+        # are blocked from opening NEW positions on a degraded venue
+        # (closing positions still allowed) — see _pending_orders_for
+        # and _handle_proposal.
+        self._degraded_venues: set[str] = set()
+        # Defensive: clear the risk manager's broker snapshot cache so
+        # an aborted previous cycle can't leak stale positions/account
+        # data into this one. compute_state would clear it on success
+        # anyway, but if it raises we still want the next cycle to start
+        # clean.
+        try:
+            self.risk._broker_snapshots = {}
+        except Exception:
+            pass
 
         # Phase-0: poll previously-PENDING orders for fills and backfill
         # the trade ledger with real fill prices. Without this every
@@ -163,6 +166,24 @@ class Orchestrator:
             return report
         report.risk = state
 
+        # Cancel pending orders older than the configured threshold.
+        # Runs AFTER compute_state so we have an up-to-date view of
+        # broker reachability (state.venues_ok). When the global flag
+        # is False at least one broker is unreachable — we still try
+        # the others; the per-venue try/except guards us against firing
+        # cancels at the broken one.
+        stale_threshold = self.cfg.stale_order_seconds
+        for vname, adapter in self.brokers.items():
+            if not hasattr(adapter, "cancel_stale_orders"):
+                continue
+            try:
+                n = adapter.cancel_stale_orders(stale_threshold)
+                if n:
+                    logger.info(f"[{vname}] cancelled {n} stale order(s) "
+                                f"(>{stale_threshold}s old)")
+            except Exception as e:
+                logger.debug(f"[{vname}] cancel_stale_orders: {e}")
+
         # 2) Kill switch
         from risk.policies import KillSwitchState
         if state.kill_switch == KillSwitchState.KILL:
@@ -189,11 +210,32 @@ class Orchestrator:
                 alloc = self.allocator.rebalance(portfolio_equity_usd=state.equity_usd)
                 report.rebalanced = True
                 self._last_rebalance_ts = time.time()
+                self._allocator_consecutive_failures = 0
                 logger.info(f"Allocator rebalance: {len(alloc.decisions)} strategies, "
                             f"total active={alloc.total_active_pct * 100:.1f}%")
             except Exception as e:
                 report.errors.append(f"allocator.rebalance failed: {e}")
                 logger.exception("Allocator rebalance failed")
+                # Track consecutive failures so a permanent allocator
+                # outage (corrupt metrics.db, schema drift) surfaces
+                # via alert rather than silently freezing allocations.
+                self._allocator_consecutive_failures = (
+                    getattr(self, "_allocator_consecutive_failures", 0) + 1
+                )
+                if self._allocator_consecutive_failures in (3, 10):
+                    try:
+                        from common.alerts import alert
+                        alert(
+                            f"Allocator rebalance failing for "
+                            f"{self._allocator_consecutive_failures} "
+                            f"consecutive cycles: {type(e).__name__}: "
+                            f"{str(e)[:160]}",
+                            severity="warning",
+                        )
+                    except Exception as alert_e:
+                        logger.warning(
+                            f"alert dispatch failed: {alert_e}"
+                        )
 
         # 4) Per-strategy compute → gate → execute
         latest_alloc = self.registry.latest_allocations()
@@ -289,10 +331,16 @@ class Orchestrator:
         try:
             orders = adapter.get_open_orders()
         except Exception as e:
-            # Audit fix: was debug — broker outage matters and silently
-            # falling back to "no pending orders" can let strategies
-            # double-fire across cycles. Surface at WARNING.
-            logger.warning(f"[{venue}] get_open_orders failed: {e}")
+            # Broker outage: fail-CLOSED. Mark the venue as degraded so
+            # _handle_proposal blocks NEW opens (BUYs and non-closing
+            # SELLs) for this cycle. Closing SELLs are still allowed —
+            # we want to be able to reduce exposure even when the
+            # exchange's read API is flaky. Without this flag, returning
+            # {} would let strategies double-fire orders that already
+            # exist (a previous WARNING-level log was the only signal).
+            logger.warning(f"[{venue}] get_open_orders failed: {e} "
+                           f"— marking venue degraded for this cycle")
+            self._degraded_venues.add(venue)
             if cache is not None: cache[venue] = {}
             return {}
         out: dict[str, dict] = {}
@@ -300,9 +348,12 @@ class Orchestrator:
             sym = o.symbol
             entry = out.setdefault(sym, {"buy_notional_usd": 0.0,
                                          "sell_qty": 0.0,
-                                         "n_pending": 0})
+                                         "n_pending": 0,
+                                         "n_buy_pending": 0,
+                                         "n_sell_pending": 0})
             entry["n_pending"] += 1
             if o.side and o.side.value == "BUY":
+                entry["n_buy_pending"] += 1
                 # Best-effort notional: limit price × qty, or notional_usd
                 if o.notional_usd is not None:
                     entry["buy_notional_usd"] += o.notional_usd
@@ -311,6 +362,7 @@ class Orchestrator:
                 elif o.quantity and o.filled_avg_price:
                     entry["buy_notional_usd"] += o.quantity * o.filled_avg_price
             else:
+                entry["n_sell_pending"] += 1
                 entry["sell_qty"] += float(o.quantity or 0)
         if cache is not None:
             cache[venue] = out
@@ -369,6 +421,19 @@ class Orchestrator:
             logger.debug(
                 f"[{proposal.strategy}] SKIP {proposal.venue} closed "
                 f"({venue_window_str(proposal.venue)})"
+            )
+            report.proposals_rejected += 1
+            return
+
+        # Degraded-venue gate: if get_open_orders failed this cycle the
+        # wash-trade guard has no visibility, so block NEW opens. Closing
+        # SELLs are allowed — better to reduce exposure than be stuck.
+        if (proposal.venue in getattr(self, "_degraded_venues", set())
+                and not proposal.is_closing):
+            logger.info(
+                f"[{proposal.strategy}] SKIP {proposal.symbol}: "
+                f"venue {proposal.venue} degraded "
+                f"(get_open_orders failed); opens blocked this cycle"
             )
             report.proposals_rejected += 1
             return
@@ -455,16 +520,26 @@ class Orchestrator:
     def _check_intracycle_wash(
         self, proposal: TradeProposal, report: CycleReport,
     ) -> bool:
-        """Return True if the proposal should be skipped due to a
-        pending order on the same symbol (carryover from previous
-        cycle OR the just-placed earlier proposal in THIS cycle).
+        """Return True if the proposal should be skipped due to an
+        OPPOSITE-side pending order on the same symbol (carryover from
+        previous cycle OR the just-placed earlier proposal in THIS
+        cycle). Same-side proposals are allowed through — Alpaca only
+        rejects opposite-side concurrency, and rejecting same-side
+        proposals stops legitimate strategy aggregation (e.g. risk_parity
+        + tsmom both buying SPY).
         Side-effect: increments report.proposals_rejected on skip."""
         pending = self._pending_orders_for(proposal.venue).get(
             proposal.symbol, {})
-        n_pending = pending.get("n_pending", 0)
-        if n_pending > 0:
+        if proposal.side == OrderSide.BUY:
+            opposite = pending.get("n_sell_pending", 0)
+            opposite_label = "SELL"
+        else:
+            opposite = pending.get("n_buy_pending", 0)
+            opposite_label = "BUY"
+        if opposite > 0:
             logger.info(f"[{proposal.strategy}] SKIP {proposal.symbol}: "
-                        f"{n_pending} pending order(s)")
+                        f"{opposite} opposite-side pending {opposite_label} "
+                        f"order(s)")
             report.proposals_rejected += 1
             return True
         return False
@@ -602,7 +677,8 @@ class Orchestrator:
 
         # Map strategy name → venue (every strategy is mounted on
         # exactly one broker; this lookup is O(n_strategies) once
-        # per cycle).
+        # per cycle). Used as fallback when the trade row predates
+        # migration 002 (no `venue` column).
         strat_to_venue: dict[str, str] = {
             name: getattr(s, "venue", "")
             for name, s in self.strategies.items()
@@ -614,7 +690,10 @@ class Orchestrator:
         for row in unfilled:
             order_id = row.get("order_id")
             strategy_name = row.get("strategy", "")
-            venue = strat_to_venue.get(strategy_name)
+            # Prefer the venue stored on the trade row (migration 002):
+            # it survives the strategy being retired between submit and
+            # fill, which strat_to_venue does not.
+            venue = row.get("venue") or strat_to_venue.get(strategy_name)
             if not venue or venue not in self.brokers:
                 continue
             adapter = self.brokers[venue]
@@ -659,13 +738,21 @@ class Orchestrator:
             new_status = ("PARTIALLY_FILLED"
                           if status == _OS.PARTIALLY_FILLED else "FILLED")
             if new_status == "FILLED" and row.get("side") == "SELL":
-                # Look up entry price from the cached broker position.
-                cached = self.risk.cached_positions(venue)
-                for pos in cached:
-                    if (pos.symbol == row.get("product_id")
-                            and pos.avg_entry_price > 0):
-                        pnl_usd = (fill_px - pos.avg_entry_price) * fill_qty
-                        break
+                # Prefer the entry_price persisted at submit time
+                # (migration 002): it works even when the position
+                # has been fully closed and is no longer in the
+                # broker's positions list. Fall back to cached
+                # positions for legacy rows that predate the column.
+                row_entry = row.get("entry_price")
+                if row_entry and row_entry > 0:
+                    pnl_usd = (fill_px - float(row_entry)) * fill_qty
+                else:
+                    cached = self.risk.cached_positions(venue)
+                    for pos in cached:
+                        if (pos.symbol == row.get("product_id")
+                                and pos.avg_entry_price > 0):
+                            pnl_usd = (fill_px - pos.avg_entry_price) * fill_qty
+                            break
 
             self._tracker.update_trade_fill(
                 trade_id=row["id"],
@@ -712,13 +799,17 @@ class Orchestrator:
         """
         if self._tracker is None:
             return
-        try:
-            from trading.recompute import recompute_realized_pnl_fifo
-            db_total, recomputed_total, per_strategy_drift = (
-                recompute_realized_pnl_fifo(self._tracker.db_path)
-            )
-        except ImportError:
-            return  # module not present yet — first deploy
+        # Use find_spec rather than catching ImportError around the
+        # actual import: a real bug in trading.recompute (syntax error,
+        # transitively missing dep) would otherwise be caught and
+        # silently disable the consistency check forever.
+        import importlib.util
+        if importlib.util.find_spec("trading.recompute") is None:
+            return    # module not deployed yet — first deploy
+        from trading.recompute import recompute_realized_pnl_fifo
+        db_total, recomputed_total, per_strategy_drift = (
+            recompute_realized_pnl_fifo(self._tracker.db_path)
+        )
         drift = abs(db_total - recomputed_total)
         if drift > 1.0:
             logger.warning(
@@ -782,14 +873,18 @@ class Orchestrator:
             "buy_notional_usd": 0.0,
             "sell_qty": 0.0,
             "n_pending": 0,
+            "n_buy_pending": 0,
+            "n_sell_pending": 0,
         })
         entry["n_pending"] += 1
         if proposal.side == OrderSide.BUY:
+            entry["n_buy_pending"] += 1
             notional = decision.approved_notional_usd or proposal.notional_usd or 0.0
             if not notional and proposal.quantity and proposal.limit_price:
                 notional = proposal.quantity * proposal.limit_price
             entry["buy_notional_usd"] += float(notional or 0)
         else:
+            entry["n_sell_pending"] += 1
             entry["sell_qty"] += float(proposal.quantity or 0)
 
     def _record_trade(self, proposal: TradeProposal, order, decision) -> None:
@@ -866,6 +961,14 @@ class Orchestrator:
                 # transition once the broker reports a real fill.
                 fill_status_str = "PENDING"
 
+            # Capture entry_price + venue at submit time so the
+            # fill-polling loop can attribute PnL even if the position
+            # has been fully closed by the time it runs (cached_positions
+            # would no longer carry the symbol) or if the strategy was
+            # RETIRED in the meantime.
+            entry_price_at_submit: float | None = None
+            if cached_pos and cached_pos.avg_entry_price > 0:
+                entry_price_at_submit = float(cached_pos.avg_entry_price)
             record = TradeRecord(
                 timestamp=datetime.now(UTC),
                 strategy=proposal.strategy,
@@ -878,6 +981,8 @@ class Orchestrator:
                 pnl_usd=pnl_usd,
                 dry_run=self.cfg.is_dry(proposal.venue, proposal.strategy),
                 fill_status=fill_status_str,
+                entry_price=entry_price_at_submit,
+                venue=proposal.venue,
             )
             self._tracker.record_trade(record)
         except Exception as e:
@@ -897,3 +1002,12 @@ class Orchestrator:
             )
             for p in strategy.on_emergency_close(ctx):
                 self._handle_proposal(p, state, report, strategy)
+        # Once the closes are submitted, give the broker a chance to
+        # report fills before we return. Without this the KILL path
+        # leaves orders stuck in PENDING and the next cycle re-fires
+        # KILL (no cooldown) without re-entering the polling code,
+        # so realized PnL on the close is never written.
+        try:
+            self._poll_pending_fills(report)
+        except Exception as e:
+            logger.warning(f"poll_pending_fills (post-KILL) failed: {e}")

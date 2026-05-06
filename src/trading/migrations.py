@@ -32,6 +32,23 @@ class Migration:
     apply: Callable[[sqlite3.Connection], int]   # returns row count touched
 
 
+def _add_column_if_missing(conn: sqlite3.Connection, table: str,
+                            column: str, decl: str) -> bool:
+    """Idempotent column-add helper; returns True if added, False if
+    already present or the table doesn't exist."""
+    has_table = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    if not has_table:
+        return False
+    cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column in cols:
+        return False
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    return True
+
+
 def _migration_001_null_phantom_pnl(conn: sqlite3.Connection) -> int:
     """Trades captured at submit (price=0) had pnl_usd computed as
     (0 − entry_price) × qty → phantom losses. Null those out so the
@@ -55,6 +72,26 @@ def _migration_001_null_phantom_pnl(conn: sqlite3.Connection) -> int:
     return cur.rowcount or 0
 
 
+def _migration_002_add_entry_price_venue(conn: sqlite3.Connection) -> int:
+    """Persist entry_price and venue on each trade row at submit time.
+
+    Without these, the orchestrator's fill-polling loop attributes PnL
+    by walking `risk.cached_positions(venue)` — which fails in two
+    cases:
+      1. Closing SELL filled the entire position → cached_positions
+         no longer contains the symbol → pnl_usd permanently None.
+      2. Strategy was RETIRED between submit and fill → strat_to_venue
+         lookup returns None → fill never recorded.
+    Storing them on the row makes both cases work.
+    """
+    touched = 0
+    if _add_column_if_missing(conn, "trades", "entry_price", "REAL"):
+        touched += 1
+    if _add_column_if_missing(conn, "trades", "venue", "TEXT"):
+        touched += 1
+    return touched
+
+
 # Append-only registry. Once a migration ships, do not rename or delete
 # its entry — we'd break replay consistency for VPSes that ran an
 # older version. Add new ones below with a higher index in the name.
@@ -62,6 +99,10 @@ MIGRATIONS: list[Migration] = [
     Migration(
         name="001_null_phantom_pnl",
         apply=_migration_001_null_phantom_pnl,
+    ),
+    Migration(
+        name="002_add_entry_price_venue",
+        apply=_migration_002_add_entry_price_venue,
     ),
 ]
 

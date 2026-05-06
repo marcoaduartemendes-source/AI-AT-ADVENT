@@ -66,8 +66,9 @@ class PEAD(Strategy):
                             reason=f"PEAD drift window ({HOLD_DAYS}d) elapsed",
                         ))
                         n_open -= 1
-            except Exception:
-                pass
+            except (ValueError, TypeError, KeyError) as e:
+                logger.debug(f"[pead] entry-date parse failed for "
+                             f"{symbol}: {type(e).__name__}: {e}")
 
         # Earnings-driven entries
         earnings = ctx.scout_signals.get("earnings_upcoming", []) or []
@@ -86,7 +87,9 @@ class PEAD(Strategy):
                 continue
             try:
                 candles = self.broker.get_candles(symbol, "ONE_DAY", num_candles=5)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[pead] get_candles({symbol}) failed: "
+                             f"{type(e).__name__}: {e}")
                 continue
             if len(candles) < 2:
                 continue

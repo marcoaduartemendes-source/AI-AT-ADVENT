@@ -149,27 +149,60 @@ class PerformanceTracker:
                                   and record.price > 0)
                               else "PENDING")
         with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO trades
-                  (timestamp, strategy, product_id, side, amount_usd,
-                   quantity, price, order_id, pnl_usd, dry_run, fill_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record.timestamp.isoformat(),
-                    record.strategy,
-                    record.product_id,
-                    record.side,
-                    record.amount_usd,
-                    record.quantity,
-                    record.price,
-                    record.order_id,
-                    record.pnl_usd,
-                    1 if record.dry_run else 0,
-                    initial_status,
-                ),
-            )
+            # Detect whether the entry_price/venue columns exist (added
+            # by migration 002). On a brand-new install where migrations
+            # haven't been applied yet, fall back to the legacy schema
+            # so insertion still works.
+            cols = {r[1] for r in conn.execute(
+                "PRAGMA table_info(trades)"
+            ).fetchall()}
+            if "entry_price" in cols and "venue" in cols:
+                conn.execute(
+                    """
+                    INSERT INTO trades
+                      (timestamp, strategy, product_id, side, amount_usd,
+                       quantity, price, order_id, pnl_usd, dry_run,
+                       fill_status, entry_price, venue)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.timestamp.isoformat(),
+                        record.strategy,
+                        record.product_id,
+                        record.side,
+                        record.amount_usd,
+                        record.quantity,
+                        record.price,
+                        record.order_id,
+                        record.pnl_usd,
+                        1 if record.dry_run else 0,
+                        initial_status,
+                        record.entry_price,
+                        record.venue,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO trades
+                      (timestamp, strategy, product_id, side, amount_usd,
+                       quantity, price, order_id, pnl_usd, dry_run, fill_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.timestamp.isoformat(),
+                        record.strategy,
+                        record.product_id,
+                        record.side,
+                        record.amount_usd,
+                        record.quantity,
+                        record.price,
+                        record.order_id,
+                        record.pnl_usd,
+                        1 if record.dry_run else 0,
+                        initial_status,
+                    ),
+                )
         # Dual-write to Supabase (if configured). Failure logs but
         # never raises — SQLite is still the source of truth.
         if self._supabase is not None:
@@ -201,11 +234,19 @@ class PerformanceTracker:
         fill_status disambiguates.
         """
         with self._conn() as conn:
+            cols = {r[1] for r in conn.execute(
+                "PRAGMA table_info(trades)"
+            ).fetchall()}
+            extra = ""
+            if "entry_price" in cols:
+                extra += ", entry_price"
+            if "venue" in cols:
+                extra += ", venue"
             rows = conn.execute(
-                """
+                f"""
                 SELECT id, timestamp, strategy, product_id, side,
                        amount_usd, quantity, price, order_id, pnl_usd,
-                       fill_status
+                       fill_status{extra}
                 FROM trades
                 WHERE order_id IS NOT NULL
                   AND order_id != ''

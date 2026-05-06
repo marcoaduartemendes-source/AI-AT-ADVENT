@@ -45,6 +45,12 @@ class TradeRecord:
     # so opening trades with non-zero price + None pnl land as
     # FILLED instead of getting stuck in PENDING.
     fill_status: str | None = None
+    # Position context captured at submit time. Both are persisted
+    # so the fill-polling loop can attribute PnL even after the
+    # position has been fully closed (cached_positions wouldn't
+    # contain the symbol any more) or after the strategy is RETIRED.
+    entry_price: float | None = None
+    venue: str | None = None
 
 
 class PortfolioManager:

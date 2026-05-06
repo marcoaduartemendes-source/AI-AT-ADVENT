@@ -259,12 +259,39 @@ class EquitySnapshotDB:
                 out.append((eq[i] - eq[i - 1]) / eq[i - 1])
         return out
 
-    def record_kill_switch(self, state: KillSwitchState, dd_pct: float, note: str = "") -> None:
+    def record_kill_switch(self, state: KillSwitchState, dd_pct: float,
+                            note: str = "",
+                            cooldown_seconds: int = 0) -> bool:
+        """Record a kill-switch transition.
+
+        When `cooldown_seconds > 0`, suppress consecutive identical
+        KILL events that arrive inside the cooldown window — this
+        keeps the table from growing one row per cycle while KILL is
+        active. Returns True if a row was inserted, False if suppressed.
+
+        Cooldown does NOT mute the kill-switch behaviour upstream;
+        the orchestrator still runs `_emergency_close_all` every
+        cycle. Only the DB write (and downstream alerts that read
+        from it) are deduped.
+        """
+        if cooldown_seconds > 0:
+            last = self.last_kill_switch_event()
+            if last and last.get("state") == state.value:
+                try:
+                    last_ts = datetime.fromisoformat(last["timestamp"])
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.replace(tzinfo=UTC)
+                    age_s = (datetime.now(UTC) - last_ts).total_seconds()
+                    if age_s < cooldown_seconds:
+                        return False
+                except (ValueError, KeyError):
+                    pass    # malformed row → fall through and insert
         with self._conn() as c:
             c.execute(
                 "INSERT INTO kill_switch_events (timestamp, state, drawdown_pct, note) VALUES (?, ?, ?, ?)",
                 (datetime.now(UTC).isoformat(), state.value, dd_pct, note),
             )
+        return True
 
     def last_kill_switch_event(self) -> dict | None:
         with self._conn() as c:
@@ -285,11 +312,17 @@ class RiskManager:
         brokers: dict | None = None,    # broker registry; if None, no live equity
         config: RiskConfig | None = None,
         db: EquitySnapshotDB | None = None,
+        vix_provider=None,              # callable() -> float | None
     ):
         self.brokers = brokers or {}
         self.config = config or RiskConfig.from_env()
         self.multiplier = DynamicRiskMultiplier(self.config)
         self.db = db or EquitySnapshotDB()
+        # Optional VIX provider — defaults to the scout signal bus reader
+        # below. Injecting lets us avoid risk → scouts coupling in tests
+        # and removes a layering violation (risk should not need to know
+        # how the macro feed is fanned out).
+        self._vix_provider = vix_provider
         self._cached_state: RiskState | None = None
         # Per-cycle broker snapshot cache; refreshed by compute_state()
         self._broker_snapshots: dict[str, dict] = {}
@@ -446,8 +479,11 @@ class RiskManager:
 
         ks_state = self.config.state_for_drawdown(dd_pct)
         if ks_state == KillSwitchState.KILL:
-            self.db.record_kill_switch(ks_state, dd_pct,
-                                        note=f"equity=${equity:.2f} peak=${peak:.2f}")
+            self.db.record_kill_switch(
+                ks_state, dd_pct,
+                note=f"equity=${equity:.2f} peak=${peak:.2f}",
+                cooldown_seconds=self.config.kill_switch_cooldown_seconds,
+            )
 
         # Monthly loss budget (audit fix #1). Even if portfolio DD
         # hasn't crossed kill_dd_pct, a drawn-out month-to-date loss
@@ -643,7 +679,19 @@ class RiskManager:
     # ── Macro signal hookup ---------------------------------------------
 
     def _latest_vix(self) -> float | None:
-        """Read the macro scout's most-recent VIX reading from the bus."""
+        """Read the latest VIX reading.
+
+        Uses the injected `vix_provider` callable when set (preferred);
+        otherwise falls back to reading the scout signal bus directly.
+        The fallback is kept for backwards compatibility with existing
+        deployments that don't pass a provider — but the lazy import
+        is a layering violation we'd rather not have.
+        """
+        if self._vix_provider is not None:
+            try:
+                return self._vix_provider()
+            except Exception:
+                return None
         try:
             from scouts.signal_bus import SignalBus
             bus = SignalBus()

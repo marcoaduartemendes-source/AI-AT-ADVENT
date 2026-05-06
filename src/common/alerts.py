@@ -293,6 +293,20 @@ def alert(text: str, severity: str = "info", *, timeout: float = 5.0) -> bool:
         # Either nothing was configured, or everything failed. Either
         # way the message must not get lost — log it.
         logger.info(f"[alert/{severity}] {text}")
+        # Last-resort escalation for critical alerts: ping the
+        # Healthchecks dead-man's-switch /fail endpoint so its
+        # alerting (separate auth + delivery path) takes over.
+        # This is the right response when every in-process sink is
+        # down (Pushover throttled + webhook stale + SMTP misconfig).
+        if severity in ("critical", "kill"):
+            try:
+                from common.heartbeat import ping_fail
+                ping_fail(
+                    "orchestrator",
+                    message=f"alert delivery failed: {text[:120]}",
+                )
+            except Exception as e:
+                logger.warning(f"healthchecks fallback failed: {e}")
     return delivered
 
 
@@ -397,7 +411,14 @@ def _send_email(text: str, severity: str, *, timeout: float) -> bool:
     if not to_raw or not password:
         return False
 
-    sender = os.environ.get("SMTP_FROM", "Marcoaduartemendes@gmail.com")
+    sender = os.environ.get("SMTP_FROM", "").strip()
+    if not sender:
+        # No default sender — forks of this repo shouldn't accidentally
+        # try to send mail with someone else's From: header. Caller
+        # must set SMTP_FROM explicitly. Auth would have rejected the
+        # mismatched address anyway; this just makes the error clear.
+        logger.debug("SMTP_FROM not set; skipping email alert")
+        return False
     recipients = [r.strip() for r in to_raw.split(",") if r.strip()]
     if not recipients:
         return False

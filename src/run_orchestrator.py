@@ -333,7 +333,24 @@ def main():
                      help="Print risk/allocator status, no trading")
     ap.add_argument("--live", action="store_true",
                      help="Disable DRY mode (still respects DRY_RUN env var)")
+    ap.add_argument("--allow-cold-start", action="store_true",
+                     help="Permit running with empty risk_state.db. "
+                          "Without this, a cold start refuses to trade — "
+                          "the kill-switch baseline would otherwise reset "
+                          "to current equity and silently arm at "
+                          "-KILL_DD_PCT of whatever today's equity is.")
     args = ap.parse_args()
+
+    # Two-key guard: even with DRY_RUN=false the orchestrator refuses to
+    # place real orders unless ALLOW_LIVE_TRADING=1. Forces an explicit,
+    # recent decision rather than one stale toggle going live.
+    dry_env = os.environ.get("DRY_RUN", "true").lower()
+    if dry_env == "false" and os.environ.get("ALLOW_LIVE_TRADING") != "1":
+        logger.warning(
+            "DRY_RUN=false but ALLOW_LIVE_TRADING != '1' — forcing DRY mode. "
+            "Set ALLOW_LIVE_TRADING=1 to actually place live orders."
+        )
+        os.environ["DRY_RUN"] = "true"
 
     # ── Build infra
     brokers = build_brokers()
@@ -361,6 +378,30 @@ def main():
         )
 
     risk_manager = RiskManager(brokers=brokers)
+
+    # Cold-start guard: refuse to trade when risk_state.db has no
+    # equity history, because a fresh kill-switch baseline = current
+    # equity means KILL would silently arm at -KILL_DD_PCT of whatever
+    # today's equity happens to be. Operator must opt in explicitly
+    # via --allow-cold-start. (DRY mode is exempt — it doesn't trade.)
+    try:
+        with risk_manager.db._conn() as _c:
+            _row = _c.execute(
+                "SELECT COUNT(*) FROM equity_snapshots"
+            ).fetchone()
+            _n_snapshots = int(_row[0]) if _row else 0
+    except Exception:
+        _n_snapshots = 0
+    dry_run_check = os.environ.get("DRY_RUN", "true").lower() != "false"
+    if (_n_snapshots == 0 and not dry_run_check
+            and not args.allow_cold_start):
+        logger.error(
+            "Cold start detected (risk_state.db has 0 equity snapshots) "
+            "but DRY_RUN=false. Refusing to trade — the kill-switch baseline "
+            "would reset to current equity. Pass --allow-cold-start to "
+            "override."
+        )
+        return 3
     allocator = MetaAllocator(registry=registry, performance=StrategyPerformance())
     strategies = build_strategies(brokers)
 
@@ -388,6 +429,9 @@ def main():
             dry_run_alpaca=_per_broker_flag("DRY_RUN_ALPACA"),
             dry_run_kalshi=_per_broker_flag("DRY_RUN_KALSHI"),
             live_strategies=live_strategies or None,
+            stale_order_seconds=int(
+                os.environ.get("STALE_ORDER_SECONDS", "1800")
+            ),
         ),
     )
 

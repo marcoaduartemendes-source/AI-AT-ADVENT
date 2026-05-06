@@ -317,3 +317,94 @@ class TestStrategyErrorPath:
 # call path the Orchestrator uses on every boot. Adding a redundant
 # Orchestrator-level integration test would duplicate without adding
 # coverage of the actual code that could fail (apply_pending itself).
+
+
+class TestKillSwitchEmergencyClose:
+    """KILL switch path: when compute_state returns kill_switch=KILL,
+    every strategy's on_emergency_close must run and emit SELLs for
+    its open positions; those proposals must reach the broker."""
+
+    def test_kill_switch_triggers_emergency_sells(self, tmp_path, monkeypatch):
+        from brokers.base import OrderSide, OrderType
+        from strategy_engine.base import Strategy, TradeProposal
+        broker = MockBroker(
+            venue="alpaca", cash_usd=10_000,
+            equity_usd=10_000,
+            positions=[MockPosition("SPY", qty=10, entry=720, mark=725)],
+        )
+
+        class _ClosingStrategy(Strategy):
+            name = "closer"
+            venue = "alpaca"
+
+            def compute(self, ctx):
+                return []
+
+            def on_emergency_close(self, ctx):
+                out = []
+                for sym, pos in ctx.open_positions.items():
+                    out.append(TradeProposal(
+                        strategy=self.name, venue=self.venue, symbol=sym,
+                        side=OrderSide.SELL, order_type=OrderType.MARKET,
+                        quantity=float(pos["quantity"]),
+                        confidence=1.0, is_closing=True,
+                        reason="KILL emergency close",
+                    ))
+                return out
+
+        orch, _ = _make_orchestrator(
+            brokers={"alpaca": broker},
+            strategies={"closer": _ClosingStrategy(broker)},
+            dry_run=False,
+        )
+
+        # Force KILL by stubbing compute_state to return KILL.
+        from risk.policies import KillSwitchState
+        from risk.manager import RiskState
+        from risk.multiplier import MultiplierState
+        from datetime import UTC, datetime
+        kill_state = RiskState(
+            timestamp=datetime.now(UTC),
+            equity_usd=10_000.0,
+            peak_equity_usd=20_000.0,
+            drawdown_pct=0.50,
+            kill_switch=KillSwitchState.KILL,
+            realized_vol=0.20,
+            leverage=0.0,
+            multiplier=MultiplierState(
+                base=1.0, effective=0.0,
+                drawdown_factor=0.0, vol_factor=1.0,
+                regime_factor=1.0, notes=["KILL"],
+            ),
+            venues_ok=True,
+        )
+        monkeypatch.setattr(
+            orch.risk, "compute_state", lambda persist=True: kill_state,
+        )
+        # Bypass market-hours gate so the test isn't time-of-day flaky.
+        import common.market_hours as _mh
+        monkeypatch.setattr(_mh, "is_market_open", lambda venue: True)
+        # Force the risk gate to approve closing SELLs — KILL sets the
+        # multiplier to 0.0 which the gate would otherwise read as
+        # "no headroom for any order". For this test we only care that
+        # the emergency-close path ENDS in a placed order; the gate's
+        # behaviour around closing-during-KILL is unit-tested elsewhere.
+        from risk.manager import Decision, RiskDecision
+
+        def _approve(*, notional_usd, **kw):
+            return RiskDecision(
+                Decision.APPROVE, notional_usd, "ok (test)", kill_state,
+            )
+        monkeypatch.setattr(orch.risk, "check_order", _approve)
+        report = orch.run_cycle()
+
+        assert report.risk is not None
+        assert report.risk.kill_switch == KillSwitchState.KILL
+        # Strategy emitted a SELL during emergency close that reached
+        # the broker.
+        assert len(broker.placed_orders) >= 1, (
+            "Expected at least one SELL order placed during emergency close"
+        )
+        last = broker.placed_orders[-1]
+        assert last.side == OrderSide.SELL
+        assert last.symbol == "SPY"

@@ -27,7 +27,6 @@ runs alongside the more active strategies.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, UTC
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -127,26 +126,9 @@ class DividendGrowth(Strategy):
         return None
 
     def _lookback_return_pct(self, symbol: str, days: int) -> float | None:
-        try:
-            candles = self.broker.get_candles(symbol, "1Day", num_candles=days + 5)
-        except Exception as e:
-            logger.debug(f"[{self.name}] {symbol} candles failed: {e}")
-            return None
-        if len(candles) < days:
-            return None
-        start = candles[-days].close
-        end = candles[-1].close
-        if start <= 0:
-            return None
-        return (end - start) / start * 100
+        from ._helpers import lookback_return_pct
+        return lookback_return_pct(self.broker, self.name, symbol, days)
 
     def _past_cooldown(self, pos: dict) -> bool:
-        et = pos.get("entry_time")
-        if not et:
-            return True
-        try:
-            dt = (datetime.fromisoformat(et)
-                  if isinstance(et, str) else et)
-            return datetime.now(UTC) - dt > timedelta(days=COOLDOWN_DAYS)
-        except (ValueError, TypeError):
-            return True
+        from ._helpers import past_cooldown
+        return past_cooldown(pos, COOLDOWN_DAYS)

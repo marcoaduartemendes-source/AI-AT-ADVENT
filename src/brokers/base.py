@@ -23,6 +23,32 @@ class BrokerError(Exception):
     """Raised by any adapter on broker-side failures (auth, rate limit, etc)."""
 
 
+_REDACT_PATTERNS = (
+    "APCA-API-SECRET-KEY",
+    "APCA-API-KEY-ID",
+    "Authorization",
+    "Bearer ",
+    "KALSHI-ACCESS-KEY",
+    "KALSHI-ACCESS-SIGNATURE",
+)
+
+
+def redact_response_text(text: str, max_len: int = 200) -> str:
+    """Best-effort scrub of broker error response bodies before they
+    end up in BrokerError messages / journalctl. We can't anticipate
+    every shape (broker errors sometimes echo headers) but the
+    common-case credential leaks (Bearer tokens, Alpaca/Kalshi keys)
+    are masked out."""
+    if not text:
+        return ""
+    s = text[:max_len]
+    for pat in _REDACT_PATTERNS:
+        if pat.lower() in s.lower():
+            s = "<redacted: response contained credential-shaped header>"
+            break
+    return s
+
+
 class AssetClass(str, Enum):
     CRYPTO_SPOT = "crypto_spot"
     CRYPTO_PERP = "crypto_perp"
@@ -188,6 +214,19 @@ class BrokerAdapter(ABC):
 
     @abstractmethod
     def cancel_order(self, order_id: str) -> None: ...
+
+    # Pending-order discovery and stale-order cleanup. Default to a
+    # safe no-op so adapters that don't expose these endpoints
+    # (Coinbase Spot, Kalshi) remain importable. Strategies that
+    # want a venue's wash-trade guard active need that venue to
+    # override these — without override, the orchestrator treats
+    # the venue as having no pending orders (the wash-trade guard
+    # essentially no-ops) and never auto-cancels. Documented gap.
+    def get_open_orders(self) -> list[Order]:
+        return []
+
+    def cancel_stale_orders(self, max_age_seconds: int) -> int:
+        return 0
 
     # ── Capability discovery (used by strategies + meta-allocator) -------
     @abstractmethod
