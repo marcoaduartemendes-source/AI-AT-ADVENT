@@ -367,12 +367,24 @@ def main():
     # place real orders unless ALLOW_LIVE_TRADING=1. Forces an explicit,
     # recent decision rather than one stale toggle going live.
     dry_env = os.environ.get("DRY_RUN", "true").lower()
-    if dry_env == "false" and os.environ.get("ALLOW_LIVE_TRADING") != "1":
+    allow_live = os.environ.get("ALLOW_LIVE_TRADING") == "1"
+    if dry_env == "false" and not allow_live:
         logger.warning(
             "DRY_RUN=false but ALLOW_LIVE_TRADING != '1' — forcing DRY mode. "
             "Set ALLOW_LIVE_TRADING=1 to actually place live orders."
         )
         os.environ["DRY_RUN"] = "true"
+    # Same gate applies to LIVE_STRATEGIES (the per-strategy override
+    # that bypasses every DRY flag). Without this, a stale repo
+    # variable from earlier testing could fire real-money orders the
+    # moment a strategy ships — the audit's failure mode 2026-05-07.
+    if os.environ.get("LIVE_STRATEGIES") and not allow_live:
+        logger.warning(
+            "LIVE_STRATEGIES is set but ALLOW_LIVE_TRADING != '1' — "
+            "ignoring per-strategy LIVE override. Set "
+            "ALLOW_LIVE_TRADING=1 to honour LIVE_STRATEGIES."
+        )
+        os.environ["LIVE_STRATEGIES"] = ""
 
     # ── Build infra
     brokers = build_brokers()

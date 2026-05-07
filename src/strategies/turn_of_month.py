@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 WINDOW_DAYS_BEFORE_MONTH_END = 3   # buy at day -3 from end of month
 WINDOW_DAYS_AFTER_MONTH_START = 4  # exit at day +4 of next month
-TRADE_SIZE_USD = 4000.0
+TRADE_SIZE_USD = 10000.0   # per-position cap raised for paper-trading experimentation
 
 
 # Symbols to use for the seasonal effect. SPY is the highest-coverage

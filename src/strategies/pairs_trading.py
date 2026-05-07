@@ -45,7 +45,7 @@ LOOKBACK_DAYS = 60          # window for ratio mean / stdev
 ENTRY_Z = 2.0               # |z| > this opens a position
 EXIT_Z = 0.5                # |z| < this closes
 MAX_HOLD_DAYS = 30          # forced exit if z hasn't reverted
-TRADE_SIZE_USD = 5000.0     # per-leg notional
+TRADE_SIZE_USD = 10000.0   # per-leg notional cap raised for paper-trading experimentation
 
 
 @dataclass
