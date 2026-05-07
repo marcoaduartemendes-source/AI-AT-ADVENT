@@ -62,14 +62,28 @@ tar -czf "$archive" \
 archive_size=$(stat -c%s "$archive" 2>/dev/null || stat -f%z "$archive")
 echo "Built $archive ($archive_size bytes)"
 
-# 2) Skip upload if Spaces credentials aren't configured. We want
-#    the install.sh path to succeed on a fresh box without Spaces;
-#    the user gets backup once they fill in the env vars.
-if [ -z "${SPACES_ACCESS_KEY_ID:-}" ] || [ -z "${SPACES_SECRET_ACCESS_KEY:-}" ]; then
+# 2) Detect half-configured cred state. A typo in one of the two
+#    env-var names was previously silent (script exited 0). Now: if
+#    EITHER key is set we require BOTH — half-configured boxes get a
+#    loud failure instead of "everything is fine but actually nothing
+#    backs up".
+if [ -n "${SPACES_ACCESS_KEY_ID:-}" ] || [ -n "${SPACES_SECRET_ACCESS_KEY:-}" ]; then
+    if [ -z "${SPACES_ACCESS_KEY_ID:-}" ] || [ -z "${SPACES_SECRET_ACCESS_KEY:-}" ]; then
+        echo "ERR: only one of SPACES_ACCESS_KEY_ID / SPACES_SECRET_ACCESS_KEY is set" >&2
+        # Best-effort fail ping so Healthchecks alerts the operator
+        # that backups have stopped working since deploy.
+        if [ -n "${HEALTHCHECKS_PING_URL_DB_BACKUP:-}" ]; then
+            curl -fsS --retry 3 -X POST \
+                 "${HEALTHCHECKS_PING_URL_DB_BACKUP}/fail" \
+                 --data "half-configured Spaces creds" >/dev/null \
+                 || true
+        fi
+        exit 1
+    fi
+elif [ -z "${SPACES_ACCESS_KEY_ID:-}" ]; then
     echo "SPACES_*_KEY not set — skipping upload (local archive remains in $WORK_DIR)" >&2
-    # Note: WORK_DIR is removed by the trap above; we'd need to copy
-    # the archive somewhere persistent if the user wants a local
-    # fallback. Kept simple: cloud-or-nothing.
+    # Cloud-or-nothing path: no creds at all → genuinely intended
+    # to skip. Don't fail the systemd unit on a fresh box.
     exit 0
 fi
 
@@ -108,3 +122,12 @@ aws --endpoint-url "$endpoint" \
       done
 
 echo "Backup complete."
+
+# Healthchecks dead-man's-switch ping. If unset we silently skip;
+# if set, both the success and the half-configured branch above will
+# inform Healthchecks of the run state.
+if [ -n "${HEALTHCHECKS_PING_URL_DB_BACKUP:-}" ]; then
+    curl -fsS --retry 3 -X POST \
+         "${HEALTHCHECKS_PING_URL_DB_BACKUP}" \
+         --data "ok ${ts}" >/dev/null || true
+fi

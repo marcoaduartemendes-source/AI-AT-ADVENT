@@ -26,7 +26,6 @@ Position sizing: $4k × 2 = $8k peak deployment. 14d cooldown.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, StrategyContext, TradeProposal
@@ -107,7 +106,16 @@ class InternationalsRotation(Strategy):
                 is_closing=True,
             ))
 
-        # Entries: target set members not currently held
+        # Entries: target set members not currently held.
+        # Sizing: respect ctx.target_alloc_usd (allocator's verdict)
+        # divided across the slots, capped by TRADE_SIZE_USD which
+        # serves as a per-position max. Vol-managed overlay scaler
+        # (Moreira-Muir 2017) multiplies the per-slot size.
+        from ._helpers import vol_scaler
+        overlay = vol_scaler(ctx, "equity_momentum", 1.0)
+        slots = max(1, TOP_N)
+        per_slot_alloc = (ctx.target_alloc_usd * overlay) / slots
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for sym, ret in winners:
             if sym in held:
                 continue
@@ -115,7 +123,7 @@ class InternationalsRotation(Strategy):
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.75,
+                notional_usd=per_slot, confidence=0.75,
                 reason=f"{sym} {ret:+.1f}% (vs SPY {us_return:+.1f}%, "
                        f"spread +{spread:.1f}%)",
                 metadata={"return_pct": ret, "spread_pct": spread},
@@ -123,26 +131,9 @@ class InternationalsRotation(Strategy):
         return proposals
 
     def _lookback_return_pct(self, symbol: str, days: int) -> float | None:
-        try:
-            candles = self.broker.get_candles(symbol, "1Day", num_candles=days + 5)
-        except Exception as e:
-            logger.debug(f"[{self.name}] {symbol} candles failed: {e}")
-            return None
-        if len(candles) < days:
-            return None
-        start = candles[-days].close
-        end = candles[-1].close
-        if start <= 0:
-            return None
-        return (end - start) / start * 100
+        from ._helpers import lookback_return_pct
+        return lookback_return_pct(self.broker, self.name, symbol, days)
 
     def _past_cooldown(self, pos: dict) -> bool:
-        et = pos.get("entry_time")
-        if not et:
-            return True
-        try:
-            dt = (datetime.fromisoformat(et)
-                  if isinstance(et, str) else et)
-            return datetime.now(UTC) - dt > timedelta(days=COOLDOWN_DAYS)
-        except (ValueError, TypeError):
-            return True
+        from ._helpers import past_cooldown
+        return past_cooldown(pos, COOLDOWN_DAYS)

@@ -131,11 +131,16 @@ class EarningsMomentum(Strategy):
 
         # Rank by surprise magnitude — biggest beats first
         candidates.sort(key=lambda c: c[1], reverse=True)
+        # Sizing: split allocator's verdict across MAX_CONCURRENT slots,
+        # capped by TRADE_SIZE_USD as a per-position max. Avoids
+        # blowing through the allocator on a small-account paper run.
+        per_slot_alloc = ctx.target_alloc_usd / max(1, MAX_CONCURRENT_POSITIONS)
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for ticker, surprise, filing in candidates[:slots_left]:
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=ticker,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.8,
+                notional_usd=per_slot, confidence=0.8,
                 reason=f"PEAD: {ticker} EPS surprise +{surprise:.1f}% "
                        f"on {filing.isoformat()}",
                 metadata={"surprise_pct": surprise,

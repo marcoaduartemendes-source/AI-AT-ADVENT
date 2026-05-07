@@ -101,11 +101,18 @@ class BollingerBreakout(Strategy):
             candidates.append((sym, last_close, upper, vol_ratio, score))
 
         candidates.sort(key=lambda c: c[4], reverse=True)
+        # Sizing: respect ctx.target_alloc_usd / MAX_CONCURRENT slots,
+        # capped by TRADE_SIZE_USD as a per-position max. Vol-managed
+        # overlay scaler (Moreira-Muir 2017) multiplies the slot size.
+        from ._helpers import vol_scaler
+        overlay = vol_scaler(ctx, "equity_momentum", 1.0)
+        per_slot_alloc = (ctx.target_alloc_usd * overlay) / max(1, MAX_CONCURRENT)
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for sym, last_close, upper, vol_ratio, _ in candidates[:slots_left]:
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.75,
+                notional_usd=per_slot, confidence=0.75,
                 reason=f"{sym} breakout: ${last_close:.2f} > "
                        f"upper band ${upper:.2f}, vol {vol_ratio:.1f}×",
                 metadata={"close": last_close, "upper": upper,

@@ -19,6 +19,7 @@ from .base import (
     Account,
     AssetClass,
     BrokerAdapter,
+    BrokerCapability,
     BrokerError,
     Candle,
     Order,
@@ -27,12 +28,16 @@ from .base import (
     OrderType,
     Position,
     Quote,
+    redact_response_text,
 )
 
 logger = logging.getLogger(__name__)
 
 
 # Alpaca timeframe strings — map our Coinbase-style granularity names.
+# Aliases (e.g. "1Day"→"1Day") accommodate strategies that pass the Alpaca-
+# native string directly. Without these, 12 strategies were silently no-op'ing
+# every cycle on Alpaca because the BrokerError was caught at debug.
 _GRANULARITY_TO_ALPACA = {
     "ONE_MINUTE": "1Min",
     "FIVE_MINUTE": "5Min",
@@ -43,11 +48,27 @@ _GRANULARITY_TO_ALPACA = {
     "FOUR_HOUR": "4Hour",
     "ONE_DAY": "1Day",
     "ONE_WEEK": "1Week",
+    # Native-form aliases
+    "1Min": "1Min",
+    "5Min": "5Min",
+    "15Min": "15Min",
+    "30Min": "30Min",
+    "1Hour": "1Hour",
+    "2Hour": "2Hour",
+    "4Hour": "4Hour",
+    "1Day": "1Day",
+    "1Week": "1Week",
 }
 
 
 class AlpacaAdapter(BrokerAdapter):
     venue = "alpaca"
+    capabilities = frozenset({
+        BrokerCapability.GET_OPEN_ORDERS,
+        BrokerCapability.CANCEL_STALE_ORDERS,
+        BrokerCapability.LIMIT_ORDERS,
+        BrokerCapability.SHORT_SELLING,
+    })
 
     def __init__(
         self,
@@ -80,7 +101,10 @@ class AlpacaAdapter(BrokerAdapter):
         except requests.RequestException as e:
             raise BrokerError(f"Alpaca network error: {e}") from e
         if r.status_code != 200:
-            raise BrokerError(f"Alpaca {path} HTTP {r.status_code}: {r.text[:200]}")
+            raise BrokerError(
+                f"Alpaca {path} HTTP {r.status_code}: "
+                f"{redact_response_text(r.text)}"
+            )
         return r.json()
 
     def _post(self, path: str, body: dict) -> dict:
@@ -89,13 +113,19 @@ class AlpacaAdapter(BrokerAdapter):
         except requests.RequestException as e:
             raise BrokerError(f"Alpaca network error: {e}") from e
         if r.status_code not in (200, 201):
-            raise BrokerError(f"Alpaca {path} HTTP {r.status_code}: {r.text[:200]}")
+            raise BrokerError(
+                f"Alpaca {path} HTTP {r.status_code}: "
+                f"{redact_response_text(r.text)}"
+            )
         return r.json()
 
     def _delete(self, path: str) -> None:
         r = self._session.delete(f"{self.endpoint}{path}", timeout=15)
         if r.status_code not in (200, 204):
-            raise BrokerError(f"Alpaca DELETE {path} HTTP {r.status_code}: {r.text[:160]}")
+            raise BrokerError(
+                f"Alpaca DELETE {path} HTTP {r.status_code}: "
+                f"{redact_response_text(r.text, max_len=160)}"
+            )
 
     # ── Account ──────────────────────────────────────────────────────────
 

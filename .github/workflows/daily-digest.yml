@@ -11,16 +11,33 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: read
+
 jobs:
   send-digest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install requests
+          python-version: "3.12"   # match the rest of the project
+          cache: pip
+      - run: pip install -r requirements.txt
       - name: Send digest
         env:
           SMTP_PASSWORD: ${{ github.event.inputs.smtp_password || secrets.SMTP_PASSWORD }}
+          SMTP_FROM:     ${{ vars.SMTP_FROM }}
         run: python send_digest.py
+
+      - name: Notify on workflow failure
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          if [ -z "${ALERT_WEBHOOK_URL}" ]; then exit 0; fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(printf '{"text":"\\u274c daily-digest failed: %s"}' "$run_url")
+          curl -sS -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "$ALERT_WEBHOOK_URL" || true

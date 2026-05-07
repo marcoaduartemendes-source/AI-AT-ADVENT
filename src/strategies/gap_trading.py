@@ -104,11 +104,15 @@ class GapTrading(Strategy):
             candidates.append((sym, gap_pct, abs(gap_pct)))
 
         candidates.sort(key=lambda c: c[2], reverse=True)
+        # Sizing: split allocator's verdict across MAX_CONCURRENT slots,
+        # capped by TRADE_SIZE_USD as a per-position max.
+        per_slot_alloc = ctx.target_alloc_usd / max(1, MAX_CONCURRENT)
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for sym, gap_pct, _ in candidates[:slots_left]:
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.65,
+                notional_usd=per_slot, confidence=0.65,
                 reason=f"Gap fade: {sym} gapped {gap_pct:+.2f}%, "
                        f"buying the bounce",
                 metadata={"gap_pct": gap_pct},

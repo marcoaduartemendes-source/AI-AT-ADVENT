@@ -9,6 +9,9 @@ on:
     - cron: "0 13 * * 1"      # Mondays at 13:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: strategic-review
   cancel-in-progress: true
@@ -16,6 +19,7 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
@@ -71,3 +75,14 @@ jobs:
         with:
           path: data/strategic_review.db
           key: strategic-review-${{ github.run_number }}
+
+      - name: Notify on workflow failure
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          if [ -z "${ALERT_WEBHOOK_URL}" ]; then exit 0; fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(printf '{"text":"\\u274c strategic_review failed: %s"}' "$run_url")
+          curl -sS -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "$ALERT_WEBHOOK_URL" || true

@@ -150,6 +150,15 @@ class RiskConfig:
     kill_switch_cooldown_seconds: int = 86400
     """After KILL fires, wait this long before allowing manual restart."""
 
+    # ── Per-strategy daily notional governor ----------------------------
+    # Circuit breaker for haywire-but-not-erroring strategies. A bug
+    # that emits 60 buy/sell pairs per hour eats fees for the full
+    # cycle until DD/MTD/trailing trips. This caps each strategy's
+    # daily entry-side notional at a fraction of equity.
+    max_strategy_daily_notional_pct: float = 0.50
+    """Fraction of equity any one strategy can trade per UTC day before
+    new opens are rejected. Closing trades (is_closing=True) bypass."""
+
     @classmethod
     def from_env(cls) -> RiskConfig:
         """Build config from env vars. Repo workflow can override any field

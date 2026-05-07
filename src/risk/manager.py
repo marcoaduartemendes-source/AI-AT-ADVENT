@@ -129,7 +129,9 @@ class EquitySnapshotDB:
 
     @contextmanager
     def _conn(self):
+        from common.sqlite_pragmas import apply_pragmas
         conn = sqlite3.connect(self.db_path)
+        apply_pragmas(conn, self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -259,12 +261,39 @@ class EquitySnapshotDB:
                 out.append((eq[i] - eq[i - 1]) / eq[i - 1])
         return out
 
-    def record_kill_switch(self, state: KillSwitchState, dd_pct: float, note: str = "") -> None:
+    def record_kill_switch(self, state: KillSwitchState, dd_pct: float,
+                            note: str = "",
+                            cooldown_seconds: int = 0) -> bool:
+        """Record a kill-switch transition.
+
+        When `cooldown_seconds > 0`, suppress consecutive identical
+        KILL events that arrive inside the cooldown window — this
+        keeps the table from growing one row per cycle while KILL is
+        active. Returns True if a row was inserted, False if suppressed.
+
+        Cooldown does NOT mute the kill-switch behaviour upstream;
+        the orchestrator still runs `_emergency_close_all` every
+        cycle. Only the DB write (and downstream alerts that read
+        from it) are deduped.
+        """
+        if cooldown_seconds > 0:
+            last = self.last_kill_switch_event()
+            if last and last.get("state") == state.value:
+                try:
+                    last_ts = datetime.fromisoformat(last["timestamp"])
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.replace(tzinfo=UTC)
+                    age_s = (datetime.now(UTC) - last_ts).total_seconds()
+                    if age_s < cooldown_seconds:
+                        return False
+                except (ValueError, KeyError):
+                    pass    # malformed row → fall through and insert
         with self._conn() as c:
             c.execute(
                 "INSERT INTO kill_switch_events (timestamp, state, drawdown_pct, note) VALUES (?, ?, ?, ?)",
                 (datetime.now(UTC).isoformat(), state.value, dd_pct, note),
             )
+        return True
 
     def last_kill_switch_event(self) -> dict | None:
         with self._conn() as c:
@@ -285,11 +314,17 @@ class RiskManager:
         brokers: dict | None = None,    # broker registry; if None, no live equity
         config: RiskConfig | None = None,
         db: EquitySnapshotDB | None = None,
+        vix_provider=None,              # callable() -> float | None
     ):
         self.brokers = brokers or {}
         self.config = config or RiskConfig.from_env()
         self.multiplier = DynamicRiskMultiplier(self.config)
         self.db = db or EquitySnapshotDB()
+        # Optional VIX provider — defaults to the scout signal bus reader
+        # below. Injecting lets us avoid risk → scouts coupling in tests
+        # and removes a layering violation (risk should not need to know
+        # how the macro feed is fanned out).
+        self._vix_provider = vix_provider
         self._cached_state: RiskState | None = None
         # Per-cycle broker snapshot cache; refreshed by compute_state()
         self._broker_snapshots: dict[str, dict] = {}
@@ -446,8 +481,11 @@ class RiskManager:
 
         ks_state = self.config.state_for_drawdown(dd_pct)
         if ks_state == KillSwitchState.KILL:
-            self.db.record_kill_switch(ks_state, dd_pct,
-                                        note=f"equity=${equity:.2f} peak=${peak:.2f}")
+            self.db.record_kill_switch(
+                ks_state, dd_pct,
+                note=f"equity=${equity:.2f} peak=${peak:.2f}",
+                cooldown_seconds=self.config.kill_switch_cooldown_seconds,
+            )
 
         # Monthly loss budget (audit fix #1). Even if portfolio DD
         # hasn't crossed kill_dd_pct, a drawn-out month-to-date loss
@@ -568,6 +606,24 @@ class RiskManager:
                 Decision.REJECT, 0.0,
                 f"CRITICAL state — closing-only (DD {st.drawdown_pct * 100:.1f}%)", st)
 
+        # ─ Per-strategy daily-notional governor (audit ops #3).
+        # Circuit breaker for a haywire-but-not-erroring strategy: a
+        # signal-flapping bug can emit dozens of buy/sell pairs per
+        # hour, burning fees for the full cycle before DD/MTD/trailing
+        # trips. Cap each strategy's UTC-day entry notional at
+        # max_strategy_daily_notional_pct × equity. Closes bypass.
+        if (not is_closing and strategy_name and st.equity_usd > 0
+                and cfg.max_strategy_daily_notional_pct > 0):
+            day_so_far = self._strategy_today_notional(strategy_name)
+            cap = cfg.max_strategy_daily_notional_pct * st.equity_usd
+            if day_so_far + notional_usd > cap:
+                return RiskDecision(
+                    Decision.REJECT, 0.0,
+                    f"strategy daily notional ${day_so_far:,.0f} + "
+                    f"${notional_usd:,.0f} > ${cap:,.0f} "
+                    f"({cfg.max_strategy_daily_notional_pct * 100:.0f}% "
+                    f"of equity)", st)
+
         # ─ Min size
         if notional_usd < cfg.min_trade_usd:
             return RiskDecision(
@@ -640,10 +696,54 @@ class RiskManager:
 
         return RiskDecision(Decision.APPROVE, approved, "ok", st)
 
+    # ── Per-strategy daily notional bookkeeping ────────────────────────
+
+    def _strategy_today_notional(self, strategy_name: str) -> float:
+        """Return the sum of opening (BUY) entry notional for
+        `strategy_name` since 00:00 UTC. Used by the daily-notional
+        governor to circuit-break runaway strategies. Reads the
+        trades ledger directly so it survives orchestrator restarts.
+        """
+        try:
+            import os as _os
+            db_path = _os.environ.get(
+                "TRADING_DB_PATH", "data/trading_performance.db"
+            )
+            from pathlib import Path as _Path
+            if not _Path(db_path).exists():
+                return 0.0
+            import sqlite3 as _sq
+            with _sq.connect(db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT COALESCE(SUM(amount_usd), 0) FROM trades
+                     WHERE strategy = ?
+                       AND side = 'BUY'
+                       AND timestamp >= strftime('%Y-%m-%dT00:00:00+00:00','now')
+                    """,
+                    (strategy_name,),
+                ).fetchone()
+                return float(row[0]) if row else 0.0
+        except Exception as e:
+            logger.debug(f"_strategy_today_notional({strategy_name}): {e}")
+            return 0.0
+
     # ── Macro signal hookup ---------------------------------------------
 
     def _latest_vix(self) -> float | None:
-        """Read the macro scout's most-recent VIX reading from the bus."""
+        """Read the latest VIX reading.
+
+        Uses the injected `vix_provider` callable when set (preferred);
+        otherwise falls back to reading the scout signal bus directly.
+        The fallback is kept for backwards compatibility with existing
+        deployments that don't pass a provider — but the lazy import
+        is a layering violation we'd rather not have.
+        """
+        if self._vix_provider is not None:
+            try:
+                return self._vix_provider()
+            except Exception:
+                return None
         try:
             from scouts.signal_bus import SignalBus
             bus = SignalBus()

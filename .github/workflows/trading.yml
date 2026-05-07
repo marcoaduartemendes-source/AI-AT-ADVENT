@@ -12,6 +12,9 @@ name: Crypto Trading Bot (RETIRED — basic strategies only)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Allow only one run at a time; cancel scheduled runs that pile up if a previous one is still going
 concurrency:
   group: crypto-trading-bot
@@ -20,6 +23,7 @@ concurrency:
 jobs:
   trade:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write       # needed to save the database back to the repo
 

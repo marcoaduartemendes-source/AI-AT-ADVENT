@@ -88,8 +88,12 @@ sudo -u "$SERVICE_USER" "$INSTALL_DIR/.venv/bin/pip" install --quiet -r "$INSTAL
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "[5/6] Creating placeholder $ENV_FILE — YOU MUST FILL THIS IN"
     cp "$INSTALL_DIR/deploy/aaa.env.example" "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
+    # 640 (not 600) so the systemd unit running as $SERVICE_USER can
+    # read it via `bash -c '. /etc/aaa.env'`. Previously install.sh
+    # set 600 but deploy_vps.yml set 640 — the 600 path silently
+    # broke first-run because the unit couldn't read its own secrets.
     chown root:"$SERVICE_USER" "$ENV_FILE"
+    chmod 640 "$ENV_FILE"
 else
     echo "[5/6] $ENV_FILE already exists — leaving alone"
 fi

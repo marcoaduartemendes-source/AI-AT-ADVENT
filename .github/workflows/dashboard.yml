@@ -2,8 +2,15 @@ name: Build Dashboard
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # every 15 minutes — dashboard must reflect live state
+    - cron: "*/30 * * * *"   # every 30 minutes — orchestrator already runs every 5 min
+                              # but the dashboard is human-facing; finer cadence wastes
+                              # GitHub Actions minutes (~24 min/day on a per-15-min run)
+                              # without producing user-visible value. Drop to 30 min as
+                              # part of the 2026-05-07 perf audit.
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: dashboard-build
@@ -12,6 +19,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -102,15 +110,58 @@ jobs:
           FMP_API_KEY:         ${{ secrets.FMP_API_KEY }}
           POLYGON_API_KEY:     ${{ secrets.POLYGON_API_KEY }}
           FRED_API_KEY:        ${{ secrets.FRED_API_KEY }}
+          HEALTHCHECKS_PING_URL_DASHBOARD: ${{ secrets.HEALTHCHECKS_PING_URL_DASHBOARD }}
         run: python src/build_dashboard.py
 
       - name: Commit dashboard if changed
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/index.html
+          # Stop the runaway commit loop: the rendered HTML embeds a
+          # `generated_at` timestamp that ticks every build, so a naive
+          # `git diff --cached --quiet` was always false. We hash the
+          # HTML with timestamp + freshness lines stripped and only
+          # commit if the *content* changed. The hash itself is committed
+          # alongside the HTML so the next run has a baseline to compare
+          # against (no extra state outside the repo).
+          mkdir -p docs
+          python - <<'PY'
+          import hashlib, pathlib, re
+          html = pathlib.Path("docs/index.html").read_text(encoding="utf-8")
+          # Strip the dynamic timestamp fields so we only commit when
+          # the *content* (numbers, kill-switch state, strategy ranking)
+          # changes. The new dashboard wraps every dynamic timestamp in
+          # <time data-ts="..."> — strip those by attribute, plus the
+          # legacy JSON-embedded fields kept for back-compat with any
+          # build still on the old template.
+          patterns = [
+            r'<time data-ts="[^"]+">[^<]*</time>',
+            r'"generated_at":\s*"[^"]+"',
+            r'"last_ok_at":\s*"[^"]+"',
+            r'"as_of":\s*"[^"]+"',
+            r'data-generated="[^"]*"',
+            r'fresh.{0,4}seconds.{0,4}\d+',
+          ]
+          stripped = html
+          for p in patterns:
+            stripped = re.sub(p, "", stripped)
+          h = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
+          pathlib.Path("docs/.dashboard-content-hash").write_text(h)
+          PY
+          git add docs/index.html docs/.dashboard-content-hash
           if git diff --cached --quiet; then
             echo "No dashboard changes."
+            exit 0
+          fi
+          # Even if the HTML diff is non-empty, suppress the commit
+          # when only the timestamp lines changed: the hash file is
+          # the source of truth. If the hash file's HEAD version is
+          # identical to the new one, only the timestamp moved.
+          if git diff --cached --name-only | grep -qx docs/.dashboard-content-hash; then
+            : # hash actually moved — real content change
+          else
+            echo "Only the dashboard timestamp moved; skipping commit."
+            git restore --staged docs/index.html
             exit 0
           fi
           git commit -m "chore: refresh trading dashboard"
@@ -126,3 +177,14 @@ jobs:
             sleep $((attempt * 3))
           done
           echo "All push attempts failed"; exit 1
+
+      - name: Notify on workflow failure
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          if [ -z "${ALERT_WEBHOOK_URL}" ]; then exit 0; fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          payload=$(printf '{"text":"\\u274c dashboard workflow failed: %s"}' "$run_url")
+          curl -sS -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "$ALERT_WEBHOOK_URL" || true

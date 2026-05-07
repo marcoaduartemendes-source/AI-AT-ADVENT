@@ -37,7 +37,19 @@ echo "[2/6] Fetching latest"
 sudo -u "$SERVICE_USER" git fetch --all --quiet
 
 CURRENT="$(sudo -u "$SERVICE_USER" git rev-parse HEAD)"
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+# Pin the deploy branch explicitly (overridable via DEPLOY_BRANCH env)
+# instead of trusting whatever happens to be checked out on the box.
+# A debug checkout left over on the VPS would otherwise become an
+# accidental deploy of an unrelated branch's tip.
+BRANCH="${DEPLOY_BRANCH:-claude/daily-ai-news-digest-vcaC1}"
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
+    echo "ERROR: HEAD is on '$CURRENT_BRANCH' but deploy expects '$BRANCH'." >&2
+    echo "       Switch back with: git checkout $BRANCH" >&2
+    echo "       (or override with DEPLOY_BRANCH=...)" >&2
+    systemctl start orchestrator.timer
+    exit 1
+fi
 
 # Sprint D rollback: tag the current commit as last-good BEFORE we
 # update. If the deploy breaks and rollback.sh is invoked, this is

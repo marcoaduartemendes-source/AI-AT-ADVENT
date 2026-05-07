@@ -1,7 +1,67 @@
+[project]
+name = "ai-at-advent"
+version = "0.1.0"
+description = "Multi-asset trading orchestrator with risk + allocator + scouts."
+requires-python = ">=3.12,<3.13"
+# Source-of-truth for production deps; `pip install .` installs these
+# without needing requirements.txt. Keep aligned with requirements.txt.
+dependencies = [
+    "anthropic>=0.40.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "beautifulsoup4>=4.12.0",
+    "markdown>=3.5.0",
+    "numpy>=1.24.0",
+    "PyJWT>=2.8.0",
+    "cryptography>=41.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.6"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+
+# mypy is run advisory-only at first (CI is informational, not gating).
+# Strict mode is scoped to the core boundary modules where contract drift
+# silently breaks every caller — strategies/scouts can adopt strict mode
+# incrementally as they get cleaned up.
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+explicit_package_bases = true
+namespace_packages = true
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = [
+    "brokers.base",
+    "strategy_engine.base",
+    "risk.policies",
+    "risk.manager",
+    "allocator.lifecycle",
+    "allocator.allocator",
+    "common.alerts",
+    "common.heartbeat",
+]
+strict = true
+
+# Tests don't need to satisfy strict typing; they document behaviour.
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
 
 [tool.ruff.lint]
 # Start lenient; tighten after the codebase is clean. The signal we

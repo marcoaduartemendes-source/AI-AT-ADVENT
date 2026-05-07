@@ -171,11 +171,12 @@ def _decode_body(raw: str) -> str:
 
 
 def test_email_sink_sends_to_configured_recipient(monkeypatch):
-    """ALERT_EMAIL_TO + SMTP_PASSWORD → send via Gmail SMTP."""
+    """ALERT_EMAIL_TO + SMTP_PASSWORD + SMTP_FROM → send via Gmail SMTP."""
     import smtplib
     monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("ALERT_EMAIL_TO", "you@gmail.com")
     monkeypatch.setenv("SMTP_PASSWORD", "test-app-password")
+    monkeypatch.setenv("SMTP_FROM", "alerts@example.com")
 
     _FakeSMTP.instances.clear()
     monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
@@ -189,7 +190,7 @@ def test_email_sink_sends_to_configured_recipient(monkeypatch):
     assert inst.port == 587
     assert inst.starttls_called
     sender, to_list, raw_msg = inst.sendmail_args
-    assert "Marcoaduartemendes@gmail.com" in sender
+    assert "alerts@example.com" in sender
     assert to_list == ["you@gmail.com"]
     assert _decode_body(raw_msg) == "KILL switch fired"
     assert "[CRITICAL]" in raw_msg     # severity badge in subject header
@@ -202,6 +203,7 @@ def test_email_sink_supports_carrier_sms_gateway(monkeypatch):
     monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
     monkeypatch.setenv("ALERT_EMAIL_TO", "5551234567@vtext.com,you@gmail.com")
     monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setenv("SMTP_FROM", "alerts@example.com")
 
     _FakeSMTP.instances.clear()
     monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
@@ -213,6 +215,22 @@ def test_email_sink_supports_carrier_sms_gateway(monkeypatch):
     assert to_list == ["5551234567@vtext.com", "you@gmail.com"]
     assert _decode_body(raw_msg) == "Drift $42"
     assert "[WARNING]" in raw_msg
+
+
+def test_email_sink_skipped_without_smtp_from(monkeypatch):
+    """SMTP_FROM unset → graceful skip (no hardcoded default sender)."""
+    import smtplib
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("ALERT_EMAIL_TO", "you@gmail.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+    _FakeSMTP.instances.clear()
+    alerts_module._recent_calls.clear()
+
+    result = alerts_module.alert("hi")
+    assert result is False
+    assert len(_FakeSMTP.instances) == 0
 
 
 def test_email_sink_skipped_without_smtp_password(monkeypatch):
@@ -237,6 +255,7 @@ def test_both_sinks_fire_when_both_configured(monkeypatch):
     monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.slack.com/T/B/X")
     monkeypatch.setenv("ALERT_EMAIL_TO", "you@gmail.com")
     monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setenv("SMTP_FROM", "alerts@example.com")
 
     class _FakeResp:
         status_code = 200

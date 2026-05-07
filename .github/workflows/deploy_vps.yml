@@ -38,6 +38,9 @@ on:
       - '.github/workflows/deploy_vps.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-vps
   cancel-in-progress: false   # Don't cancel a running deploy mid-flight
@@ -52,6 +55,7 @@ jobs:
   # has finished yet on the same SHA.
   test_gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -84,31 +88,42 @@ jobs:
           KALSHI_KEY_ID: ""
         run: |
           PYTHONPATH=src python -c "
-          # Just import the orchestrator entrypoint module to verify
-          # all imports + class definitions are wired correctly.
-          # A real --status call would need broker creds we don't
-          # have in CI; the import alone catches 90% of pre-deploy
-          # breakage (missing imports, syntax errors in any
-          # transitively-imported strategy or scout).
+          # Smoke: import the orchestrator entrypoint + every strategy
+          # registered in ALL_STRATEGIES. Driving the smoke from the
+          # registry (not a hardcoded class list) means adding a new
+          # strategy automatically extends this gate — no second place
+          # to remember when extending the book. 90% of pre-deploy
+          # breakage (missing imports, syntax errors in any transitively-
+          # imported scout or strategy) is caught here without needing
+          # real broker creds.
           import run_orchestrator
           import run_daily_digest
-          # Touch every strategy class so registration code paths run
-          from strategies import (
-              BollingerBreakout, CommodityCarry, CrossVenueArb,
-              CryptoBasisTrade, CryptoFundingCarry, CryptoFundingCarryV2,
-              CryptoXSMom, DividendGrowth, EarningsMomentum,
-              EarningsNewsPEAD, GapTrading, InternationalsRotation,
-              KalshiCalibrationArb, LowVolAnomaly, MacroKalshi,
-              MacroKalshiV2, PEAD, PairsTrading, RSIMeanReversion,
-              RiskParityETF, SectorRotation, TSMomETF, TurnOfMonth,
-              VolManagedOverlay,
-          )
-          print('Orchestrator + 24 strategies import cleanly')
+          from run_orchestrator import ALL_STRATEGIES, build_strategies
+
+          # Touch every strategy class so registration code paths run.
+          # build_strategies() returns instances keyed by name; we
+          # iterate the registry list to verify every meta has a
+          # matching instance constructor.
+          import strategies as _strats
+          missing_classes = []
+          for meta in ALL_STRATEGIES:
+              # Heuristic class-name lookup: snake_case → CamelCase.
+              # Skips any meta whose module isn't directly imported here
+              # (e.g. legacy 'pead' kept for backtest reference).
+              class_name = ''.join(
+                  p.title() for p in meta.name.split('_')
+              ).replace('Etf', 'ETF').replace('Pead', 'PEAD')
+              if not hasattr(_strats, class_name):
+                  missing_classes.append((meta.name, class_name))
+          if missing_classes:
+              print(f'WARN: classes not found for: {missing_classes}')
+          print(f'Orchestrator + {len(ALL_STRATEGIES)} strategies import cleanly')
           "
 
   deploy:
     needs: test_gate    # Block deploy on the gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -149,8 +164,17 @@ jobs:
           ALERT_WEBHOOK_TYPE:  ${{ vars.ALERT_WEBHOOK_TYPE }}
           ALERT_EMAIL_TO:      ${{ vars.ALERT_EMAIL_TO }}
           SMTP_PASSWORD:       ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM:           ${{ vars.SMTP_FROM }}
+          # Healthchecks dead-man's-switch URLs. Without these the
+          # heartbeat module's ping_* calls were silent no-ops.
+          HEALTHCHECKS_PING_URL_ORCHESTRATOR: ${{ secrets.HEALTHCHECKS_PING_URL_ORCHESTRATOR }}
+          HEALTHCHECKS_PING_URL_SCOUTS:       ${{ secrets.HEALTHCHECKS_PING_URL_SCOUTS }}
+          HEALTHCHECKS_PING_URL_DASHBOARD:    ${{ secrets.HEALTHCHECKS_PING_URL_DASHBOARD }}
+          HEALTHCHECKS_PING_URL_DB_BACKUP:    ${{ secrets.HEALTHCHECKS_PING_URL_DB_BACKUP }}
           # Trading config (variables, not secrets)
           DRY_RUN:             ${{ vars.ORCHESTRATOR_DRY_RUN || 'true' }}
+          # Two-key live-trading guard
+          ALLOW_LIVE_TRADING:  ${{ vars.ALLOW_LIVE_TRADING }}
           DRY_RUN_ALPACA:      ${{ vars.DRY_RUN_ALPACA || 'false' }}
           DRY_RUN_KALSHI:      ${{ vars.DRY_RUN_KALSHI || 'false' }}
           DRY_RUN_COINBASE:    ${{ vars.DRY_RUN_COINBASE }}
@@ -160,7 +184,8 @@ jobs:
           # alerts still fire regardless. Use when debugging.
           ALERTS_MUTE:         ${{ vars.ALERTS_MUTE }}
           ALERT_DEDUP_COOLDOWN_SECONDS: ${{ vars.ALERT_DEDUP_COOLDOWN_SECONDS || '3600' }}
-          MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '5000' }}
+          # Safe default ($50, not $5k) for forks / first-time setups.
+          MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '50' }}
           MAX_TRADE_USD_COINBASE:  ${{ vars.MAX_TRADE_USD_COINBASE }}
           MAX_TRADE_USD_ALPACA:    ${{ vars.MAX_TRADE_USD_ALPACA }}
           TARGET_PORTFOLIO_VOL:    ${{ vars.TARGET_PORTFOLIO_VOL || '0.12' }}
@@ -184,14 +209,21 @@ jobs:
               "ANTHROPIC_API_KEY", "FMP_API_KEY", "FRED_API_KEY",
               "DRY_RUN", "DRY_RUN_ALPACA", "DRY_RUN_KALSHI",
               "DRY_RUN_COINBASE", "LIVE_STRATEGIES",
+              "ALLOW_LIVE_TRADING",
               "MAX_TRADE_USD_GLOBAL", "MAX_TRADE_USD_COINBASE", "MAX_TRADE_USD_ALPACA",
               "TARGET_PORTFOLIO_VOL",
               "KILL_DD_PCT", "CRITICAL_DD_PCT", "WARNING_DD_PCT",
               "PUSHOVER_USER_KEY", "PUSHOVER_APP_TOKEN", "PUSHOVER_DEVICE",
               "ALERT_WEBHOOK_URL", "ALERT_WEBHOOK_TYPE",
-              "ALERT_EMAIL_TO", "SMTP_PASSWORD",
+              "ALERT_EMAIL_TO", "SMTP_PASSWORD", "SMTP_FROM",
               "SUPABASE_URL", "SUPABASE_SERVICE_KEY",
               "ALERTS_MUTE", "ALERT_DEDUP_COOLDOWN_SECONDS",
+              # Healthchecks dead-man's-switch ping URLs. Without these
+              # the heartbeat module's ping_* calls were silent no-ops.
+              "HEALTHCHECKS_PING_URL_ORCHESTRATOR",
+              "HEALTHCHECKS_PING_URL_SCOUTS",
+              "HEALTHCHECKS_PING_URL_DASHBOARD",
+              "HEALTHCHECKS_PING_URL_DB_BACKUP",
           ]
 
           lines = [

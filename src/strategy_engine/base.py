@@ -32,6 +32,72 @@ class TradeProposal:
     metadata: dict = field(default_factory=dict)
 
 
+# ─── Back-compat dict-shim base class ─────────────────────────────────
+
+
+class _DictCompat:
+    """Mixin that makes a dataclass behave like a dict for read access.
+
+    Old strategy code uses `pos.get("quantity") or 0` and `pos["entry_time"]`
+    everywhere. Migrating 24 strategies to attribute access in one go is
+    risky; this shim lets both forms work indefinitely so the migration
+    is per-file.
+
+    Read-only — `pos["quantity"] = 5` deliberately raises.
+    """
+
+    def __getitem__(self, key: str):
+        try:
+            return getattr(self, key)
+        except AttributeError as e:
+            raise KeyError(key) from e
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+
+@dataclass
+class PositionView(_DictCompat):
+    """Read-only view of a broker position passed to strategies.
+
+    Replaces the stringly-typed `dict[str, dict]` of the old
+    `StrategyContext.open_positions` map. Strategy code that uses
+    `pos.get("quantity") or 0` continues to work via the _DictCompat
+    shim; new code can use `pos.quantity` for type-checked attribute
+    access.
+    """
+
+    venue: str
+    symbol: str
+    quantity: float
+    avg_entry_price: float
+    market_price: float
+    unrealized_pnl_usd: float
+    # Optional fields some venues populate, others don't.
+    entry_time: str | None = None
+    asset_class: str | None = None
+
+
+@dataclass
+class PendingExposure(_DictCompat):
+    """Read-only summary of pending orders for one symbol on one venue.
+
+    Strategies subtract `buy_notional_usd` from buying intent and
+    `sell_qty` from selling intent so they don't double-fire across
+    cycles before fills land. The wash-trade guard reads
+    `n_buy_pending` / `n_sell_pending` to decide opposite-side rejection.
+    """
+
+    buy_notional_usd: float = 0.0
+    sell_qty: float = 0.0
+    n_pending: int = 0
+    n_buy_pending: int = 0
+    n_sell_pending: int = 0
+
+
 @dataclass
 class StrategyContext:
     """Read-only snapshot passed to Strategy.compute() each cycle."""

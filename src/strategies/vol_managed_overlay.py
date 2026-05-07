@@ -31,6 +31,18 @@ _ANN = math.sqrt(252)
 TARGET_VOL = 0.15            # 15% target — used as the "normal" baseline
 LOOKBACK_DAYS = 30
 
+# Realized-correlation regime gate (strategy-audit #1, 2026-05-07).
+# 14 of the 24 strategies are functionally long-equity-beta variants
+# (RSI, sector, dividend, low_vol, internationals, gap, both PEAD
+# variants, earnings_momentum, risk_parity, TSMOM, pairs, Bollinger,
+# turn_of_month). When SPY breaks down hard, all of them lose
+# correlated money. We scale the equity-momentum sleeve down when
+# realized SPY correlation goes structural (vol > 25%) — a poor man's
+# proxy for "everything moves together right now, halve the equity
+# book."
+HIGH_VOL_THRESHOLD = 0.25    # SPY ann_vol above this → halve sleeve
+EXTREME_VOL_THRESHOLD = 0.40 # … and quarter it above this
+
 
 class VolManagedOverlay(Strategy):
     name = "vol_managed_overlay"
@@ -44,12 +56,30 @@ class VolManagedOverlay(Strategy):
         # Compute scalers and publish to bus — emits zero TradeProposals.
         scalers = {}
 
-        spy_scaler = self._compute_scaler("SPY")
+        spy_scaler, spy_ann_vol = self._compute_scaler("SPY")
         if spy_scaler is not None:
             scalers["equity_momentum"] = spy_scaler
 
-        # We can't easily fetch BTC vol via Alpaca; just publish what we have
+        # Regime gate: when SPY realized vol is in a high regime, halve
+        # / quarter the equity-momentum sleeve regardless of the
+        # vol-target scaler above. Strategies look up `equity_regime`
+        # via the new helper to decide whether to size down.
+        regime = "NORMAL"
+        regime_multiplier = 1.0
+        if spy_ann_vol is not None:
+            if spy_ann_vol >= EXTREME_VOL_THRESHOLD:
+                regime = "EXTREME"
+                regime_multiplier = 0.25
+            elif spy_ann_vol >= HIGH_VOL_THRESHOLD:
+                regime = "HIGH"
+                regime_multiplier = 0.5
+
         if scalers:
+            scalers["equity_regime"] = regime
+            scalers["equity_regime_multiplier"] = regime_multiplier
+            scalers["spy_realized_vol"] = (
+                spy_ann_vol if spy_ann_vol is not None else 0.0
+            )
             try:
                 self._bus.publish(
                     scout=self.name, venue="overlay",
@@ -58,25 +88,32 @@ class VolManagedOverlay(Strategy):
                 )
             except Exception as e:
                 logger.warning(f"[{self.name}] publish vol_scaler: {e}")
+            if regime != "NORMAL":
+                logger.warning(
+                    f"[{self.name}] SPY ann_vol={spy_ann_vol*100:.1f}% "
+                    f"→ regime={regime}, equity sleeve scaled by "
+                    f"{regime_multiplier:.2f}"
+                )
 
         return []
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
     def _compute_scaler(self, symbol: str):
+        """Return (scaler, ann_vol). Both None on failure."""
         try:
             candles = self.broker.get_candles(symbol, "ONE_DAY",
                                                 num_candles=LOOKBACK_DAYS + 5)
         except Exception:
-            return None
+            return None, None
         if len(candles) < 20:
-            return None
+            return None, None
         closes = np.array([c.close for c in candles])
         rets = np.diff(closes) / closes[:-1]
         sd = float(np.std(rets, ddof=1))
         if sd <= 0:
-            return None
+            return None, None
         ann_vol = sd * _ANN
         # Scaler = target_vol / realized_vol, clamped
         scaler = TARGET_VOL / ann_vol
-        return max(0.3, min(1.5, scaler))
+        return max(0.3, min(1.5, scaler)), ann_vol

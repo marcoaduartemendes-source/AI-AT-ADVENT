@@ -43,7 +43,6 @@ from strategies import (
     MacroKalshi,
     MacroKalshiV2,
     PairsTrading,
-    PEAD,
     RiskParityETF,
     RSIMeanReversion,
     SectorRotation,
@@ -105,12 +104,12 @@ ALL_STRATEGIES = [
         description="Top-N backwardated commodity futures (P2)",
     ),
     # ── Phase 3
-    StrategyMeta(
-        name="pead",
-        asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
-        description="Post-earnings announcement drift (P3, scout-fed)",
-    ),
+    # PEAD v1 retired 2026-05-07. The gap-only proxy for "earnings
+    # surprise" is a known weak signal vs the v2 (RSS news corroboration)
+    # and earnings_momentum (true EPS-surprise via FMP) variants;
+    # running all three triple-trades the same earnings prints and
+    # inflates correlation. Weight reallocated to v2 + earnings_momentum.
+    # The pead.py module is kept in-tree for backtest reference only.
     StrategyMeta(
         name="macro_kalshi",
         asset_classes=["PREDICTION"], venue="kalshi",
@@ -159,7 +158,10 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="earnings_momentum",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        # +1% baseline / +3% max ceiling (was 4/15) to absorb the
+        # retired pead v1 allocation. Cleaner EPS-surprise signal so
+        # this should produce higher Sharpe than v1's gap-only proxy.
+        target_alloc_pct=0.06, max_alloc_pct=0.18, min_alloc_pct=0.02,
         description="Live PEAD via FMP earnings calendar (P4)",
     ),
     StrategyMeta(
@@ -221,7 +223,8 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="earnings_news_pead",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        # +2% baseline (was 3%) to absorb part of retired pead v1.
+        target_alloc_pct=0.05, max_alloc_pct=0.15, min_alloc_pct=0.01,
         description="PEAD gated on RSS news corroboration (P5)",
     ),
 ]
@@ -244,7 +247,9 @@ def build_strategies(brokers):
         al = brokers["alpaca"]
         instances["risk_parity_etf"] = RiskParityETF(al)
         instances["tsmom_etf"] = TSMomETF(al)
-        instances["pead"] = PEAD(al)
+        # pead (v1) retired 2026-05-07 — see ALL_STRATEGIES note above.
+        # Module still imported so existing trade rows remain readable
+        # in the dashboard / FIFO recompute, but no instance is wired.
         instances["vol_managed_overlay"] = VolManagedOverlay(al)
         # Phase 4 — experimental sleeve
         instances["rsi_mean_reversion"] = RSIMeanReversion(al)
@@ -333,7 +338,41 @@ def main():
                      help="Print risk/allocator status, no trading")
     ap.add_argument("--live", action="store_true",
                      help="Disable DRY mode (still respects DRY_RUN env var)")
+    ap.add_argument("--allow-cold-start", action="store_true",
+                     help="Permit running with empty risk_state.db. "
+                          "Without this, a cold start refuses to trade — "
+                          "the kill-switch baseline would otherwise reset "
+                          "to current equity and silently arm at "
+                          "-KILL_DD_PCT of whatever today's equity is.")
+    ap.add_argument("--reset-kill-switch", action="store_true",
+                     help="Reset the kill-switch state to NORMAL after a "
+                          "KILL event has cleared. Records a marker row "
+                          "in risk_state.db; orchestrator picks up the "
+                          "new state on the next cycle. Use after you've "
+                          "investigated the equity drop that triggered KILL.")
     args = ap.parse_args()
+
+    # Manual KILL reset path. Done before anything else so the operator
+    # can recover without booting brokers / strategies / etc.
+    if args.reset_kill_switch:
+        rm = RiskManager()
+        rm.reset_kill_switch()
+        logger.warning(
+            "Kill-switch reset to NORMAL. Verify by running "
+            "`python src/run_orchestrator.py --status`."
+        )
+        return 0
+
+    # Two-key guard: even with DRY_RUN=false the orchestrator refuses to
+    # place real orders unless ALLOW_LIVE_TRADING=1. Forces an explicit,
+    # recent decision rather than one stale toggle going live.
+    dry_env = os.environ.get("DRY_RUN", "true").lower()
+    if dry_env == "false" and os.environ.get("ALLOW_LIVE_TRADING") != "1":
+        logger.warning(
+            "DRY_RUN=false but ALLOW_LIVE_TRADING != '1' — forcing DRY mode. "
+            "Set ALLOW_LIVE_TRADING=1 to actually place live orders."
+        )
+        os.environ["DRY_RUN"] = "true"
 
     # ── Build infra
     brokers = build_brokers()
@@ -361,16 +400,53 @@ def main():
         )
 
     risk_manager = RiskManager(brokers=brokers)
+
+    # Cold-start guard: refuse to trade when risk_state.db has no
+    # equity history, because a fresh kill-switch baseline = current
+    # equity means KILL would silently arm at -KILL_DD_PCT of whatever
+    # today's equity happens to be. Operator must opt in explicitly
+    # via --allow-cold-start. (DRY mode is exempt — it doesn't trade.)
+    try:
+        with risk_manager.db._conn() as _c:
+            _row = _c.execute(
+                "SELECT COUNT(*) FROM equity_snapshots"
+            ).fetchone()
+            _n_snapshots = int(_row[0]) if _row else 0
+    except Exception:
+        _n_snapshots = 0
+    dry_run_check = os.environ.get("DRY_RUN", "true").lower() != "false"
+    if (_n_snapshots == 0 and not dry_run_check
+            and not args.allow_cold_start):
+        logger.error(
+            "Cold start detected (risk_state.db has 0 equity snapshots) "
+            "but DRY_RUN=false. Refusing to trade — the kill-switch baseline "
+            "would reset to current equity. Pass --allow-cold-start to "
+            "override."
+        )
+        return 3
     allocator = MetaAllocator(registry=registry, performance=StrategyPerformance())
     strategies = build_strategies(brokers)
 
     dry_default = os.environ.get("DRY_RUN", "true").lower() != "false"
     dry_run = dry_default and not args.live
 
-    def _per_broker_flag(envvar: str):
+    def _per_broker_flag(envvar: str) -> bool | None:
+        """Parse a per-venue DRY override.
+
+        Returns True (DRY), False (paper/live trading), or None (fall
+        through to the global DRY_RUN). The empty-string case has to
+        return None — GitHub Actions injects every `${{ vars.X }}` ref
+        as the empty string when the underlying variable is unset, and
+        the previous behaviour (treat empty-string as DRY=True) was
+        the reason the cron orchestrator was silently leaving Alpaca
+        in DRY mode even when the user expected paper trading.
+        """
         v = os.environ.get(envvar)
         if v is None:
             return None
+        v = v.strip()
+        if v == "":
+            return None        # empty env var == not set
         return v.lower() != "false"
 
     live_strategies_raw = os.environ.get("LIVE_STRATEGIES", "")
@@ -388,11 +464,38 @@ def main():
             dry_run_alpaca=_per_broker_flag("DRY_RUN_ALPACA"),
             dry_run_kalshi=_per_broker_flag("DRY_RUN_KALSHI"),
             live_strategies=live_strategies or None,
+            stale_order_seconds=int(
+                os.environ.get("STALE_ORDER_SECONDS", "1800")
+            ),
         ),
     )
 
     if live_strategies:
         logger.warning(f"⚠ Per-strategy LIVE override active: {sorted(live_strategies)}")
+
+    # Surface per-venue trading mode at startup so the operator can
+    # tell from the logs whether strategies are actually deploying
+    # capital (PAPER / LIVE) or just logging proposals (DRY). Maps:
+    #   DRY   = orders not submitted
+    #   PAPER = real orders to a paper / sandbox account (no real money)
+    #   LIVE  = real money
+    # Uses the same classification logic as the dashboard.
+    def _venue_mode_label(venue: str, endpoint_env: str,
+                            paper_marker: str) -> str:
+        is_dry = orchestrator.cfg.is_dry(venue)
+        if is_dry:
+            return "🟦 DRY"
+        ep = (os.environ.get(endpoint_env) or "").lower()
+        if paper_marker in ep:
+            return "🧪 PAPER"
+        return "💰 LIVE"
+    venue_modes = {
+        "alpaca":   _venue_mode_label("alpaca",   "ALPACA_ENDPOINT",  "paper"),
+        "coinbase": _venue_mode_label("coinbase", "COINBASE_ENDPOINT", "sandbox"),
+        "kalshi":   _venue_mode_label("kalshi",   "KALSHI_ENDPOINT",   "demo"),
+    }
+    for v in sorted(brokers):
+        logger.info(f"  venue={v} mode={venue_modes.get(v, '🟦 DRY')}")
 
     # ── Status mode: print state and exit
     if args.status:
