@@ -24,7 +24,6 @@ from allocator.allocator import MetaAllocator
 from allocator.lifecycle import StrategyMeta, StrategyRegistry
 from allocator.metrics import StrategyPerformance
 from brokers.registry import build_brokers
-from risk.manager import RiskManager
 from strategies import (
     BollingerBreakout,
     CommodityCarry,
@@ -43,7 +42,6 @@ from strategies import (
     MacroKalshi,
     MacroKalshiV2,
     PairsTrading,
-    PEAD,
     RiskParityETF,
     RSIMeanReversion,
     SectorRotation,

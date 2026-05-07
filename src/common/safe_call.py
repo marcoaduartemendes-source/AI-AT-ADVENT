@@ -43,14 +43,13 @@ in the hot path.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
 
-
-def safe_call(
+def safe_call[T](
     label: str,
     fn: Callable[..., T],
     *args: Any,

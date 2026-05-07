@@ -37,7 +37,7 @@ from risk.policies import KillSwitchState
 from trading.performance import PerformanceTracker
 from trading.portfolio import TradeRecord
 
-from .base import Strategy, StrategyContext, TradeProposal
+from .base import PositionView, Strategy, StrategyContext, TradeProposal
 
 logger = logging.getLogger(__name__)
 
@@ -430,13 +430,12 @@ class Orchestrator:
             cache[venue] = out
         return out
 
-    def _positions_for(self, venue: str) -> dict[str, "PositionView"]:
+    def _positions_for(self, venue: str) -> dict[str, PositionView]:
         # Reuse the risk manager's per-cycle position cache; avoids hitting
         # the broker API again for each strategy on the same venue.
         # Returns dict[symbol, PositionView] — the dataclass shim keeps
         # `pos.get("quantity")` and `pos["quantity"]` working in legacy
         # strategy code while typed `pos.quantity` access is also valid.
-        from .base import PositionView
         cached = []
         try:
             cached = self.risk.cached_positions(venue)

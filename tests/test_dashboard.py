@@ -9,9 +9,7 @@ the kinds of regressions that break the dashboard for users.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-from pathlib import Path
 
 import pytest
 

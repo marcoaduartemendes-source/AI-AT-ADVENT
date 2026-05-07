@@ -239,7 +239,6 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
     mode_color, mode_label = _MODE_BADGE.get(mode, ("#4b5563", mode))
     pnl_v = pnl.get("realized_pnl_usd", 0.0)
     pnl_color = "#166534" if pnl_v > 0 else ("#7f1d1d" if pnl_v < 0 else "#4b5563")
-    last = pnl.get("last_trade_at") or "—"
     if pnl.get("days_since") is not None:
         last_label = f"{pnl['days_since']:g}d ago"
     else:

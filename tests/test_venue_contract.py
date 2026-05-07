@@ -21,7 +21,6 @@ When you add a venue, write a `mock_<venue>` fixture below.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
 
 import pytest
 
