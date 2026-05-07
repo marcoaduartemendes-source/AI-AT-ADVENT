@@ -166,6 +166,31 @@ class Orchestrator:
             return report
         report.risk = state
 
+        # Pager when one or more brokers fail their account read for
+        # 2+ consecutive cycles. Without this, an expired Alpaca
+        # API key / IP-allowlist drift / Coinbase auth issue degrades
+        # silently (we just stop trading that venue) until the user
+        # notices via the dashboard. Threshold of 2 cycles avoids
+        # paging on a single transient blip.
+        if not state.venues_ok:
+            self._venues_ok_consecutive_failures = (
+                getattr(self, "_venues_ok_consecutive_failures", 0) + 1
+            )
+            if self._venues_ok_consecutive_failures == 2:
+                try:
+                    from common.alerts import alert
+                    alert(
+                        f"One or more broker accounts unreachable for "
+                        f"2 consecutive cycles. Trading is degraded; "
+                        f"check broker auth / API status. "
+                        f"equity_usd=${state.equity_usd:,.2f}",
+                        severity="warning",
+                    )
+                except Exception as e:
+                    logger.warning(f"alert dispatch failed: {e}")
+        else:
+            self._venues_ok_consecutive_failures = 0
+
         # Cancel pending orders older than the configured threshold.
         # Runs AFTER compute_state so we have an up-to-date view of
         # broker reachability (state.venues_ok). When the global flag

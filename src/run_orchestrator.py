@@ -345,7 +345,25 @@ def main():
                           "the kill-switch baseline would otherwise reset "
                           "to current equity and silently arm at "
                           "-KILL_DD_PCT of whatever today's equity is.")
+    ap.add_argument("--reset-kill-switch", action="store_true",
+                     help="Reset the kill-switch state to NORMAL after a "
+                          "KILL event has cleared. Records a marker row "
+                          "in risk_state.db; orchestrator picks up the "
+                          "new state on the next cycle. Use after you've "
+                          "investigated the equity drop that triggered KILL.")
     args = ap.parse_args()
+
+    # Manual KILL reset path. Done before anything else so the operator
+    # can recover without booting brokers / strategies / etc.
+    if args.reset_kill_switch:
+        from risk.manager import RiskManager
+        rm = RiskManager()
+        rm.reset_kill_switch()
+        logger.warning(
+            "Kill-switch reset to NORMAL. Verify by running "
+            "`python src/run_orchestrator.py --status`."
+        )
+        return 0
 
     # Two-key guard: even with DRY_RUN=false the orchestrator refuses to
     # place real orders unless ALLOW_LIVE_TRADING=1. Forces an explicit,
