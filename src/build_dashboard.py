@@ -161,6 +161,63 @@ def _per_strategy_pnl(db_path: str) -> dict[str, dict]:
     return out
 
 
+def _live_unrealized_by_strategy() -> dict[str, float]:
+    """Return per-strategy unrealized P&L by querying live broker
+    positions and attributing each symbol to the strategy that
+    last opened it (per the trades ledger).
+
+    Empty dict when broker creds aren't configured or nothing is
+    open; the dashboard treats absent strategies as 0 unrealized.
+    """
+    out: dict[str, float] = {}
+    try:
+        from brokers.registry import build_brokers
+        brokers = build_brokers()
+    except Exception:
+        return out
+    if not brokers:
+        return out
+
+    # Map (venue, symbol) -> strategy by looking at the most recent
+    # opening BUY for that pair in the trades ledger.
+    db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
+    sym_to_strategy: dict[tuple[str, str], str] = {}
+    if Path(db_path).exists():
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                for r in conn.execute(
+                    "SELECT venue, product_id, strategy "
+                    "  FROM trades "
+                    " WHERE side = 'BUY' AND venue IS NOT NULL "
+                    "   AND product_id IS NOT NULL "
+                    "   AND strategy IS NOT NULL "
+                    " ORDER BY id ASC"
+                ).fetchall():
+                    sym_to_strategy[(r["venue"], r["product_id"])] = r["strategy"]
+        except sqlite3.Error as e:
+            logger.debug(f"sym_to_strategy query failed: {e}")
+
+    for venue, adapter in brokers.items():
+        try:
+            positions = adapter.get_positions()
+        except Exception as e:
+            logger.debug(f"[{venue}] get_positions for unrealized: {e}")
+            continue
+        for p in positions:
+            unrealized = float(p.unrealized_pnl_usd or 0.0)
+            if unrealized == 0.0:
+                continue
+            strategy = sym_to_strategy.get((venue, p.symbol))
+            if strategy is None:
+                # Position not attributable to any tracked strategy;
+                # bucket under "<unattributed>" so the dashboard total
+                # still reflects it.
+                strategy = "<unattributed>"
+            out[strategy] = out.get(strategy, 0.0) + unrealized
+    return out
+
+
 def _risk_snapshot() -> dict:
     """Latest equity + kill-switch event from risk_state.db."""
     out = {
@@ -237,8 +294,12 @@ def _fmt_pct(x: float) -> str:
 def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
     venue = meta.get("venue", "—") if meta else "—"
     mode_color, mode_label = _MODE_BADGE.get(mode, ("#4b5563", mode))
-    pnl_v = pnl.get("realized_pnl_usd", 0.0)
-    pnl_color = "#166534" if pnl_v > 0 else ("#7f1d1d" if pnl_v < 0 else "#4b5563")
+    realized = pnl.get("realized_pnl_usd", 0.0)
+    unrealized = pnl.get("unrealized_pnl_usd", 0.0)
+    total = realized + unrealized
+    realized_color = "#166534" if realized > 0 else ("#7f1d1d" if realized < 0 else "#4b5563")
+    unrealized_color = "#166534" if unrealized > 0 else ("#7f1d1d" if unrealized < 0 else "#4b5563")
+    total_color = "#166534" if total > 0 else ("#7f1d1d" if total < 0 else "#4b5563")
     if pnl.get("days_since") is not None:
         last_label = f"{pnl['days_since']:g}d ago"
     else:
@@ -250,10 +311,11 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
         + f"</td>"
         f"<td>{html.escape(venue)}</td>"
         f"<td><span class=badge style=\"background:{mode_color}\">{mode_label}</span></td>"
-        f"<td class=num>{pnl.get('n_trades', 0)}</td>"
         f"<td class=num>{pnl.get('n_closed', 0)}</td>"
         f"<td class=num>{_fmt_pct(pnl.get('win_rate', 0.0))}</td>"
-        f"<td class=num style=\"color:{pnl_color};font-weight:600\">{_fmt_money(pnl_v)}</td>"
+        f"<td class=num style=\"color:{realized_color}\">{_fmt_money(realized)}</td>"
+        f"<td class=num style=\"color:{unrealized_color}\">{_fmt_money(unrealized)}</td>"
+        f"<td class=num style=\"color:{total_color};font-weight:600\">{_fmt_money(total)}</td>"
         f"<td>{html.escape(last_label)}</td>"
         f"</tr>"
     )
@@ -319,6 +381,19 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     risk = _risk_snapshot()
     metas = _strategy_meta()
     errors = _recent_errors(10)
+    # Live unrealized P&L per strategy — pulled from broker positions
+    # at render time. Best-effort; absent or empty when creds missing.
+    unrealized_by_strategy = _live_unrealized_by_strategy()
+    # Fold the unrealized into the per-strategy view so the table can
+    # show it alongside realized.
+    for s, u in unrealized_by_strategy.items():
+        if s not in pnl:
+            pnl[s] = {
+                "n_trades": 0, "n_closed": 0, "wins": 0, "losses": 0,
+                "win_rate": 0.0, "realized_pnl_usd": 0.0,
+                "last_trade_at": None, "days_since": None,
+            }
+        pnl[s]["unrealized_pnl_usd"] = u
     live_strategies = {
         s.strip() for s in os.environ.get("LIVE_STRATEGIES", "").split(",")
         if s.strip()
@@ -344,12 +419,18 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
         r[0],
     ))
 
-    total_pnl = sum(r[2].get("realized_pnl_usd", 0.0) for r in rows)
+    total_realized = sum(r[2].get("realized_pnl_usd", 0.0) for r in rows)
+    total_unrealized = sum(unrealized_by_strategy.values())
+    total_pnl = total_realized + total_unrealized
     total_closed = sum(r[2].get("n_closed", 0) for r in rows)
     total_wins = sum(r[2].get("wins", 0) for r in rows)
     portfolio_winrate = (total_wins / total_closed) if total_closed else 0.0
-    pnl_color = ("#166534" if total_pnl > 0
-                 else "#7f1d1d" if total_pnl < 0 else "#4b5563")
+
+    def _color_for(v: float) -> str:
+        return "#166534" if v > 0 else ("#7f1d1d" if v < 0 else "#4b5563")
+    pnl_color = _color_for(total_pnl)
+    realized_color = _color_for(total_realized)
+    unrealized_color = _color_for(total_unrealized)
 
     ks = (risk.get("kill_switch") or "UNKNOWN").upper()
     ks_color, ks_emoji = _KS_COLOR.get(ks, _KS_COLOR["UNKNOWN"])
@@ -357,7 +438,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     body_rows = "\n".join(_row_html(n, m, p, md) for n, m, p, md in rows)
     if not rows:
         body_rows = (
-            "<tr><td colspan=8 style='text-align:center;color:#6b7280;"
+            "<tr><td colspan=9 style='text-align:center;color:#6b7280;"
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
@@ -417,13 +498,21 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </div>
 
 <div class="totals">
+  <div class="stat" style="grid-column: span 2; border: 2px solid {pnl_color};">
+    <div class="label">Total P&amp;L (realized + unrealized)</div>
+    <div class="value" style="color:{pnl_color}; font-size: 28px;">{_fmt_money(total_pnl)}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Realized P&amp;L</div>
+    <div class="value" style="color:{realized_color}">{_fmt_money(total_realized)}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Unrealized P&amp;L</div>
+    <div class="value" style="color:{unrealized_color}">{_fmt_money(total_unrealized)}</div>
+  </div>
   <div class="stat">
     <div class="label">Portfolio equity</div>
     <div class="value">{_fmt_money(risk.get('equity_usd', 0.0))}</div>
-  </div>
-  <div class="stat">
-    <div class="label">All-time realized P&amp;L</div>
-    <div class="value" style="color:{pnl_color}">{_fmt_money(total_pnl)}</div>
   </div>
   <div class="stat">
     <div class="label">Closed trades</div>
@@ -445,10 +534,11 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
       <th>Strategy</th>
       <th>Venue</th>
       <th>Mode</th>
-      <th class=num>Total trades</th>
       <th class=num>Closed</th>
       <th class=num>Win rate</th>
-      <th class=num>Realized P&amp;L</th>
+      <th class=num>Realized</th>
+      <th class=num>Unrealized</th>
+      <th class=num>Total P&amp;L</th>
       <th>Last trade</th>
     </tr>
   </thead>

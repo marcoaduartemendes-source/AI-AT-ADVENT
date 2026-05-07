@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 MIN_GAP_PCT = 1.5           # absolute % gap to qualify
 MAX_HOLD_DAYS = 1           # exit at next session open
-TRADE_SIZE_USD = 3000.0
+TRADE_SIZE_USD = 8000.0    # per-position cap raised for paper-trading experimentation (held smaller given the lower confidence signal)
 MAX_CONCURRENT = 4
 LONG_ONLY = True            # set False once Alpaca margin shorting is on
 

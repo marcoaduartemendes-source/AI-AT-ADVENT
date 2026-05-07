@@ -32,7 +32,7 @@ BAND_PERIOD = 20            # 20-day SMA + bands
 BAND_STDDEV = 2.0           # 2 standard deviations for outer bands
 MIN_VOLUME_RATIO = 1.3      # today's volume ≥ 1.3× 20d avg
 MAX_CONCURRENT = 5
-TRADE_SIZE_USD = 4000.0
+TRADE_SIZE_USD = 10000.0   # per-position cap raised for paper-trading experimentation
 
 
 UNIVERSE = [

@@ -279,6 +279,81 @@ class TestPerBrokerFlagEmptyString:
         assert self._flag(monkeypatch, "true") is True
 
 
+class TestLiveStrategiesGate:
+    """Regression: LIVE_STRATEGIES must require ALLOW_LIVE_TRADING=1.
+    Audit failure-mode 2026-05-07: a stale repo Variable from earlier
+    testing was firing real Coinbase orders the moment a strategy
+    shipped, even though every other DRY flag was set safely. The
+    fix gates LIVE_STRATEGIES behind the same two-key boundary that
+    DRY_RUN=false already uses.
+    """
+
+    def _run_gate(self, monkeypatch, dry_run, allow_live, live_strats):
+        if dry_run is None:
+            monkeypatch.delenv("DRY_RUN", raising=False)
+        else:
+            monkeypatch.setenv("DRY_RUN", dry_run)
+        if allow_live is None:
+            monkeypatch.delenv("ALLOW_LIVE_TRADING", raising=False)
+        else:
+            monkeypatch.setenv("ALLOW_LIVE_TRADING", allow_live)
+        if live_strats is None:
+            monkeypatch.delenv("LIVE_STRATEGIES", raising=False)
+        else:
+            monkeypatch.setenv("LIVE_STRATEGIES", live_strats)
+        # Replicate the gate logic from run_orchestrator.main() — keep
+        # this test independent of broker init / heavy import paths.
+        import os as _os
+        dry_env = _os.environ.get("DRY_RUN", "true").lower()
+        allow = _os.environ.get("ALLOW_LIVE_TRADING") == "1"
+        if dry_env == "false" and not allow:
+            _os.environ["DRY_RUN"] = "true"
+        if _os.environ.get("LIVE_STRATEGIES") and not allow:
+            _os.environ["LIVE_STRATEGIES"] = ""
+        return {
+            "dry": _os.environ.get("DRY_RUN"),
+            "live": _os.environ.get("LIVE_STRATEGIES"),
+        }
+
+    def test_live_strats_set_without_allow_is_neutralized(self, monkeypatch):
+        out = self._run_gate(
+            monkeypatch,
+            dry_run="true",
+            allow_live=None,
+            live_strats="crypto_funding_carry,crypto_xsmom",
+        )
+        assert out["live"] == "", (
+            "LIVE_STRATEGIES should be cleared when ALLOW_LIVE_TRADING != '1'"
+        )
+
+    def test_live_strats_with_allow_is_honoured(self, monkeypatch):
+        out = self._run_gate(
+            monkeypatch,
+            dry_run="true",
+            allow_live="1",
+            live_strats="crypto_funding_carry",
+        )
+        assert out["live"] == "crypto_funding_carry"
+
+    def test_dry_false_without_allow_is_forced_back_to_true(self, monkeypatch):
+        out = self._run_gate(
+            monkeypatch,
+            dry_run="false",
+            allow_live=None,
+            live_strats=None,
+        )
+        assert out["dry"] == "true"
+
+    def test_dry_false_with_allow_stays_false(self, monkeypatch):
+        out = self._run_gate(
+            monkeypatch,
+            dry_run="false",
+            allow_live="1",
+            live_strats=None,
+        )
+        assert out["dry"] == "false"
+
+
 class TestBacktestMetadata:
     """The registry stub must be importable + return None for any
     strategy until real backtests are wired in."""

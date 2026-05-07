@@ -86,8 +86,13 @@ jobs:
           # Safe default ($50, not $5k) for forks / first-time setups.
           # Override via repository var MAX_TRADE_USD_GLOBAL when ready.
           MAX_TRADE_USD_GLOBAL:    ${{ vars.MAX_TRADE_USD_GLOBAL || '50' }}
-          MAX_TRADE_USD_COINBASE:  ${{ vars.MAX_TRADE_USD_COINBASE }}
-          MAX_TRADE_USD_ALPACA:    ${{ vars.MAX_TRADE_USD_ALPACA }}
+          # Coinbase: real money — kept tight at $100 unless the
+          # user raises the cap explicitly.
+          MAX_TRADE_USD_COINBASE:  ${{ vars.MAX_TRADE_USD_COINBASE || '100' }}
+          # Alpaca: paper money — generous $10k cap so strategies can
+          # actually deploy meaningful sizes during paper-trading
+          # experimentation. Override down via repo var if needed.
+          MAX_TRADE_USD_ALPACA:    ${{ vars.MAX_TRADE_USD_ALPACA || '10000' }}
           MAX_TRADE_USD_KALSHI:    ${{ vars.MAX_TRADE_USD_KALSHI }}
           RISK_MULTIPLIER:         ${{ vars.RISK_MULTIPLIER || '1.0' }}
           TARGET_PORTFOLIO_VOL:    ${{ vars.TARGET_PORTFOLIO_VOL || '0.12' }}

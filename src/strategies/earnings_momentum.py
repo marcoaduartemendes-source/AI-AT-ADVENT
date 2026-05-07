@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 SURPRISE_THRESHOLD_PCT = 5.0
 HOLD_DAYS = 30
-TRADE_SIZE_USD = 4000.0
+TRADE_SIZE_USD = 10000.0   # per-position cap raised for paper-trading experimentation
 MAX_CONCURRENT_POSITIONS = 10
 LOOKBACK_FOR_NEW_FILINGS_DAYS = 3   # look at filings up to 3 days old
 

@@ -32,7 +32,7 @@ VOL_LOOKBACK_DAYS = 60      # window for realized-vol calc
 RETURN_LOOKBACK_DAYS = 60   # only long names with positive 60d return
 TOP_ETF = 3                 # take the top-3 lowest-vol ETFs
 TOP_STOCK = 3               # plus top-3 lowest-vol stocks
-TRADE_SIZE_USD = 2500.0
+TRADE_SIZE_USD = 8000.0    # per-position cap raised for paper-trading experimentation
 COOLDOWN_DAYS = 7
 
 

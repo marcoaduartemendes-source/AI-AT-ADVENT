@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 LOOKBACK_DAYS = 90
 TOP_N = 2
 COOLDOWN_DAYS = 14
-TRADE_SIZE_USD = 6000.0     # bigger size — slow-turnover sleeve
+TRADE_SIZE_USD = 10000.0   # per-position cap raised for paper-trading experimentation
 
 
 DIV_ETFS = [
