@@ -10,11 +10,27 @@ and run a full cycle. Asserts cover the contract:
 """
 from __future__ import annotations
 
-
+import pytest
 
 from brokers.base import OrderSide, OrderType
 from strategy_engine.base import Strategy, TradeProposal
 from tests.mock_broker import MockBroker, MockPosition
+
+
+@pytest.fixture(autouse=True)
+def _force_market_open(monkeypatch):
+    """All e2e tests should run regardless of wall-clock time. The
+    orchestrator's phase-1 early-exit (skip cycle when all venues are
+    closed) is correct in production but makes these tests time-of-day
+    flaky — passing during US market hours, failing overnight / on
+    weekends. Force the gate open globally for this module.
+    """
+    import common.market_hours as _mh
+    monkeypatch.setattr(_mh, "is_market_open", lambda venue: True)
+    # The orchestrator imports `is_market_open` at module top, so we
+    # also need to patch the bound name there.
+    import strategy_engine.orchestrator as _orch
+    monkeypatch.setattr(_orch, "is_market_open", lambda venue: True)
 
 
 class _DummyStrategy(Strategy):
