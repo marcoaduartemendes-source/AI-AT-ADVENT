@@ -44,8 +44,17 @@ class TSMomETF(Strategy):
         if ctx.target_alloc_usd <= 0:
             return []
 
+        # Vol-managed overlay (Moreira-Muir 2017): scale book exposure
+        # inversely to recent SPY realized vol *before* allocating to
+        # legs. Composes cleanly with the per-leg vol-target below
+        # (overlay sizes the book; per-leg sizes within the book).
+        # Default 1.0 when no overlay signal yet — unchanged behaviour.
+        from ._helpers import vol_scaler
+        overlay = vol_scaler(ctx, "equity_momentum", 1.0)
+        book_alloc = ctx.target_alloc_usd * overlay
+
         # Per-leg dollar budget
-        per_leg = ctx.target_alloc_usd / len(UNIVERSE)
+        per_leg = book_alloc / len(UNIVERSE)
         proposals: list[TradeProposal] = []
 
         for symbol in UNIVERSE:

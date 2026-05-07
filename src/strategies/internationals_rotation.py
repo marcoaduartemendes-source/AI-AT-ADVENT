@@ -106,7 +106,16 @@ class InternationalsRotation(Strategy):
                 is_closing=True,
             ))
 
-        # Entries: target set members not currently held
+        # Entries: target set members not currently held.
+        # Sizing: respect ctx.target_alloc_usd (allocator's verdict)
+        # divided across the slots, capped by TRADE_SIZE_USD which
+        # serves as a per-position max. Vol-managed overlay scaler
+        # (Moreira-Muir 2017) multiplies the per-slot size.
+        from ._helpers import vol_scaler
+        overlay = vol_scaler(ctx, "equity_momentum", 1.0)
+        slots = max(1, TOP_N)
+        per_slot_alloc = (ctx.target_alloc_usd * overlay) / slots
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for sym, ret in winners:
             if sym in held:
                 continue
@@ -114,7 +123,7 @@ class InternationalsRotation(Strategy):
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.75,
+                notional_usd=per_slot, confidence=0.75,
                 reason=f"{sym} {ret:+.1f}% (vs SPY {us_return:+.1f}%, "
                        f"spread +{spread:.1f}%)",
                 metadata={"return_pct": ret, "spread_pct": spread},

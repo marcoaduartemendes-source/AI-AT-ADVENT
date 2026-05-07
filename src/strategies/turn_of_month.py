@@ -70,12 +70,15 @@ class TurnOfMonth(Strategy):
                 is_closing=True,
             )]
 
-        # Entry: inside window AND we don't already hold
+        # Entry: inside window AND we don't already hold.
+        # Sizing: a single-position strategy → use the full allocator
+        # verdict, capped by TRADE_SIZE_USD as a safety max.
         if in_window and held_qty == 0:
+            entry_usd = min(ctx.target_alloc_usd, TRADE_SIZE_USD)
             return [TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=SEASONAL_SYMBOL,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.6,
+                notional_usd=entry_usd, confidence=0.6,
                 reason=f"Turn-of-month window ({SEASONAL_SYMBOL})",
                 metadata={"phase": self._month_phase_str()},
             )]

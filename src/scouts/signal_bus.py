@@ -120,7 +120,8 @@ class SignalBus:
         """Return a payload-shaped dict ready for StrategyContext.scout_signals.
 
         Groups latest fresh signal of each signal_type for the given venue,
-        plus the macro signals (which apply to all venues).
+        plus the cross-venue signals (macro feeds, overlay multipliers)
+        that apply to every consumer regardless of venue.
         """
         out: dict[str, Any] = {}
         # Per-venue signals
@@ -128,12 +129,23 @@ class SignalBus:
             if not row.is_fresh():
                 continue
             out.setdefault(row.signal_type, row.payload)
-        # Always include macro
-        if venue != "macro":
-            for row in self.latest(venue="macro", limit=50):
+        # Cross-venue feeds: macro (VIX regime, fed funds) + overlay
+        # (vol_scaler from vol_managed_overlay). Both apply to every
+        # strategy and were previously only broadcast to macro/overlay's
+        # own venue — so the consumers listed in vol_managed_overlay's
+        # docstring (tsmom_etf, sector_rotation, etc.) never actually
+        # received them. Audit-fix 2026-05-07.
+        for cross_venue in ("macro", "overlay"):
+            if venue == cross_venue:
+                continue
+            for row in self.latest(venue=cross_venue, limit=50):
                 if not row.is_fresh():
                     continue
-                key = f"macro_{row.signal_type}"
+                # Macro signals are namespaced (`macro_vix_regime`) so
+                # callers can disambiguate; overlay signals keep their
+                # native key (vol_scaler) since there's no collision.
+                key = (f"macro_{row.signal_type}"
+                       if cross_venue == "macro" else row.signal_type)
                 out.setdefault(key, row.payload)
         return out
 

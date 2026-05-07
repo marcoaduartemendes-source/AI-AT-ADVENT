@@ -86,14 +86,19 @@ class LowVolAnomaly(Strategy):
                 is_closing=True,
             ))
 
-        # Entries: target set members not currently held
+        # Entries: target set members not currently held.
+        # Sizing: split allocator's verdict across the 6 concurrent
+        # slots (3 ETFs + 3 stocks), capped by TRADE_SIZE_USD.
+        n_slots = max(1, TOP_ETF + TOP_STOCK)
+        per_slot_alloc = ctx.target_alloc_usd / n_slots
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for sym, vol in etf_picks + stock_picks:
             if sym in held:
                 continue
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.7,
+                notional_usd=per_slot, confidence=0.7,
                 reason=f"Low-vol top pick: {sym} (vol={vol*100:.1f}%)",
                 metadata={"realized_vol": vol},
             ))

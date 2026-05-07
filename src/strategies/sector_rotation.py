@@ -72,8 +72,13 @@ class SectorRotation(Strategy):
         target_set = {sym for sym, ret in rankings[:TOP_N]
                        if ret >= MIN_RETURN_PCT}
 
+        # Vol-managed overlay (Moreira-Muir 2017): scale book size by
+        # the equity-momentum scaler. Default 1.0 when no overlay
+        # signal yet — unchanged behaviour.
+        from ._helpers import vol_scaler
+        overlay = vol_scaler(ctx, "equity_momentum", 1.0)
         proposals: list[TradeProposal] = []
-        size_per_slot = ctx.target_alloc_usd / max(1, TOP_N)
+        size_per_slot = (ctx.target_alloc_usd * overlay) / max(1, TOP_N)
 
         held = {sym for sym, p in ctx.open_positions.items()
                 if (p.get("quantity") or 0) > 0}

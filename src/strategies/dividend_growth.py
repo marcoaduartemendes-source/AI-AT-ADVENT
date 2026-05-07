@@ -99,14 +99,17 @@ class DividendGrowth(Strategy):
                 is_closing=True,
             ))
 
-        # Enter top-N if not held
+        # Enter top-N if not held. Sizing: split allocator's verdict
+        # across slots, capped by TRADE_SIZE_USD as a per-position max.
+        per_slot_alloc = ctx.target_alloc_usd / max(1, TOP_N)
+        per_slot = min(per_slot_alloc, TRADE_SIZE_USD)
         for sym, ret in rankings[:TOP_N]:
             if sym in held:
                 continue
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.8,
+                notional_usd=per_slot, confidence=0.8,
                 reason=f"{sym} top-{TOP_N} dividend ETF, 90d {ret:+.1f}%",
                 metadata={"lookback_return_pct": ret, "vix": vix},
             ))

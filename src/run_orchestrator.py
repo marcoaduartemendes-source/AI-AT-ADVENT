@@ -105,12 +105,12 @@ ALL_STRATEGIES = [
         description="Top-N backwardated commodity futures (P2)",
     ),
     # ── Phase 3
-    StrategyMeta(
-        name="pead",
-        asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
-        description="Post-earnings announcement drift (P3, scout-fed)",
-    ),
+    # PEAD v1 retired 2026-05-07. The gap-only proxy for "earnings
+    # surprise" is a known weak signal vs the v2 (RSS news corroboration)
+    # and earnings_momentum (true EPS-surprise via FMP) variants;
+    # running all three triple-trades the same earnings prints and
+    # inflates correlation. Weight reallocated to v2 + earnings_momentum.
+    # The pead.py module is kept in-tree for backtest reference only.
     StrategyMeta(
         name="macro_kalshi",
         asset_classes=["PREDICTION"], venue="kalshi",
@@ -159,7 +159,10 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="earnings_momentum",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        # +1% baseline / +3% max ceiling (was 4/15) to absorb the
+        # retired pead v1 allocation. Cleaner EPS-surprise signal so
+        # this should produce higher Sharpe than v1's gap-only proxy.
+        target_alloc_pct=0.06, max_alloc_pct=0.18, min_alloc_pct=0.02,
         description="Live PEAD via FMP earnings calendar (P4)",
     ),
     StrategyMeta(
@@ -221,7 +224,8 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="earnings_news_pead",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        # +2% baseline (was 3%) to absorb part of retired pead v1.
+        target_alloc_pct=0.05, max_alloc_pct=0.15, min_alloc_pct=0.01,
         description="PEAD gated on RSS news corroboration (P5)",
     ),
 ]
@@ -244,7 +248,9 @@ def build_strategies(brokers):
         al = brokers["alpaca"]
         instances["risk_parity_etf"] = RiskParityETF(al)
         instances["tsmom_etf"] = TSMomETF(al)
-        instances["pead"] = PEAD(al)
+        # pead (v1) retired 2026-05-07 — see ALL_STRATEGIES note above.
+        # Module still imported so existing trade rows remain readable
+        # in the dashboard / FIFO recompute, but no instance is wired.
         instances["vol_managed_overlay"] = VolManagedOverlay(al)
         # Phase 4 — experimental sleeve
         instances["rsi_mean_reversion"] = RSIMeanReversion(al)

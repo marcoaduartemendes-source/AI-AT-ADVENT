@@ -37,6 +37,33 @@ def lookback_return_pct(broker, name: str, symbol: str, days: int,
     return (end - start) / start * 100
 
 
+def vol_scaler(ctx, asset_class: str = "equity_momentum",
+                 default: float = 1.0) -> float:
+    """Return the vol-managed-overlay scaler for `asset_class`.
+
+    Moreira-Muir (2017): scaling momentum exposure inversely to realized
+    vol adds ~0.2-0.4 Sharpe at near-zero cost. The vol_managed_overlay
+    strategy publishes scalers to the signal bus every cycle; this
+    helper reads them with a graceful default of 1.0 (no scaling) when
+    the signal is missing or stale, so consumers can safely multiply
+    their target_alloc_usd by the return value unconditionally.
+
+    Usage in a momentum strategy:
+        size_usd = ctx.target_alloc_usd * vol_scaler(ctx)
+    """
+    try:
+        sig = (ctx.scout_signals or {}).get("vol_scaler") if ctx else None
+    except AttributeError:
+        return default
+    if not isinstance(sig, dict):
+        return default
+    val = sig.get(asset_class)
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
 def past_cooldown(pos: dict, cooldown_days: int) -> bool:
     """True if the position's entry_time is older than `cooldown_days`.
     Missing or unparseable entry_time → treated as past cooldown so a

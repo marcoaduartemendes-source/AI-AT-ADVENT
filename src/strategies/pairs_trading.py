@@ -127,10 +127,17 @@ class PairsTrading(Strategy):
                 # a is cheap vs b → long a
                 long_sym, rich_sym = pair.a, pair.b
 
+            # Sizing: split allocator's verdict across the pairs,
+            # capped by TRADE_SIZE_USD. Pair count is the upper bound
+            # on concurrent positions; computing once before the loop
+            # would change behaviour when later iterations skip — so
+            # compute per-iteration and let the cap dominate.
+            per_pair_alloc = ctx.target_alloc_usd / max(1, len(PAIRS))
+            per_pair = min(per_pair_alloc, TRADE_SIZE_USD)
             proposals.append(TradeProposal(
                 strategy=self.name, venue=self.venue, symbol=long_sym,
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
-                notional_usd=TRADE_SIZE_USD, confidence=0.7,
+                notional_usd=per_pair, confidence=0.7,
                 reason=f"{pair.note}: long {long_sym} (cheap leg) "
                        f"vs {rich_sym}, z={z:+.2f}",
                 metadata={"pair": f"{pair.a}/{pair.b}", "z_score": z,
