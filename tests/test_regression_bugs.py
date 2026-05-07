@@ -212,58 +212,10 @@ class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
 # Bug #4 — dashboard summary excluded unrealized PnL
 # ─────────────────────────────────────────────────────────────────────
 
-class TestDashboardSummaryIncludesUnrealizedPnL:
-    """The headline total_pnl_usd on the dashboard MUST include
-    unrealized PnL from open broker positions, not only realized PnL
-    from closed trades. With no fill polling, realized stays at $0
-    indefinitely — so a realized-only headline showed $0 even when
-    we held $25k of paper positions worth +$51 right now.
-
-    This is a unit test on _summarize + the explicit summary build
-    in load_live_data, asserting that the headline merges both.
-    """
-
-    def test_summarize_handles_none_pnl_rows(self):
-        from build_dashboard import _summarize
-
-        trades = [
-            {"side": "BUY", "amount_usd": 100, "pnl_usd": None,
-             "strategy": "tsmom_etf"},
-            {"side": "BUY", "amount_usd": 200, "pnl_usd": None,
-             "strategy": "tsmom_etf"},
-            {"side": "SELL", "amount_usd": 100, "pnl_usd": 12.5,
-             "strategy": "tsmom_etf"},
-        ]
-        s = _summarize(trades)
-        # Realized PnL = 12.5 (only one closed trade).
-        assert s["total_pnl_usd"] == pytest.approx(12.5)
-        # Entry volume = 300 (two BUYs).
-        assert s["entry_volume_usd"] == pytest.approx(300)
-        # No phantom -$300 from the unfilled rows.
-        assert s["n_trades"] == 1
-
-    def test_summary_headline_merges_realized_and_unrealized(self):
-        """Reproduces the failure mode: realized=0, unrealized=+$51 →
-        headline must be +$51, not $0."""
-        # Simulate the explicit summary-build in load_live_data
-        all_trades = [
-            {"side": "BUY", "amount_usd": 100, "pnl_usd": None,
-             "strategy": "tsmom_etf", "product_id": "TLT"},
-        ]
-        open_pos_raw = [
-            {"quantity": 67.24, "market_price": 85.7,
-             "unrealized_pnl_usd": 51.04, "venue": "alpaca",
-             "product_id": "TLT"},
-        ]
-        from build_dashboard import _summarize
-        base = _summarize(all_trades)
-        realized = base["total_pnl_usd"]
-        unrealized = sum(p["unrealized_pnl_usd"] for p in open_pos_raw)
-        total = realized + unrealized
-        # Bug #4 produced total=0 here (only realized counted).
-        assert total == pytest.approx(51.04)
-        assert realized == pytest.approx(0)
-        assert unrealized == pytest.approx(51.04)
+# Removed: TestDashboardSummaryIncludesUnrealizedPnL — exercised the
+# old 2120-line dashboard's _summarize / load_live_data internals.
+# The replacement dashboard is server-rendered HTML with a single
+# realized-P&L SQL aggregate; coverage now lives in tests/test_dashboard.py.
 
 
 # ─────────────────────────────────────────────────────────────────────

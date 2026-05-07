@@ -124,10 +124,14 @@ jobs:
           python - <<'PY'
           import hashlib, pathlib, re
           html = pathlib.Path("docs/index.html").read_text(encoding="utf-8")
-          # Strip the dynamic timestamp / freshness fields. Patterns match
-          # the JSON-embedded `generated_at`, freshness deltas in seconds,
-          # and any `last_ok_at` ISO timestamps.
+          # Strip the dynamic timestamp fields so we only commit when
+          # the *content* (numbers, kill-switch state, strategy ranking)
+          # changes. The new dashboard wraps every dynamic timestamp in
+          # <time data-ts="..."> — strip those by attribute, plus the
+          # legacy JSON-embedded fields kept for back-compat with any
+          # build still on the old template.
           patterns = [
+            r'<time data-ts="[^"]+">[^<]*</time>',
             r'"generated_at":\s*"[^"]+"',
             r'"last_ok_at":\s*"[^"]+"',
             r'"as_of":\s*"[^"]+"',
