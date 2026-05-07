@@ -44,7 +44,7 @@ jobs:
         # data/trading_performance.db via PerformanceTracker.record_trade,
         # so its copy is the authoritative source for the dashboard.
         # The legacy DB only matters if the orchestrator hasn't run yet.
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: data/trading_performance.db
           key: trading-db-readonly-placeholder
@@ -57,7 +57,7 @@ jobs:
         # strategies / brokers (Coinbase, Alpaca, Kalshi).
         # Path list MUST match the orchestrator workflow's save list
         # exactly or actions/cache will skip the restore.
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             data/risk_state.db
@@ -70,7 +70,7 @@ jobs:
         # The scouts workflow saves under key
         # orchestrator-state-<n>-scouts with this 4-path signature.
         # Path list MUST match exactly for the lookup to hit.
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             data/signal_bus.db
