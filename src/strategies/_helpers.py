@@ -48,6 +48,11 @@ def vol_scaler(ctx, asset_class: str = "equity_momentum",
     the signal is missing or stale, so consumers can safely multiply
     their target_alloc_usd by the return value unconditionally.
 
+    The returned scalar already folds in the regime multiplier
+    (HIGH / EXTREME vol regimes halve / quarter the equity sleeve)
+    so callers don't need to read it separately. Use `equity_regime()`
+    if you want to log or branch on the named regime.
+
     Usage in a momentum strategy:
         size_usd = ctx.target_alloc_usd * vol_scaler(ctx)
     """
@@ -59,9 +64,30 @@ def vol_scaler(ctx, asset_class: str = "equity_momentum",
         return default
     val = sig.get(asset_class)
     try:
-        return float(val) if val is not None else default
+        scaler = float(val) if val is not None else default
     except (TypeError, ValueError):
         return default
+    # Apply equity-regime multiplier on top for equity-class consumers.
+    if asset_class == "equity_momentum":
+        try:
+            regime_mult = float(sig.get("equity_regime_multiplier", 1.0))
+        except (TypeError, ValueError):
+            regime_mult = 1.0
+        scaler *= regime_mult
+    return scaler
+
+
+def equity_regime(ctx) -> str:
+    """Return 'NORMAL' | 'HIGH' | 'EXTREME' from vol_managed_overlay.
+    Defaults to 'NORMAL' when the signal is missing or stale.
+    """
+    try:
+        sig = (ctx.scout_signals or {}).get("vol_scaler") if ctx else None
+    except AttributeError:
+        return "NORMAL"
+    if not isinstance(sig, dict):
+        return "NORMAL"
+    return sig.get("equity_regime", "NORMAL")
 
 
 def past_cooldown(pos: dict, cooldown_days: int) -> bool:

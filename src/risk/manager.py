@@ -606,6 +606,24 @@ class RiskManager:
                 Decision.REJECT, 0.0,
                 f"CRITICAL state — closing-only (DD {st.drawdown_pct * 100:.1f}%)", st)
 
+        # ─ Per-strategy daily-notional governor (audit ops #3).
+        # Circuit breaker for a haywire-but-not-erroring strategy: a
+        # signal-flapping bug can emit dozens of buy/sell pairs per
+        # hour, burning fees for the full cycle before DD/MTD/trailing
+        # trips. Cap each strategy's UTC-day entry notional at
+        # max_strategy_daily_notional_pct × equity. Closes bypass.
+        if (not is_closing and strategy_name and st.equity_usd > 0
+                and cfg.max_strategy_daily_notional_pct > 0):
+            day_so_far = self._strategy_today_notional(strategy_name)
+            cap = cfg.max_strategy_daily_notional_pct * st.equity_usd
+            if day_so_far + notional_usd > cap:
+                return RiskDecision(
+                    Decision.REJECT, 0.0,
+                    f"strategy daily notional ${day_so_far:,.0f} + "
+                    f"${notional_usd:,.0f} > ${cap:,.0f} "
+                    f"({cfg.max_strategy_daily_notional_pct * 100:.0f}% "
+                    f"of equity)", st)
+
         # ─ Min size
         if notional_usd < cfg.min_trade_usd:
             return RiskDecision(
@@ -677,6 +695,38 @@ class RiskManager:
                 f"scaled from ${notional_usd:.2f} to ${approved:.2f}", st)
 
         return RiskDecision(Decision.APPROVE, approved, "ok", st)
+
+    # ── Per-strategy daily notional bookkeeping ────────────────────────
+
+    def _strategy_today_notional(self, strategy_name: str) -> float:
+        """Return the sum of opening (BUY) entry notional for
+        `strategy_name` since 00:00 UTC. Used by the daily-notional
+        governor to circuit-break runaway strategies. Reads the
+        trades ledger directly so it survives orchestrator restarts.
+        """
+        try:
+            import os as _os
+            db_path = _os.environ.get(
+                "TRADING_DB_PATH", "data/trading_performance.db"
+            )
+            from pathlib import Path as _Path
+            if not _Path(db_path).exists():
+                return 0.0
+            import sqlite3 as _sq
+            with _sq.connect(db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT COALESCE(SUM(amount_usd), 0) FROM trades
+                     WHERE strategy = ?
+                       AND side = 'BUY'
+                       AND timestamp >= strftime('%Y-%m-%dT00:00:00+00:00','now')
+                    """,
+                    (strategy_name,),
+                ).fetchone()
+                return float(row[0]) if row else 0.0
+        except Exception as e:
+            logger.debug(f"_strategy_today_notional({strategy_name}): {e}")
+            return 0.0
 
     # ── Macro signal hookup ---------------------------------------------
 

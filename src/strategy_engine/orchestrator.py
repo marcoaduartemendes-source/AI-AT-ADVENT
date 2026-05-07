@@ -170,6 +170,11 @@ class Orchestrator:
         except Exception as e:
             report.errors.append(f"risk.compute_state failed: {e}")
             logger.exception("Risk state computation failed")
+            try:
+                from common.errors_db import record_error
+                record_error(scope="orchestrator.compute_state")
+            except Exception:
+                pass
             return report
         report.risk = state
 
@@ -316,6 +321,16 @@ class Orchestrator:
             except Exception as e:
                 report.errors.append(f"[{name}] compute failed: {e}")
                 logger.exception(f"[{name}] strategy.compute raised")
+                # Persist full traceback to errors.db so the dashboard
+                # can show debug context without an SSH session.
+                try:
+                    from common.errors_db import record_error
+                    record_error(
+                        scope="strategy.compute",
+                        strategy=name, venue=strategy.venue,
+                    )
+                except Exception:
+                    pass
                 # Sprint E1 wiring — record this strategy as failed for
                 # the consecutive-error tracker. Best-effort: tracking
                 # itself raising must not break the cycle.

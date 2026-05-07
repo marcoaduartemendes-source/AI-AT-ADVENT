@@ -260,11 +260,66 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
     )
 
 
+def _render_errors_section(errors: list[dict]) -> str:
+    """Render the recent-errors panel; empty section when no errors."""
+    if not errors:
+        return ""
+    rows = []
+    for e in errors:
+        scope = html.escape(e.get("scope") or "")
+        strat = html.escape(e.get("strategy") or "")
+        venue = html.escape(e.get("venue") or "")
+        exc_type = html.escape(e.get("exc_type") or "")
+        exc_msg = html.escape((e.get("exc_message") or "")[:200])
+        ts = html.escape(e.get("timestamp") or "")
+        # Stack trace is collapsed in a <details> to keep the dashboard
+        # tight; click to expand. Truncate to 2KB so a runaway loop
+        # doesn't bloat the HTML.
+        tb = html.escape((e.get("traceback") or "")[:2000])
+        rows.append(
+            f"<tr>"
+            f"<td><time data-ts='error'>{ts}</time></td>"
+            f"<td><code>{scope}</code></td>"
+            f"<td>{strat}</td>"
+            f"<td>{venue}</td>"
+            f"<td><strong>{exc_type}</strong>: {exc_msg}"
+            f"<details><summary>traceback</summary>"
+            f"<pre style='font-size:11px;overflow-x:auto'>{tb}</pre>"
+            f"</details></td>"
+            f"</tr>"
+        )
+    rows_html = "\n".join(rows)
+    return f"""
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Recent errors ({len(errors)})
+</h2>
+<table>
+  <thead>
+    <tr><th>When</th><th>Scope</th><th>Strategy</th>
+        <th>Venue</th><th>Exception</th></tr>
+  </thead>
+  <tbody>
+{rows_html}
+  </tbody>
+</table>"""
+
+
+def _recent_errors(limit: int = 10) -> list[dict]:
+    """Pull the most recent N stack traces from errors.db. Empty
+    when the DB doesn't exist (first deploy) or the import fails."""
+    try:
+        from common.errors_db import recent_errors
+        return recent_errors(limit=limit)
+    except Exception:
+        return []
+
+
 def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
     pnl = _per_strategy_pnl(db_path)
     risk = _risk_snapshot()
     metas = _strategy_meta()
+    errors = _recent_errors(10)
     live_strategies = {
         s.strip() for s in os.environ.get("LIVE_STRATEGIES", "").split(",")
         if s.strip()
@@ -402,6 +457,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {body_rows}
   </tbody>
 </table>
+
+{_render_errors_section(errors)}
 
 <footer>Generated <time data-ts="generated">{generated_at}</time></footer>
 
