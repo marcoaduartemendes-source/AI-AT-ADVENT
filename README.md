@@ -2,7 +2,7 @@
 
 Multi-asset systematic trading bot. 24 strategies across equities (Alpaca), crypto (Coinbase), and prediction markets (Kalshi). Runs on GitHub Actions cron + a DigitalOcean VPS.
 
-**Status:** paper / DRY by default. Real money is opt-in via two independent env-var keys (`DRY_RUN=false` AND `ALLOW_LIVE_TRADING=1`). See [§ Live trading](#live-trading) before flipping anything.
+**Status by default:** Alpaca and Kalshi run in **PAPER mode** (real orders to simulated accounts — strategies actually deploy capital and produce fill data, no real money at risk). Coinbase stays **DRY** (no orders submitted). Going LIVE on Coinbase requires both `DRY_RUN_COINBASE=false` AND `ALLOW_LIVE_TRADING=1` in repo Variables — single-key flips are intentionally not enough.
 
 ## Architecture (60-second tour)
 
@@ -99,17 +99,30 @@ python src/build_dashboard.py    # writes docs/index.html
 
 ## Live trading
 
-By default everything is DRY (orders never submitted). To go live:
+The default ships paper trading on Alpaca + Kalshi (orders submitted to
+the simulated accounts, no real money). Coinbase stays DRY by default.
+The orchestrator logs `venue=alpaca mode=🧪 PAPER` etc. at the top of
+every cycle so you can confirm at a glance.
 
-1. Pick the venue. Coinbase = real money. Alpaca depends on `ALPACA_ENDPOINT` (the paper URL is paper money). Kalshi has a demo endpoint too.
+To go LIVE on Coinbase (real money):
+
+1. Confirm `data/risk_state.db` has equity history. The cold-start
+   guard refuses live trading otherwise (a fresh kill-switch baseline =
+   current equity arms KILL at -KILL_DD_PCT of whatever today's equity is).
 2. Set repo Variables (Settings → Secrets and variables → Actions → Variables):
    - `MAX_TRADE_USD_GLOBAL=50` (or higher, deliberately)
-   - `DRY_RUN_ALPACA=false` (or per-venue)
-   - `LIVE_STRATEGIES=strategy_name_1,strategy_name_2` (allowlist)
+   - `DRY_RUN_COINBASE=false`
+   - `LIVE_STRATEGIES=crypto_funding_carry,...` (allowlist of strategies that can fire on Coinbase)
    - `ORCHESTRATOR_DRY_RUN=false`
-3. Set `ALLOW_LIVE_TRADING=1` in repo Variables. Without this the orchestrator forces DRY mode no matter what else is set — this is a deliberate two-key guard.
-4. Confirm `data/risk_state.db` has equity history (cold-start guard refuses live trading otherwise).
-5. Watch [`docs/index.html`](docs/index.html) for the first cycle. The mode badge per strategy will flip from 🟦 DRY → 🧪 PAPER → 💰 LIVE depending on venue and overrides.
+3. Set `ALLOW_LIVE_TRADING=1` in repo Variables. **Without this, the
+   orchestrator forces DRY mode no matter what else is set** — this is a
+   deliberate two-key guard.
+4. Watch [`docs/index.html`](docs/index.html) for the first cycle. The
+   mode badge per strategy will flip from 🟦 DRY → 🧪 PAPER → 💰 LIVE
+   depending on venue and overrides.
+
+To turn OFF paper trading on a venue (rarely needed):
+- Set `DRY_RUN_ALPACA=true` (or `DRY_RUN_KALSHI=true`) in repo Variables.
 
 ## Operations cheatsheet
 

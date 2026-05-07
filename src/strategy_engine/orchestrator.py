@@ -127,6 +127,10 @@ class Orchestrator:
         # Cache pending orders per venue for the whole cycle so we don't
         # re-query the broker dozens of times.
         self._pending_cache: dict[str, dict] = {}
+        # Cache of materialized PositionView dicts per venue. Populated
+        # lazily by _positions_for and invalidated at the start of
+        # every cycle.
+        self._position_view_cache: dict[str, dict] = {}
         # Venues whose pending-orders read failed this cycle. Strategies
         # are blocked from opening NEW positions on a degraded venue
         # (closing positions still allowed) — see _pending_orders_for
@@ -436,6 +440,16 @@ class Orchestrator:
         # Returns dict[symbol, PositionView] — the dataclass shim keeps
         # `pos.get("quantity")` and `pos["quantity"]` working in legacy
         # strategy code while typed `pos.quantity` access is also valid.
+        # Also caches per-cycle inside the orchestrator so a broker
+        # outage doesn't produce N identical "get_positions failed"
+        # warnings (one per strategy on that venue).
+        view_cache = getattr(self, "_position_view_cache", None)
+        if view_cache is None:
+            view_cache = {}
+            self._position_view_cache = view_cache
+        if venue in view_cache:
+            return view_cache[venue]
+
         cached = []
         try:
             cached = self.risk.cached_positions(venue)
@@ -445,11 +459,13 @@ class Orchestrator:
         if not cached:
             adapter = self.brokers.get(venue)
             if adapter is None:
+                view_cache[venue] = {}
                 return {}
             try:
                 cached = adapter.get_positions()
             except Exception as e:
                 logger.warning(f"[{venue}] get_positions failed: {e}")
+                view_cache[venue] = {}
                 return {}
 
         out: dict[str, PositionView] = {}
@@ -467,6 +483,7 @@ class Orchestrator:
                 entry_time=entry_time,
                 asset_class=p.asset_class.value if p.asset_class else None,
             )
+        view_cache[venue] = out
         return out
 
     def _handle_proposal(

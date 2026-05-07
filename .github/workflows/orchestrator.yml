@@ -63,15 +63,25 @@ jobs:
           KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
           # Orchestrator config
+          # Global DRY default stays true — protects real-money venues
+          # (Coinbase). Per-venue overrides below enable paper trading
+          # on the simulated venues (Alpaca paper, Kalshi demo) so
+          # strategies actually deploy capital and produce fill data.
           DRY_RUN:                 ${{ vars.ORCHESTRATOR_DRY_RUN || 'true' }}
           # Two-key live-trading guard: even with DRY_RUN=false the
           # orchestrator refuses to place real orders unless this is
           # also '1'. Forces an explicit, recent decision rather than
           # one stale "DRY_RUN=false" toggle accidentally going live.
           ALLOW_LIVE_TRADING:      ${{ vars.ALLOW_LIVE_TRADING }}
-          DRY_RUN_COINBASE:        ${{ vars.DRY_RUN_COINBASE }}
-          DRY_RUN_ALPACA:          ${{ vars.DRY_RUN_ALPACA }}
-          DRY_RUN_KALSHI:          ${{ vars.DRY_RUN_KALSHI }}
+          # Coinbase = REAL money. Default DRY unless the user has
+          # explicitly set DRY_RUN_COINBASE=false in repo Variables
+          # AND set ALLOW_LIVE_TRADING=1.
+          DRY_RUN_COINBASE:        ${{ vars.DRY_RUN_COINBASE || 'true' }}
+          # Alpaca + Kalshi default to PAPER (orders fire against the
+          # paper / sandbox endpoint, no real money at risk). Override
+          # via repo Variables if you want them DRY for some reason.
+          DRY_RUN_ALPACA:          ${{ vars.DRY_RUN_ALPACA || 'false' }}
+          DRY_RUN_KALSHI:          ${{ vars.DRY_RUN_KALSHI || 'false' }}
           LIVE_STRATEGIES:         ${{ vars.LIVE_STRATEGIES }}
           # Safe default ($50, not $5k) for forks / first-time setups.
           # Override via repository var MAX_TRADE_USD_GLOBAL when ready.

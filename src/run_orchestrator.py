@@ -24,6 +24,7 @@ from allocator.allocator import MetaAllocator
 from allocator.lifecycle import StrategyMeta, StrategyRegistry
 from allocator.metrics import StrategyPerformance
 from brokers.registry import build_brokers
+from risk.manager import RiskManager
 from strategies import (
     BollingerBreakout,
     CommodityCarry,
@@ -354,7 +355,6 @@ def main():
     # Manual KILL reset path. Done before anything else so the operator
     # can recover without booting brokers / strategies / etc.
     if args.reset_kill_switch:
-        from risk.manager import RiskManager
         rm = RiskManager()
         rm.reset_kill_switch()
         logger.warning(
@@ -430,10 +430,23 @@ def main():
     dry_default = os.environ.get("DRY_RUN", "true").lower() != "false"
     dry_run = dry_default and not args.live
 
-    def _per_broker_flag(envvar: str):
+    def _per_broker_flag(envvar: str) -> bool | None:
+        """Parse a per-venue DRY override.
+
+        Returns True (DRY), False (paper/live trading), or None (fall
+        through to the global DRY_RUN). The empty-string case has to
+        return None — GitHub Actions injects every `${{ vars.X }}` ref
+        as the empty string when the underlying variable is unset, and
+        the previous behaviour (treat empty-string as DRY=True) was
+        the reason the cron orchestrator was silently leaving Alpaca
+        in DRY mode even when the user expected paper trading.
+        """
         v = os.environ.get(envvar)
         if v is None:
             return None
+        v = v.strip()
+        if v == "":
+            return None        # empty env var == not set
         return v.lower() != "false"
 
     live_strategies_raw = os.environ.get("LIVE_STRATEGIES", "")
@@ -459,6 +472,30 @@ def main():
 
     if live_strategies:
         logger.warning(f"⚠ Per-strategy LIVE override active: {sorted(live_strategies)}")
+
+    # Surface per-venue trading mode at startup so the operator can
+    # tell from the logs whether strategies are actually deploying
+    # capital (PAPER / LIVE) or just logging proposals (DRY). Maps:
+    #   DRY   = orders not submitted
+    #   PAPER = real orders to a paper / sandbox account (no real money)
+    #   LIVE  = real money
+    # Uses the same classification logic as the dashboard.
+    def _venue_mode_label(venue: str, endpoint_env: str,
+                            paper_marker: str) -> str:
+        is_dry = orchestrator.cfg.is_dry(venue)
+        if is_dry:
+            return "🟦 DRY"
+        ep = (os.environ.get(endpoint_env) or "").lower()
+        if paper_marker in ep:
+            return "🧪 PAPER"
+        return "💰 LIVE"
+    venue_modes = {
+        "alpaca":   _venue_mode_label("alpaca",   "ALPACA_ENDPOINT",  "paper"),
+        "coinbase": _venue_mode_label("coinbase", "COINBASE_ENDPOINT", "sandbox"),
+        "kalshi":   _venue_mode_label("kalshi",   "KALSHI_ENDPOINT",   "demo"),
+    }
+    for v in sorted(brokers):
+        logger.info(f"  venue={v} mode={venue_modes.get(v, '🟦 DRY')}")
 
     # ── Status mode: print state and exit
     if args.status:

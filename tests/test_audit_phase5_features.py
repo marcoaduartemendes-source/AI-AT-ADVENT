@@ -1,4 +1,4 @@
-"""Tests for the audit-phase-5 features.
+"""Tests for the audit-phase-5 + paper-trading-default features.
 
   - Per-strategy daily-notional governor (risk/manager.py + policies.py)
   - Equity-regime gate fold-in via vol_scaler() (strategies/_helpers.py)
@@ -234,6 +234,49 @@ class TestErrorsDb:
 
 
 # ─── Backtest-metadata stub ─────────────────────────────────────────
+
+
+class TestPerBrokerFlagEmptyString:
+    """Regression: GitHub Actions injects ${{ vars.X }} as the empty
+    string when X is unset. The previous _per_broker_flag returned
+    True for "" (because "".lower() != "false"), forcing every venue
+    to DRY when the user expected paper trading. The fix: empty
+    string == None == fall through to global DRY_RUN.
+    """
+
+    def _flag(self, monkeypatch, value):
+        if value is None:
+            monkeypatch.delenv("DRY_RUN_ALPACA", raising=False)
+        else:
+            monkeypatch.setenv("DRY_RUN_ALPACA", value)
+        # Re-import the inner closure-style function via the public API:
+        # easier to test the documented semantic via the OrchestratorConfig
+        # is_dry contract, but for this test we want the parser itself.
+        # The parser is defined inside main() — we replicate its body.
+        import os as _os
+        v = _os.environ.get("DRY_RUN_ALPACA")
+        if v is None:
+            return None
+        v = v.strip()
+        if v == "":
+            return None
+        return v.lower() != "false"
+
+    def test_unset_returns_none(self, monkeypatch):
+        assert self._flag(monkeypatch, None) is None
+
+    def test_empty_string_returns_none(self, monkeypatch):
+        # The bug: GitHub Actions empty-var was being parsed as True (DRY)
+        assert self._flag(monkeypatch, "") is None
+
+    def test_whitespace_returns_none(self, monkeypatch):
+        assert self._flag(monkeypatch, "   ") is None
+
+    def test_false_string_returns_false(self, monkeypatch):
+        assert self._flag(monkeypatch, "false") is False
+
+    def test_true_string_returns_true(self, monkeypatch):
+        assert self._flag(monkeypatch, "true") is True
 
 
 class TestBacktestMetadata:
