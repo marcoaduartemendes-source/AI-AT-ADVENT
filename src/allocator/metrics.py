@@ -63,7 +63,9 @@ class StrategyPerformance:
 
     @contextmanager
     def _conn(self):
+        from common.sqlite_pragmas import apply_pragmas
         conn = sqlite3.connect(self.db_path)
+        apply_pragmas(conn, self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn

@@ -2,7 +2,11 @@ name: Build Dashboard
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # every 15 minutes — dashboard must reflect live state
+    - cron: "*/30 * * * *"   # every 30 minutes — orchestrator already runs every 5 min
+                              # but the dashboard is human-facing; finer cadence wastes
+                              # GitHub Actions minutes (~24 min/day on a per-15-min run)
+                              # without producing user-visible value. Drop to 30 min as
+                              # part of the 2026-05-07 perf audit.
   workflow_dispatch:
 
 permissions:

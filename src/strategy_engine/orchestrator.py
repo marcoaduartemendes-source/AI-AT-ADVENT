@@ -238,6 +238,22 @@ class Orchestrator:
                         )
 
         # 4) Per-strategy compute → gate → execute
+        # Early exit when no active strategy's venue is open. Saves
+        # ~15-25s of useless work on overnight / weekend cycles where
+        # _handle_proposal would reject everything at the market-hours
+        # gate anyway. Crypto venues (coinbase, kalshi) are always
+        # open, so this only short-circuits cycles where the active
+        # set is purely Alpaca-equity and Alpaca is closed.
+        from common.market_hours import is_market_open
+        active_venues = {s.venue for s in self.strategies.values()}
+        if active_venues and not any(
+                is_market_open(v) for v in active_venues):
+            logger.info(
+                f"All active venues closed ({sorted(active_venues)}); "
+                f"skipping per-strategy compute."
+            )
+            return report
+
         latest_alloc = self.registry.latest_allocations()
         for name, strategy in self.strategies.items():
             strategy_state = self.registry.get_state(name)
