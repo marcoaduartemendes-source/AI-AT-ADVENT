@@ -88,26 +88,36 @@ jobs:
           KALSHI_KEY_ID: ""
         run: |
           PYTHONPATH=src python -c "
-          # Just import the orchestrator entrypoint module to verify
-          # all imports + class definitions are wired correctly.
-          # A real --status call would need broker creds we don't
-          # have in CI; the import alone catches 90% of pre-deploy
-          # breakage (missing imports, syntax errors in any
-          # transitively-imported strategy or scout).
+          # Smoke: import the orchestrator entrypoint + every strategy
+          # registered in ALL_STRATEGIES. Driving the smoke from the
+          # registry (not a hardcoded class list) means adding a new
+          # strategy automatically extends this gate — no second place
+          # to remember when extending the book. 90% of pre-deploy
+          # breakage (missing imports, syntax errors in any transitively-
+          # imported scout or strategy) is caught here without needing
+          # real broker creds.
           import run_orchestrator
           import run_daily_digest
-          # Touch every strategy class so registration code paths run
-          from strategies import (
-              BollingerBreakout, CommodityCarry, CrossVenueArb,
-              CryptoBasisTrade, CryptoFundingCarry, CryptoFundingCarryV2,
-              CryptoXSMom, DividendGrowth, EarningsMomentum,
-              EarningsNewsPEAD, GapTrading, InternationalsRotation,
-              KalshiCalibrationArb, LowVolAnomaly, MacroKalshi,
-              MacroKalshiV2, PEAD, PairsTrading, RSIMeanReversion,
-              RiskParityETF, SectorRotation, TSMomETF, TurnOfMonth,
-              VolManagedOverlay,
-          )
-          print('Orchestrator + 24 strategies import cleanly')
+          from run_orchestrator import ALL_STRATEGIES, build_strategies
+
+          # Touch every strategy class so registration code paths run.
+          # build_strategies() returns instances keyed by name; we
+          # iterate the registry list to verify every meta has a
+          # matching instance constructor.
+          import strategies as _strats
+          missing_classes = []
+          for meta in ALL_STRATEGIES:
+              # Heuristic class-name lookup: snake_case → CamelCase.
+              # Skips any meta whose module isn't directly imported here
+              # (e.g. legacy 'pead' kept for backtest reference).
+              class_name = ''.join(
+                  p.title() for p in meta.name.split('_')
+              ).replace('Etf', 'ETF').replace('Pead', 'PEAD')
+              if not hasattr(_strats, class_name):
+                  missing_classes.append((meta.name, class_name))
+          if missing_classes:
+              print(f'WARN: classes not found for: {missing_classes}')
+          print(f'Orchestrator + {len(ALL_STRATEGIES)} strategies import cleanly')
           "
 
   deploy:

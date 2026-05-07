@@ -25,8 +25,15 @@ from datetime import datetime, UTC
 
 from allocator.allocator import MetaAllocator
 from allocator.lifecycle import StrategyRegistry, StrategyState
-from brokers.base import BrokerAdapter, OrderSide
+from brokers.base import (
+    BrokerAdapter,
+    BrokerCapability,
+    OrderSide,
+    OrderStatus,
+)
+from common.market_hours import is_market_open, venue_window_str
 from risk.manager import Decision, RiskManager, RiskState
+from risk.policies import KillSwitchState
 from trading.performance import PerformanceTracker
 from trading.portfolio import TradeRecord
 
@@ -199,7 +206,7 @@ class Orchestrator:
         # cancels at the broken one.
         stale_threshold = self.cfg.stale_order_seconds
         for vname, adapter in self.brokers.items():
-            if not hasattr(adapter, "cancel_stale_orders"):
+            if BrokerCapability.CANCEL_STALE_ORDERS not in adapter.capabilities:
                 continue
             try:
                 n = adapter.cancel_stale_orders(stale_threshold)
@@ -210,7 +217,6 @@ class Orchestrator:
                 logger.debug(f"[{vname}] cancel_stale_orders: {e}")
 
         # 2) Kill switch
-        from risk.policies import KillSwitchState
         if state.kill_switch == KillSwitchState.KILL:
             logger.warning("KILL switch active — emergency closing all positions")
             try:
@@ -269,7 +275,6 @@ class Orchestrator:
         # gate anyway. Crypto venues (coinbase, kalshi) are always
         # open, so this only short-circuits cycles where the active
         # set is purely Alpaca-equity and Alpaca is closed.
-        from common.market_hours import is_market_open
         active_venues = {s.venue for s in self.strategies.values()}
         if active_venues and not any(
                 is_market_open(v) for v in active_venues):
@@ -366,7 +371,8 @@ class Orchestrator:
         if cache is not None and venue in cache:
             return cache[venue]
         adapter = self.brokers.get(venue)
-        if adapter is None or not hasattr(adapter, "get_open_orders"):
+        if (adapter is None
+                or BrokerCapability.GET_OPEN_ORDERS not in adapter.capabilities):
             if cache is not None: cache[venue] = {}
             return {}
         try:
@@ -409,9 +415,13 @@ class Orchestrator:
             cache[venue] = out
         return out
 
-    def _positions_for(self, venue: str) -> dict:
+    def _positions_for(self, venue: str) -> dict[str, "PositionView"]:
         # Reuse the risk manager's per-cycle position cache; avoids hitting
         # the broker API again for each strategy on the same venue.
+        # Returns dict[symbol, PositionView] — the dataclass shim keeps
+        # `pos.get("quantity")` and `pos["quantity"]` working in legacy
+        # strategy code while typed `pos.quantity` access is also valid.
+        from .base import PositionView
         cached = []
         try:
             cached = self.risk.cached_positions(venue)
@@ -428,15 +438,21 @@ class Orchestrator:
                 logger.warning(f"[{venue}] get_positions failed: {e}")
                 return {}
 
-        out = {}
+        out: dict[str, PositionView] = {}
         for p in cached:
-            out[p.symbol] = {
-                "venue": p.venue,
-                "quantity": p.quantity,
-                "avg_entry_price": p.avg_entry_price,
-                "market_price": p.market_price,
-                "unrealized_pnl_usd": p.unrealized_pnl_usd,
-            }
+            entry_time = None
+            if p.raw and isinstance(p.raw, dict):
+                entry_time = p.raw.get("entry_time")
+            out[p.symbol] = PositionView(
+                venue=p.venue,
+                symbol=p.symbol,
+                quantity=float(p.quantity or 0),
+                avg_entry_price=float(p.avg_entry_price or 0),
+                market_price=float(p.market_price or 0),
+                unrealized_pnl_usd=float(p.unrealized_pnl_usd or 0),
+                entry_time=entry_time,
+                asset_class=p.asset_class.value if p.asset_class else None,
+            )
         return out
 
     def _handle_proposal(
@@ -457,7 +473,6 @@ class Orchestrator:
         # state on Alpaca caused by orders fired at 23:40 UTC). The
         # broker silently cancels day orders submitted outside the
         # US regular session; we now skip those proposals up front.
-        from common.market_hours import is_market_open, venue_window_str
         if not is_market_open(proposal.venue):
             logger.debug(
                 f"[{proposal.strategy}] SKIP {proposal.venue} closed "
@@ -746,17 +761,16 @@ class Orchestrator:
                 logger.debug(f"poll get_order({order_id}) failed: {e}")
                 continue
 
-            from brokers.base import OrderStatus as _OS
             status = ord_obj.status
             fill_qty = float(ord_obj.filled_quantity or 0)
             fill_px = float(ord_obj.filled_avg_price or 0)
 
-            if status in (_OS.CANCELED, _OS.REJECTED) and fill_qty == 0:
+            if status in (OrderStatus.CANCELED, OrderStatus.REJECTED) and fill_qty == 0:
                 # Audit fix #2: explicit fill_status='CANCELED' rather
                 # than the price=-1 sentinel. The query in
                 # get_unfilled_trades now keys on fill_status, so
                 # canceled rows are excluded automatically.
-                cancel_status = ("REJECTED" if status == _OS.REJECTED
+                cancel_status = ("REJECTED" if status == OrderStatus.REJECTED
                                   else "CANCELED")
                 self._tracker.update_trade_fill(
                     trade_id=row["id"],
@@ -777,7 +791,7 @@ class Orchestrator:
             # invariant that audit fix #2 enforces in update_trade_fill).
             pnl_usd: float | None = None
             new_status = ("PARTIALLY_FILLED"
-                          if status == _OS.PARTIALLY_FILLED else "FILLED")
+                          if status == OrderStatus.PARTIALLY_FILLED else "FILLED")
             if new_status == "FILLED" and row.get("side") == "SELL":
                 # Prefer the entry_price persisted at submit time
                 # (migration 002): it works even when the position
@@ -989,7 +1003,6 @@ class Orchestrator:
             # FILLED / PARTIALLY_FILLED → use as-is.
             # OPEN / PENDING / NEW → 'PENDING' (the poller will transition).
             # CANCELED / REJECTED → use as-is.
-            from brokers.base import OrderStatus
             broker_status = order.status
             if broker_status == OrderStatus.FILLED:
                 fill_status_str: str | None = "FILLED"

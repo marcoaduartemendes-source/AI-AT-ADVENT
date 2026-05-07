@@ -34,6 +34,7 @@ from datetime import datetime, UTC
 from brokers.base import (
     Account,
     AssetClass,
+    BrokerCapability,
     BrokerError,
     Candle,
     Order,
@@ -70,6 +71,15 @@ class MockPosition:
 class MockBroker:
     """In-memory broker. Subset of BrokerAdapter — implements the
     methods orchestrator + dashboard actually call."""
+
+    # Mirror Alpaca's full capability set so tests exercise the full
+    # wash-trade guard / cancel-stale-orders flow.
+    capabilities = frozenset({
+        BrokerCapability.GET_OPEN_ORDERS,
+        BrokerCapability.CANCEL_STALE_ORDERS,
+        BrokerCapability.LIMIT_ORDERS,
+        BrokerCapability.SHORT_SELLING,
+    })
 
     def __init__(
         self,

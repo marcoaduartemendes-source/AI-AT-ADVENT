@@ -19,6 +19,7 @@ from .base import (
     Account,
     AssetClass,
     BrokerAdapter,
+    BrokerCapability,
     BrokerError,
     Candle,
     Order,
@@ -62,6 +63,12 @@ _GRANULARITY_TO_ALPACA = {
 
 class AlpacaAdapter(BrokerAdapter):
     venue = "alpaca"
+    capabilities = frozenset({
+        BrokerCapability.GET_OPEN_ORDERS,
+        BrokerCapability.CANCEL_STALE_ORDERS,
+        BrokerCapability.LIMIT_ORDERS,
+        BrokerCapability.SHORT_SELLING,
+    })
 
     def __init__(
         self,

@@ -23,6 +23,22 @@ class BrokerError(Exception):
     """Raised by any adapter on broker-side failures (auth, rate limit, etc)."""
 
 
+class BrokerCapability(str, Enum):
+    """What a broker actually supports.
+
+    Audit-fix 2026-05-07: the orchestrator was deciding whether to call
+    `get_open_orders` and `cancel_stale_orders` via `hasattr(...)`.
+    That silently treated venues whose ABC defaults return [] / 0 as
+    if they had real implementations — Coinbase and Kalshi got no
+    wash-trade protection at all. Now adapters declare capabilities
+    explicitly; the orchestrator branches on the set.
+    """
+    GET_OPEN_ORDERS = "get_open_orders"
+    CANCEL_STALE_ORDERS = "cancel_stale_orders"
+    LIMIT_ORDERS = "limit_orders"
+    SHORT_SELLING = "short_selling"
+
+
 _REDACT_PATTERNS = (
     "APCA-API-SECRET-KEY",
     "APCA-API-KEY-ID",
@@ -143,6 +159,12 @@ class BrokerAdapter(ABC):
 
     venue: str          # short identifier, e.g. "coinbase", "alpaca", "kalshi"
     is_paper: bool      # paper/sandbox vs live
+
+    # Declared capabilities — what the venue actually supports.
+    # Subclasses override this set rather than relying on hasattr() at
+    # call sites. Default empty == "only the abstract methods work."
+    # See BrokerCapability for the full list.
+    capabilities: frozenset[BrokerCapability] = frozenset()
 
     # Per-instance candle cache. Multiple strategies often request the
     # same (symbol, granularity, num_candles) within one orchestrator
