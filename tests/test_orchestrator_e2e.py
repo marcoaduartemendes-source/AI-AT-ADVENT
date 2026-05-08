@@ -259,6 +259,14 @@ class TestStrategyErrorPath:
         # production data.
         monkeypatch.setenv("STRATEGY_ALERTS_DB",
                             str(tmp_path / "alerts.db"))
+        # Isolate errors.db too — without this, the test's "broken"
+        # strategy traceback ends up in data/errors.db, then a dev
+        # rebuild of the dashboard locally embeds the test errors in
+        # docs/index.html and a `git push` ships them to the user's
+        # dashboard. Observed 2026-05-08: user reported 30+ "broken
+        # / simulated bug" rows in the live dashboard.
+        monkeypatch.setenv("ERRORS_DB_PATH",
+                            str(tmp_path / "errors.db"))
         broker = MockBroker(venue="alpaca", cash_usd=100_000)
 
         class _BrokenStrategy(Strategy):

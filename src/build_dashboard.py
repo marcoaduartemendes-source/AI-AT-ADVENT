@@ -608,14 +608,34 @@ def _render_errors_section(errors: list[dict]) -> str:
 </table>"""
 
 
-def _recent_errors(limit: int = 10) -> list[dict]:
+def _recent_errors(limit: int = 10, valid_strategies: set | None = None
+                    ) -> list[dict]:
     """Pull the most recent N stack traces from errors.db. Empty
-    when the DB doesn't exist (first deploy) or the import fails."""
+    when the DB doesn't exist (first deploy) or the import fails.
+
+    `valid_strategies` filters out rows whose strategy isn't in the
+    runtime registry — defensive against a dev's local pytest run
+    leaking test-strategy errors into a committed docs/index.html.
+    Without this, the test "broken" strategy errors leaked to the
+    user's dashboard 2026-05-08.
+    """
     try:
         from common.errors_db import recent_errors
-        return recent_errors(limit=limit)
+        rows = recent_errors(limit=limit * 3 if valid_strategies else limit)
     except Exception:
         return []
+    if valid_strategies is None:
+        return rows[:limit]
+    out = []
+    for r in rows:
+        s = r.get("strategy") or ""
+        # Empty-strategy rows are non-strategy errors (orchestrator,
+        # broker layer) — keep them. Otherwise gate on the registry.
+        if not s or s in valid_strategies:
+            out.append(r)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
@@ -623,7 +643,12 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     pnl = _per_strategy_pnl(db_path)
     risk = _risk_snapshot()
     metas = _strategy_meta()
-    errors = _recent_errors(10)
+    # Gate the errors panel on the live strategy registry so a dev's
+    # local pytest run doesn't leak test-strategy errors to the
+    # dashboard. Falls back to "no filter" if metas is empty (cold
+    # start) — better to over-show than under-show in that case.
+    valid_strategies = set(metas.keys()) if metas else None
+    errors = _recent_errors(10, valid_strategies=valid_strategies)
     # Last 50 trades — surfaced on the dashboard so the user can answer
     # "is the bot actually trading right now?" without digging through
     # the GH Actions log.

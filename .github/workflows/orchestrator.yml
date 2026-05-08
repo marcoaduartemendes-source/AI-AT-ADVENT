@@ -24,7 +24,12 @@ jobs:
     # killed before the next 5-min cron tick — without this, runs
     # queue up under cancel-in-progress: false and can race the
     # actions/cache save under the same run_number.
-    timeout-minutes: 4
+    # Bumped 4 → 8 min 2026-05-08: 26 strategies × per-strategy
+    # broker calls + per-cycle compute_state was running right at
+    # the 4-min boundary, often timing out BEFORE the cache-save
+    # step ran. That meant new trades.db rows never persisted and
+    # the dashboard kept showing "0 trades" — the user's complaint.
+    timeout-minutes: 8
     permissions:
       contents: write       # allowed to save risk/allocator DBs to cache
     steps:
