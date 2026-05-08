@@ -310,6 +310,56 @@ def _recent_trades(limit: int = 50) -> list[dict]:
     return out
 
 
+def _recent_cycles(limit: int = 5) -> list[dict]:
+    """Last N cycle diagnostics for the dashboard's 'Cycle activity'
+    panel. Empty when the table doesn't exist yet (first deploy after
+    PR #16 lands)."""
+    db_path = os.environ.get(
+        "TRADING_DB_PATH", "data/trading_performance.db"
+    )
+    if not Path(db_path).exists():
+        return []
+    out: list[dict] = []
+    try:
+        import json as _json
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT timestamp, cycle_seconds, proposals_total, "
+                    "       proposals_submitted, n_errors, venue_health, "
+                    "       strategy_outcomes "
+                    "  FROM cycle_diagnostics "
+                    " ORDER BY id DESC "
+                    f" LIMIT {int(limit)}"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Table not yet created (orchestrator hasn't run with
+                # the PR #16 schema yet). Empty list is a fine fallback.
+                return []
+        for r in rows:
+            try:
+                vh = _json.loads(r["venue_health"]) or {}
+            except Exception:
+                vh = {}
+            try:
+                so = _json.loads(r["strategy_outcomes"]) or {}
+            except Exception:
+                so = {}
+            out.append({
+                "timestamp": r["timestamp"],
+                "cycle_seconds": float(r["cycle_seconds"] or 0),
+                "proposals_total": int(r["proposals_total"] or 0),
+                "proposals_submitted": int(r["proposals_submitted"] or 0),
+                "n_errors": int(r["n_errors"] or 0),
+                "venue_health": vh,
+                "strategy_outcomes": so,
+            })
+    except sqlite3.Error as e:
+        logger.warning(f"recent_cycles read failed: {e}")
+    return out
+
+
 def _risk_snapshot() -> dict:
     """Latest equity + kill-switch event from risk_state.db."""
     out = {
@@ -483,6 +533,117 @@ def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> s
 """
 
 
+def _render_cycle_diagnostics(cycles: list[dict]) -> str:
+    """Render the per-cycle 'is the bot alive?' + per-strategy
+    'why didn't X trade?' diagnostic panels.
+
+    User feedback 2026-05-08: "feels like a black box where I can't
+    see what's happening". This panel surfaces every layer of the
+    cycle so the operator can answer:
+      - Did the cycle run?  → timestamp + cycle_seconds
+      - How many proposals?  → proposals_total
+      - How many made it to the broker? → proposals_submitted
+      - Per-strategy: was it FROZEN, did it produce nothing, did it
+        DRY-log, was it rejected?
+    """
+    if not cycles:
+        return """
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Cycle activity
+</h2>
+<p style="color:#6b7280; font-size:13px;">
+  No cycle diagnostics yet — the orchestrator hasn't run with the
+  diagnostics schema enabled. Wait one cron tick (≤5 min) after this
+  build commits.
+</p>"""
+
+    latest = cycles[0]
+    # Venue health badges
+    vh = latest.get("venue_health") or {}
+    vh_html = " · ".join(
+        f'<span style="background:{"#15803d" if v == "ok" else "#7f1d1d"};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{html.escape(name)}: {html.escape(v)}</span>'
+        for name, v in sorted(vh.items())
+    ) or "(no venues active)"
+
+    # Per-strategy outcome table
+    outcomes = latest.get("strategy_outcomes") or {}
+    rows = []
+    for name in sorted(outcomes.keys()):
+        o = outcomes[name]
+        skip = o.get("skip_reasons") or []
+        err = o.get("error") or ""
+        # Color the row by outcome severity
+        if err:
+            row_color = "#fee2e2"   # error → red tint
+            why = f'<span style="color:#7f1d1d">{html.escape(err[:120])}</span>'
+        elif o.get("submitted", 0) > 0:
+            row_color = "#dcfce7"   # submitted → green
+            why = f'<span style="color:#166534">submitted {o["submitted"]} order(s)</span>'
+        elif o.get("dry_logged", 0) > 0:
+            row_color = "#dbeafe"   # DRY → blue
+            why = f'<span style="color:#1e40af">{o["dry_logged"]} DRY-logged</span>'
+        elif skip:
+            row_color = "#f3f4f6"   # skipped → gray
+            why = html.escape(", ".join(skip[:3]))
+        else:
+            row_color = "white"
+            why = '<span style="color:#6b7280">—</span>'
+        rows.append(
+            f'<tr style="background:{row_color}">'
+            f"<td><strong>{html.escape(name)}</strong></td>"
+            f"<td>{html.escape(o.get('venue', ''))}</td>"
+            f"<td>{html.escape(o.get('state', ''))}</td>"
+            f"<td style='text-align:right'>{o.get('target_alloc_pct', 0)*100:.1f}%</td>"
+            f"<td style='text-align:right'>${o.get('target_alloc_usd', 0):.0f}</td>"
+            f"<td style='text-align:right'>{o.get('proposed', 0)}</td>"
+            f"<td style='text-align:right'>{o.get('approved', 0)}</td>"
+            f"<td style='text-align:right'>{o.get('rejected', 0)}</td>"
+            f"<td style='text-align:right'>{o.get('submitted', 0)}</td>"
+            f"<td>{why}</td>"
+            f"</tr>"
+        )
+    rows_html = "\n".join(rows) or '<tr><td colspan="10">(no strategies ran)</td></tr>'
+
+    # Cycle history sparkline-ish summary
+    history_rows = []
+    for c in cycles:
+        history_rows.append(
+            f"<tr>"
+            f'<td><time data-ts="cycle">{html.escape(c["timestamp"])}</time></td>'
+            f'<td style="text-align:right">{c["cycle_seconds"]:.1f}s</td>'
+            f'<td style="text-align:right">{c["proposals_total"]}</td>'
+            f'<td style="text-align:right">{c["proposals_submitted"]}</td>'
+            f'<td style="text-align:right">{c["n_errors"]}</td>'
+            f"</tr>"
+        )
+    history_html = "\n".join(history_rows)
+
+    return f"""
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Cycle activity — last cycle was {html.escape(latest["timestamp"])} ({latest["cycle_seconds"]:.1f}s)
+</h2>
+<div style="margin-bottom:12px">
+  <strong>Venue health:</strong> {vh_html}<br>
+  <strong>Last 5 cycles:</strong>
+  <table style="font-size:11px;margin-top:4px">
+    <thead><tr><th>When</th><th>Duration</th><th>Proposed</th><th>Submitted</th><th>Errors</th></tr></thead>
+    <tbody>{history_html}</tbody>
+  </table>
+</div>
+
+<h3 style="font-size: 14px; margin-top: 16px; margin-bottom: 6px;">
+  Per-strategy outcome (last cycle) — answers "why didn't X trade?"
+</h3>
+<table style="font-size:11px;">
+  <thead><tr><th>Strategy</th><th>Venue</th><th>State</th>
+      <th style='text-align:right'>Target%</th><th style='text-align:right'>Target$</th>
+      <th style='text-align:right'>Proposed</th><th style='text-align:right'>Approved</th>
+      <th style='text-align:right'>Rejected</th><th style='text-align:right'>Submitted</th>
+      <th>Outcome / why</th></tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>"""
+
+
 def _render_recent_trades(trades: list[dict]) -> str:
     """Render the most-recent-trades panel.
 
@@ -653,6 +814,10 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     # "is the bot actually trading right now?" without digging through
     # the GH Actions log.
     trades_recent = _recent_trades(50)
+    # Per-cycle diagnostics — answers "is the cycle running?" + "why
+    # didn't strategy X trade?". The single biggest visibility win
+    # against the user's "feels like a black box" complaint.
+    cycles_recent = _recent_cycles(5)
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -866,6 +1031,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {body_rows}
   </tbody>
 </table>
+
+{_render_cycle_diagnostics(cycles_recent)}
 
 {_render_recent_trades(trades_recent)}
 
