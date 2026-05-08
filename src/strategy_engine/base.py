@@ -135,21 +135,38 @@ class Strategy(ABC):
 
     def on_emergency_close(self, ctx: StrategyContext) -> list[TradeProposal]:
         """Called when KILL switch fires. Default: close every open position
-        owned by this strategy at market."""
+        owned by this strategy at market — long positions via SELL,
+        SHORT positions via BUY (audit-fix F1, 2026-05-07).
+
+        Strategies that hold legs invisible to `ctx.open_positions`
+        (e.g. Coinbase perp / future shorts which the spot-only
+        `get_positions()` doesn't surface) MUST override this method
+        and reconstruct their net position from the trades ledger via
+        `strategies._helpers.net_qty_from_ledger`. See
+        `crypto_funding_carry.on_emergency_close` for the canonical
+        example.
+        """
         proposals: list[TradeProposal] = []
         for symbol, pos in ctx.open_positions.items():
             qty = pos.get("quantity", 0)
-            if qty <= 0:
+            if qty == 0:
                 continue
-            proposals.append(TradeProposal(
-                strategy=self.name,
-                venue=self.venue,
-                symbol=symbol,
-                side=OrderSide.SELL,
-                order_type=OrderType.MARKET,
-                quantity=qty,
-                confidence=1.0,
-                reason="emergency_close (KILL switch)",
-                is_closing=True,
-            ))
+            if qty > 0:
+                # Long → SELL to close
+                proposals.append(TradeProposal(
+                    strategy=self.name, venue=self.venue, symbol=symbol,
+                    side=OrderSide.SELL, order_type=OrderType.MARKET,
+                    quantity=qty, confidence=1.0,
+                    reason="emergency_close long (KILL switch)",
+                    is_closing=True,
+                ))
+            else:
+                # Short → BUY to close
+                proposals.append(TradeProposal(
+                    strategy=self.name, venue=self.venue, symbol=symbol,
+                    side=OrderSide.BUY, order_type=OrderType.MARKET,
+                    quantity=abs(qty), confidence=1.0,
+                    reason="emergency_close short (KILL switch)",
+                    is_closing=True,
+                ))
         return proposals

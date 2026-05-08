@@ -140,20 +140,30 @@ class CoinbaseClient:
     def get_best_bid_ask(self, product_ids: list[str]) -> dict:
         return self._get("/api/v3/brokerage/best_bid_ask", {"product_ids": product_ids})
 
-    def create_market_buy(self, product_id: str, quote_size: str) -> dict:
-        """Buy spending exactly `quote_size` USD."""
+    def create_market_buy(self, product_id: str, quote_size: str,
+                            client_order_id: str | None = None) -> dict:
+        """Buy spending exactly `quote_size` USD.
+
+        `client_order_id` MUST be plumbed in from the caller for
+        idempotency — Coinbase rejects duplicate ids within 24h
+        with the same `client_order_id`. Without this contract a
+        cron retry / network flap can double-buy real money.
+        Audit-fix F2 (2026-05-07).
+        """
         body = {
-            "client_order_id": str(uuid.uuid4()),
+            "client_order_id": client_order_id or str(uuid.uuid4()),
             "product_id": product_id,
             "side": "BUY",
             "order_configuration": {"market_market_ioc": {"quote_size": quote_size}},
         }
         return self._post("/api/v3/brokerage/orders", body)
 
-    def create_market_sell(self, product_id: str, base_size: str) -> dict:
-        """Sell `base_size` units of the base asset."""
+    def create_market_sell(self, product_id: str, base_size: str,
+                             client_order_id: str | None = None) -> dict:
+        """Sell `base_size` units of the base asset. Same idempotency
+        contract as create_market_buy."""
         body = {
-            "client_order_id": str(uuid.uuid4()),
+            "client_order_id": client_order_id or str(uuid.uuid4()),
             "product_id": product_id,
             "side": "SELL",
             "order_configuration": {"market_market_ioc": {"base_size": base_size}},
@@ -162,3 +172,27 @@ class CoinbaseClient:
 
     def get_order(self, order_id: str) -> dict:
         return self._get(f"/api/v3/brokerage/orders/historical/{order_id}")
+
+    def list_open_orders(self) -> list[dict]:
+        """List all OPEN orders. Used by the wash-trade guard.
+
+        Coinbase's `/orders/historical/batch` accepts an `order_status`
+        filter; we ask for OPEN only (pending fills + partial fills).
+        Pagination is handled across `cursor`.
+        """
+        out: list[dict] = []
+        cursor = ""
+        while True:
+            params: dict = {"order_status": "OPEN"}
+            if cursor:
+                params["cursor"] = cursor
+            res = self._get("/api/v3/brokerage/orders/historical/batch", params)
+            out.extend(res.get("orders", []) or [])
+            cursor = res.get("cursor", "") or ""
+            if not cursor:
+                break
+            if len(out) > 1000:
+                # Hard safety: the batch endpoint defaults to 100/page;
+                # we shouldn't ever see >1000 open Coinbase orders.
+                break
+        return out

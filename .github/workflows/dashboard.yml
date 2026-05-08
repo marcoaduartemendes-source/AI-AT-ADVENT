@@ -111,6 +111,17 @@ jobs:
           POLYGON_API_KEY:     ${{ secrets.POLYGON_API_KEY }}
           FRED_API_KEY:        ${{ secrets.FRED_API_KEY }}
           HEALTHCHECKS_PING_URL_DASHBOARD: ${{ secrets.HEALTHCHECKS_PING_URL_DASHBOARD }}
+          # DRY / LIVE mode env vars so the dashboard's mode classifier
+          # renders the correct badge per strategy. Without these the
+          # dashboard rendered every strategy as DRY (matching defaults)
+          # — including the four strategies actually trading real money
+          # on Coinbase. Audit-fix MED (2026-05-07).
+          DRY_RUN:                 ${{ vars.ORCHESTRATOR_DRY_RUN || 'true' }}
+          DRY_RUN_COINBASE:        ${{ vars.DRY_RUN_COINBASE || 'true' }}
+          DRY_RUN_ALPACA:          ${{ vars.DRY_RUN_ALPACA || 'false' }}
+          DRY_RUN_KALSHI:          ${{ vars.DRY_RUN_KALSHI || 'false' }}
+          LIVE_STRATEGIES:         ${{ vars.LIVE_STRATEGIES }}
+          ALLOW_LIVE_TRADING:      ${{ vars.ALLOW_LIVE_TRADING }}
         run: python src/build_dashboard.py
 
       - name: Commit dashboard if changed

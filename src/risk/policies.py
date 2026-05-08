@@ -159,6 +159,15 @@ class RiskConfig:
     """Fraction of equity any one strategy can trade per UTC day before
     new opens are rejected. Closing trades (is_closing=True) bypass."""
 
+    # Audit-fix F5 (2026-05-07): for live-money venues with small per-
+    # order caps (e.g. $100 on Coinbase), the notional governor doesn't
+    # bite until the strategy has fired ~50 buys. The order-count
+    # governor catches a flapping strategy in O(N) instead.
+    max_strategy_daily_orders: int = 24
+    """Max BUY-side orders per strategy per UTC day. 0 disables.
+    24 covers `crypto_funding_carry`'s 8h-cadence × 3 symbols × 4×
+    safety multiplier."""
+
     @classmethod
     def from_env(cls) -> RiskConfig:
         """Build config from env vars. Repo workflow can override any field

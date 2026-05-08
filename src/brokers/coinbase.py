@@ -12,7 +12,10 @@ Symbol naming follows Coinbase's own product_id (e.g. "BTC-USD",
 """
 from __future__ import annotations
 
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, UTC
 
 from trading.coinbase_client import CoinbaseClient
@@ -26,6 +29,7 @@ from .base import (
     Account,
     AssetClass,
     BrokerAdapter,
+    BrokerCapability,
     BrokerError,
     Candle,
     Order,
@@ -39,6 +43,12 @@ from .base import (
 
 class CoinbaseAdapter(BrokerAdapter):
     venue = "coinbase"
+    # Audit-fix F7 (2026-05-07): declare capabilities so the
+    # orchestrator's wash-trade guard, intra-cycle pending tracker,
+    # and stale-order canceller actually run on Coinbase. Without
+    # this declaration the live venue had zero protection against
+    # duplicate-order races between concurrent strategies.
+    capabilities = frozenset({BrokerCapability.GET_OPEN_ORDERS})
 
     def __init__(self, api_key: str = "", api_secret: str = ""):
         self.api_key = api_key or os.environ.get("COINBASE_API_KEY", "")
@@ -166,16 +176,43 @@ class CoinbaseAdapter(BrokerAdapter):
         if side == OrderSide.BUY:
             if notional_usd is None:
                 raise BrokerError("Coinbase MARKET BUY requires notional_usd")
-            res = self.client.create_market_buy(symbol, f"{notional_usd:.2f}")
+            res = self.client.create_market_buy(
+                symbol, f"{notional_usd:.2f}",
+                client_order_id=client_order_id,
+            )
         else:
             if quantity is None:
                 raise BrokerError("Coinbase MARKET SELL requires quantity")
-            res = self.client.create_market_sell(symbol, f"{quantity:.8f}")
+            res = self.client.create_market_sell(
+                symbol, f"{quantity:.8f}",
+                client_order_id=client_order_id,
+            )
 
+        # Audit-fix F3 (2026-05-07): the previous code fell back to
+        # `order_id="unknown"` when the response was malformed and
+        # let _record_trade write a row that fill polling could never
+        # transition (get_unfilled_trades excludes 'unknown'). Real
+        # USD left the wallet, ledger thought it was in-flight, FIFO
+        # recompute skipped the row → phantom-loss class bug.
+        # Now: if Coinbase's response has no parseable order_id, raise
+        # so the caller records the failure cleanly. The full response
+        # is logged for forensics; success_response.failure_reason is
+        # surfaced first if present.
         order_id = (
             res.get("order_id")
-            or res.get("success_response", {}).get("order_id", "unknown")
+            or res.get("success_response", {}).get("order_id")
         )
+        if not order_id:
+            failure_reason = (
+                res.get("failure_reason")
+                or res.get("error_response", {}).get("error")
+                or res.get("error_response", {}).get("message")
+                or "no order_id in response"
+            )
+            raise BrokerError(
+                f"Coinbase order_id missing for {side.value} {symbol}: "
+                f"{failure_reason}; response keys={list(res.keys())[:8]}"
+            )
         return Order(
             venue=self.venue,
             order_id=order_id,
@@ -220,6 +257,55 @@ class CoinbaseAdapter(BrokerAdapter):
     def cancel_order(self, order_id: str) -> None:
         # Not implemented in underlying client; raise so strategies can detect
         raise BrokerError("Coinbase cancel_order not yet implemented in adapter")
+
+    def get_open_orders(self) -> list[Order]:
+        """List currently-OPEN orders. Audit-fix F7 (2026-05-07).
+        Best-effort: returns [] on adapter failure rather than raising,
+        so a Coinbase outage doesn't take the cycle down — the
+        fail-closed degraded-venue path in the orchestrator handles
+        the recovery semantics."""
+        try:
+            raw = self.client.list_open_orders()
+        except Exception as e:
+            logger.warning(f"Coinbase list_open_orders failed: {e}")
+            raise
+        out: list[Order] = []
+        for o in raw:
+            cfg = o.get("order_configuration") or {}
+            mkt_cfg = cfg.get("market_market_ioc") or {}
+            qty_str = mkt_cfg.get("base_size") or mkt_cfg.get("quote_size")
+            try:
+                qty = float(qty_str) if qty_str else 0.0
+            except (TypeError, ValueError):
+                qty = 0.0
+            side = OrderSide.BUY if (o.get("side") or "").upper() == "BUY" else OrderSide.SELL
+            status = OrderStatus.OPEN
+            try:
+                filled = float(o.get("filled_size") or 0)
+            except (TypeError, ValueError):
+                filled = 0.0
+            avg_px = None
+            try:
+                v = o.get("average_filled_price")
+                avg_px = float(v) if v not in (None, "", "0") else None
+            except (TypeError, ValueError):
+                avg_px = None
+            out.append(Order(
+                venue=self.venue,
+                order_id=o.get("order_id") or "",
+                symbol=o.get("product_id") or "",
+                side=side,
+                type=OrderType.MARKET,
+                quantity=qty,
+                notional_usd=None,
+                limit_price=None,
+                status=status,
+                filled_quantity=filled,
+                filled_avg_price=avg_px,
+                submitted_at=None,
+                raw=o,
+            ))
+        return out
 
     # ── Capabilities ─────────────────────────────────────────────────────
 

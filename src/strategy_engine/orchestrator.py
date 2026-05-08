@@ -17,6 +17,7 @@ Designed to be called once per cycle from the workflow (e.g. every 5 min).
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import time
 import uuid
@@ -192,15 +193,28 @@ class Orchestrator:
             self._venues_ok_consecutive_failures = (
                 getattr(self, "_venues_ok_consecutive_failures", 0) + 1
             )
-            if self._venues_ok_consecutive_failures == 2:
+            # Audit-fix F9 (2026-05-07): when live-trading is active,
+            # alert on the FIRST failed cycle instead of waiting for 2.
+            # 5 minutes of unmonitored crypto exposure with stuck
+            # open orders is too long.
+            is_live = bool(self.cfg.live_strategies) or any([
+                self.cfg.dry_run_coinbase is False,
+                self.cfg.dry_run_alpaca is False and "paper" not in
+                    (os.environ.get("ALPACA_ENDPOINT") or "").lower(),
+                self.cfg.dry_run_kalshi is False,
+            ])
+            alert_threshold = 1 if is_live else 2
+            if self._venues_ok_consecutive_failures == alert_threshold:
                 try:
                     from common.alerts import alert
+                    severity = "critical" if is_live else "warning"
                     alert(
-                        f"One or more broker accounts unreachable for "
-                        f"2 consecutive cycles. Trading is degraded; "
-                        f"check broker auth / API status. "
+                        f"Broker unreachable "
+                        f"({self._venues_ok_consecutive_failures} cycle"
+                        f"{'s' if self._venues_ok_consecutive_failures != 1 else ''}) — "
+                        f"{'LIVE TRADING' if is_live else 'paper'} degraded. "
                         f"equity_usd=${state.equity_usd:,.2f}",
-                        severity="warning",
+                        severity=severity,
                     )
                 except Exception as e:
                     logger.warning(f"alert dispatch failed: {e}")

@@ -236,6 +236,116 @@ class TestErrorsDb:
 # ─── Backtest-metadata stub ─────────────────────────────────────────
 
 
+class TestKillSwitchClosesShorts:
+    """Audit-fix F1 (2026-05-07). KILL switch must emit BUY-to-close
+    for short legs, not just SELL-to-close for longs. Strategies that
+    hold short legs invisible to spot-only get_positions() must use
+    a ledger-based fallback to know about them.
+    """
+
+    def test_default_on_emergency_close_handles_negative_qty(self):
+        from strategy_engine.base import (
+            Strategy,
+            StrategyContext,
+        )
+        from brokers.base import OrderSide
+        from datetime import UTC, datetime
+
+        class _S(Strategy):
+            name = "x"
+            venue = "alpaca"
+            def compute(self, ctx):
+                return []
+
+        s = _S(broker=None)
+        ctx = StrategyContext(
+            timestamp=datetime.now(UTC),
+            portfolio_equity_usd=10_000,
+            target_alloc_pct=0.1,
+            target_alloc_usd=1_000,
+            risk_multiplier=1.0,
+            open_positions={
+                "SPY": {"quantity": 5},     # long → SELL
+                "QQQ": {"quantity": -3},    # short → BUY
+                "IWM": {"quantity": 0},     # flat → ignore
+            },
+            scout_signals={},
+        )
+        proposals = s.on_emergency_close(ctx)
+        sides = {(p.symbol, p.side, p.quantity) for p in proposals}
+        assert ("SPY", OrderSide.SELL, 5) in sides
+        assert ("QQQ", OrderSide.BUY, 3) in sides
+        assert all(p.symbol != "IWM" for p in proposals)
+
+    def test_net_qty_from_ledger_detects_short(self, tmp_path, monkeypatch):
+        """A strategy that placed a SELL with no prior BUY (shorting
+        a futures/perp leg) shows up as net_qty < 0 from the ledger."""
+        import sqlite3
+        db = tmp_path / "trades.db"
+        with sqlite3.connect(db) as conn:
+            conn.execute("""
+                CREATE TABLE trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL, strategy TEXT,
+                    product_id TEXT, side TEXT,
+                    amount_usd REAL, quantity REAL, price REAL,
+                    order_id TEXT, pnl_usd REAL, dry_run INTEGER,
+                    fill_status TEXT, entry_price REAL, venue TEXT
+                )
+            """)
+            conn.executemany(
+                "INSERT INTO trades (timestamp, strategy, product_id, "
+                "side, amount_usd, quantity, price, order_id, "
+                "fill_status, venue) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                [
+                    # Long leg: BUY 1 BTC-USD
+                    ("2026-05-08T00:00:00+00:00", "carry", "BTC-USD",
+                     "BUY", 50000, 1.0, 50000, "o-1", "FILLED", "coinbase"),
+                    # Short leg: SELL 1 BTC-PERP-INTX (no prior BUY)
+                    ("2026-05-08T00:00:01+00:00", "carry", "BTC-PERP-INTX",
+                     "SELL", 50000, 1.0, 50000, "o-2", "FILLED", "coinbase"),
+                ],
+            )
+        monkeypatch.setenv("TRADING_DB_PATH", str(db))
+
+        from strategies._helpers import net_qty_from_ledger
+        net = net_qty_from_ledger("carry", "coinbase")
+        assert net["BTC-USD"] == pytest.approx(1.0)
+        assert net["BTC-PERP-INTX"] == pytest.approx(-1.0)
+
+
+class TestCoinbaseUnknownOrderIdRejects:
+    """Audit-fix F3 (2026-05-07). Coinbase responses missing order_id
+    must raise BrokerError, not write a stuck-PENDING row to the
+    ledger. The previous behaviour was the user's reported failure
+    mode: real USD left wallet, ledger thought it was in-flight.
+    """
+
+    def test_no_order_id_raises_broker_error(self, monkeypatch):
+        from brokers.base import BrokerError, OrderSide, OrderType
+        from brokers.coinbase import CoinbaseAdapter
+
+        adapter = CoinbaseAdapter.__new__(CoinbaseAdapter)
+        adapter.venue = "coinbase"
+        adapter.is_paper = False
+        adapter._product_cache = {}
+
+        class _StubClient:
+            def create_market_buy(self, *a, **kw):
+                # Coinbase response shape with no order_id
+                return {"failure_reason": "INSUFFICIENT_FUND"}
+
+        adapter.client = _StubClient()
+        with pytest.raises(BrokerError) as excinfo:
+            adapter.place_order(
+                symbol="BTC-USD",
+                side=OrderSide.BUY,
+                type=OrderType.MARKET,
+                notional_usd=100,
+            )
+        assert "INSUFFICIENT_FUND" in str(excinfo.value)
+
+
 class TestPerBrokerFlagEmptyString:
     """Regression: GitHub Actions injects ${{ vars.X }} as the empty
     string when X is unset. The previous _per_broker_flag returned

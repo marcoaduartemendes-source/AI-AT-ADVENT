@@ -31,10 +31,31 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+import time as _time
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _NY_TZ = _ZoneInfo("America/New_York")
+except Exception:
+    _NY_TZ = UTC
+
+
+def _ny_converter(*args):
+    """See run_orchestrator._ny_converter — same shim, same reason."""
+    secs = None
+    for a in args:
+        if isinstance(a, (int, float)):
+            secs = a
+            break
+    if secs is None:
+        secs = _time.time()
+    return datetime.fromtimestamp(secs, tz=UTC).astimezone(_NY_TZ).timetuple()
+
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s ET [%(levelname)s] %(name)s: %(message)s",
 )
+logging.Formatter.converter = staticmethod(_ny_converter)
 logger = logging.getLogger("dashboard")
 
 
@@ -65,8 +86,12 @@ def _strategy_mode(name: str, venue: str, live_strategies: set[str]) -> str:
     if venue_dry is None:
         venue_dry = global_dry
 
-    # Per-strategy LIVE override beats every DRY flag.
-    if name in live_strategies:
+    # Per-strategy LIVE override beats every DRY flag — but only
+    # when ALLOW_LIVE_TRADING=1 is also set. Mirrors the orchestrator's
+    # two-key gate so the badge can't claim LIVE while the runtime
+    # gate has actually neutralized LIVE_STRATEGIES.
+    allow_live = os.environ.get("ALLOW_LIVE_TRADING") == "1"
+    if name in live_strategies and allow_live:
         return "LIVE"
 
     if venue_dry:
@@ -442,9 +467,20 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
-    generated_at = datetime.now(UTC).isoformat()
-    snapshot_at = risk.get("snapshot_at") or "—"
-    ks_at = risk.get("kill_switch_at") or ""
+    def _to_et(iso_ts: str | None) -> str:
+        """Convert an ISO-8601 UTC timestamp to America/New_York for
+        display. Falls back to the original string on parse failure."""
+        if not iso_ts or iso_ts == "—":
+            return "—"
+        try:
+            dt = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
+            return dt.astimezone(_NY_TZ).strftime("%Y-%m-%d %H:%M ET")
+        except (ValueError, TypeError):
+            return iso_ts
+
+    generated_at = datetime.now(UTC).astimezone(_NY_TZ).strftime("%Y-%m-%d %H:%M ET")
+    snapshot_at = _to_et(risk.get("snapshot_at"))
+    ks_at = _to_et(risk.get("kill_switch_at") or None) if risk.get("kill_switch_at") else ""
 
     html_doc = f"""<!DOCTYPE html>
 <html lang="en">
