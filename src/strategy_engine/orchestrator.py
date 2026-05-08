@@ -132,6 +132,12 @@ class Orchestrator:
         # lazily by _positions_for and invalidated at the start of
         # every cycle.
         self._position_view_cache: dict[str, dict] = {}
+        # Per-cycle running counter of qty SOLD across strategies on
+        # the same (venue, symbol). Read+updated by _clamp_sell_quantity
+        # so strategy N+1 sees the pool diminished by strategies 1..N.
+        # Without this, multi-strategy SELL contention triggers HTTP
+        # 403 "insufficient qty available" — observed 2026-05-08.
+        self._sold_this_cycle: dict[tuple[str, str], float] = {}
         # Venues whose pending-orders read failed this cycle. Strategies
         # are blocked from opening NEW positions on a degraded venue
         # (closing positions still allowed) — see _pending_orders_for
@@ -653,20 +659,46 @@ class Orchestrator:
         path on the broker so server-side notional→qty conversion
         can't drift over the limit. Returns False (and increments
         report.proposals_rejected) only if 0 qty is available — caller
-        should skip in that case."""
+        should skip in that case.
+
+        Multi-strategy contention: when N strategies all want to SELL
+        the same symbol in one cycle, the cached qty_available is
+        shared. Without intra-cycle bookkeeping, strategy 2..N each
+        try to sell ~90% of the *original* qty_available — but
+        strategy 1 already consumed most of it, so 2..N hit Alpaca
+        HTTP 403 "insufficient qty available" (observed 2026-05-08).
+        Fix: deduct each strategy's clamped qty from a per-cycle
+        running counter so subsequent strategies see the diminished
+        pool. Counter is reset at cycle start in run_cycle().
+        """
         if proposal.side != OrderSide.SELL:
             return True
 
         BUFFER = 0.90  # keep 10% safety margin under qty_available
+        # Tiny-qty cutoff: Alpaca formats `f"{q:.6f}"` rounds 5e-7 → "0.000000"
+        # which the API rejects as "qty must be > 0". And anything below ~1e-4
+        # share is below typical fractional minimums anyway.
+        MIN_SELL_QTY = 1e-4
+
+        consumed = getattr(self, "_sold_this_cycle", None)
+        if consumed is None:
+            consumed = {}
+            self._sold_this_cycle = consumed
+        key = (proposal.venue, proposal.symbol)
+        already_consumed = consumed.get(key, 0.0)
+
         cached = self.risk.cached_positions(proposal.venue)
         for pos in cached:
             if pos.symbol != proposal.symbol:
                 continue
-            avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
+            avail_raw = float(pos.raw.get("qty_available_parsed", pos.quantity)
                             if pos.raw else pos.quantity)
-            if avail <= 0:
+            avail = max(avail_raw - already_consumed, 0.0)
+            if avail <= MIN_SELL_QTY:
                 logger.info(f"[{proposal.strategy}] SKIP SELL "
-                            f"{proposal.symbol}: 0 qty available")
+                            f"{proposal.symbol}: 0 qty available "
+                            f"(raw={avail_raw:.4f}, "
+                            f"consumed_this_cycle={already_consumed:.4f})")
                 report.proposals_rejected += 1
                 return False
 
@@ -677,14 +709,21 @@ class Orchestrator:
                 break
 
             max_qty = avail * BUFFER
+            final_qty = min(requested_qty, max_qty)
+            if final_qty < MIN_SELL_QTY:
+                logger.info(f"[{proposal.strategy}] SKIP SELL "
+                            f"{proposal.symbol}: clamped qty "
+                            f"{final_qty:.6f} < min {MIN_SELL_QTY}")
+                report.proposals_rejected += 1
+                return False
+
             if requested_qty > max_qty:
                 logger.info(f"[{proposal.strategy}] CLAMP SELL "
                             f"{proposal.symbol} qty {requested_qty:.4f} "
                             f"→ {max_qty:.4f} "
                             f"(qty_available={avail:.4f}, buffer=10%)")
-                proposal.quantity = max_qty
-            else:
-                proposal.quantity = requested_qty
+            proposal.quantity = final_qty
+            consumed[key] = already_consumed + final_qty
             # Force qty path on the broker so its server-side
             # notional→qty conversion can't drift back over.
             proposal.notional_usd = None

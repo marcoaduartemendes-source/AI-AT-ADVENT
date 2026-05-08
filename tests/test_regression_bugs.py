@@ -168,8 +168,12 @@ class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
 
         # Stub the public-products endpoint to return one ETH future
         # with positive basis, forcing the strategy to open a trade.
+        # base_increment must be set or the strategy will round qty
+        # down to 0 and skip — observed 2026-05-08 INVALID_SIZE_PRECISION
+        # fix added base_increment-aware rounding.
         fake_products = [
-            {"product_id": "ET-29MAY26-CDE", "price": "3500"},
+            {"product_id": "ET-29MAY26-CDE", "price": "3500",
+             "base_increment": "0.001"},
         ]
         from strategies import crypto_basis_trade as cbt
         monkeypatch.setattr(cbt, "cached_get", lambda url, params=None, ttl_seconds=0: (
