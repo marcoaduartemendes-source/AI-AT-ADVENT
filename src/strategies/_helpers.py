@@ -90,6 +90,55 @@ def equity_regime(ctx) -> str:
     return sig.get("equity_regime", "NORMAL")
 
 
+def net_qty_from_ledger(strategy: str, venue: str | None = None
+                          ) -> dict[str, float]:
+    """Reconstruct net position quantities for a strategy from the
+    trades ledger. Returns {symbol: net_qty} where positive = long,
+    negative = short.
+
+    Why: the spot-only `CoinbaseAdapter.get_positions()` doesn't
+    surface perp/future legs, so `ctx.open_positions` misses them
+    even though the orchestrator placed (and recorded) the SELL legs
+    of carry/basis trades. KILL-switch overrides need this fallback
+    to close shorts they can't see in the broker snapshot.
+
+    Audit-fix F1 (2026-05-07).
+    """
+    import os
+    import sqlite3
+    from pathlib import Path
+    db_path = os.environ.get(
+        "TRADING_DB_PATH", "data/trading_performance.db"
+    )
+    if not Path(db_path).exists():
+        return {}
+    out: dict[str, float] = {}
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            where = ["strategy = ?", "fill_status = 'FILLED'"]
+            params: list = [strategy]
+            if venue:
+                where.append("(venue = ? OR venue IS NULL)")
+                params.append(venue)
+            sql = (
+                "SELECT product_id, side, COALESCE(quantity, 0) AS qty "
+                "  FROM trades "
+                f" WHERE {' AND '.join(where)}"
+            )
+            for row in conn.execute(sql, params).fetchall():
+                sym = row["product_id"]
+                qty = float(row["qty"] or 0)
+                if not sym or qty == 0:
+                    continue
+                delta = qty if row["side"] == "BUY" else -qty
+                out[sym] = out.get(sym, 0.0) + delta
+    except sqlite3.Error:
+        return {}
+    # Drop zero-net symbols (closed positions)
+    return {s: q for s, q in out.items() if abs(q) > 1e-9}
+
+
 def past_cooldown(pos: dict, cooldown_days: int) -> bool:
     """True if the position's entry_time is older than `cooldown_days`.
     Missing or unparseable entry_time → treated as past cooldown so a

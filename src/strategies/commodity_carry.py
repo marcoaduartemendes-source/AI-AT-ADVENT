@@ -94,3 +94,25 @@ class CommodityCarry(Strategy):
                 ))
 
         return proposals
+
+    def on_emergency_close(self, ctx):
+        """KILL — close both backwardated longs and contango shorts.
+        Audit-fix F1 (2026-05-07): ledger fallback for shorts
+        invisible to spot-only get_positions.
+        """
+        from ._helpers import net_qty_from_ledger
+        proposals = super().on_emergency_close(ctx)
+        already_closing = {(p.symbol, p.side) for p in proposals}
+        for symbol, qty in net_qty_from_ledger(self.name, self.venue).items():
+            if qty >= 0:
+                continue
+            if (symbol, OrderSide.BUY) in already_closing:
+                continue
+            proposals.append(TradeProposal(
+                strategy=self.name, venue=self.venue, symbol=symbol,
+                side=OrderSide.BUY, order_type=OrderType.MARKET,
+                quantity=abs(qty), confidence=1.0,
+                reason=f"emergency_close ledger-short {symbol} (KILL)",
+                is_closing=True, metadata={"leg": "short_from_ledger"},
+            ))
+        return proposals

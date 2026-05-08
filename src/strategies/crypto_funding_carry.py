@@ -125,3 +125,32 @@ class CryptoFundingCarry(Strategy):
                     ))
 
         return proposals
+
+    def on_emergency_close(self, ctx):
+        """KILL switch — close BOTH legs (spot + perp). Audit-fix F1
+        (2026-05-07): the default `on_emergency_close` only closes
+        long positions visible in `ctx.open_positions`, which doesn't
+        include the perp short leg (Coinbase get_positions is spot-only).
+        We reconstruct net qty per symbol from the trades ledger and
+        emit BUY-to-close for any short legs left open.
+        """
+        from ._helpers import net_qty_from_ledger
+        proposals = super().on_emergency_close(ctx)
+        already_closing = {
+            (p.symbol, p.side) for p in proposals
+        }
+        net = net_qty_from_ledger(self.name, self.venue)
+        for symbol, qty in net.items():
+            if qty >= 0:
+                continue    # long — covered by base on_emergency_close
+            # Short → BUY to close. Skip if we've already emitted this.
+            if (symbol, OrderSide.BUY) in already_closing:
+                continue
+            proposals.append(TradeProposal(
+                strategy=self.name, venue=self.venue, symbol=symbol,
+                side=OrderSide.BUY, order_type=OrderType.MARKET,
+                quantity=abs(qty), confidence=1.0,
+                reason=f"emergency_close ledger-short {symbol} (KILL)",
+                is_closing=True, metadata={"leg": "short_from_ledger"},
+            ))
+        return proposals

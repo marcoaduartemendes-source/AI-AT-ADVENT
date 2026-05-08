@@ -624,6 +624,18 @@ class RiskManager:
                     f"({cfg.max_strategy_daily_notional_pct * 100:.0f}% "
                     f"of equity)", st)
 
+        # ─ Per-strategy daily order-count governor (audit-fix F5).
+        # Catches flapping strategies that fire many small orders
+        # below the notional cap. Closes still bypass.
+        if (not is_closing and strategy_name
+                and cfg.max_strategy_daily_orders > 0):
+            n_today = self._strategy_today_order_count(strategy_name)
+            if n_today >= cfg.max_strategy_daily_orders:
+                return RiskDecision(
+                    Decision.REJECT, 0.0,
+                    f"strategy daily order count {n_today} >= "
+                    f"{cfg.max_strategy_daily_orders} (governor)", st)
+
         # ─ Min size
         if notional_usd < cfg.min_trade_usd:
             return RiskDecision(
@@ -697,6 +709,38 @@ class RiskManager:
         return RiskDecision(Decision.APPROVE, approved, "ok", st)
 
     # ── Per-strategy daily notional bookkeeping ────────────────────────
+
+    def _strategy_today_order_count(self, strategy_name: str) -> int:
+        """Count of BUY orders submitted by `strategy_name` since
+        00:00 UTC. Used by the per-strategy daily order-count
+        governor (audit-fix F5, 2026-05-07) — catches a flapping
+        strategy below the notional cap.
+        """
+        try:
+            import os as _os
+            db_path = _os.environ.get(
+                "TRADING_DB_PATH", "data/trading_performance.db"
+            )
+            from pathlib import Path as _Path
+            if not _Path(db_path).exists():
+                return 0
+            import sqlite3 as _sq
+            with _sq.connect(db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*) FROM trades
+                     WHERE strategy = ?
+                       AND side = 'BUY'
+                       AND timestamp >= strftime('%Y-%m-%dT00:00:00+00:00','now')
+                    """,
+                    (strategy_name,),
+                ).fetchone()
+                return int(row[0]) if row else 0
+        except Exception as e:
+            logger.debug(
+                f"_strategy_today_order_count({strategy_name}): {e}"
+            )
+            return 0
 
     def _strategy_today_notional(self, strategy_name: str) -> float:
         """Return the sum of opening (BUY) entry notional for
