@@ -109,6 +109,25 @@ def _strategy_mode(name: str, venue: str, live_strategies: set[str]) -> str:
     return "DRY"
 
 
+def _config_diagnostic() -> dict:
+    """Returns a snapshot of the env-var state that drives mode
+    classification. Surfaced on the dashboard so the user can see
+    AT A GLANCE why strategies are landing in the mode they're in
+    instead of having to read the source code.
+    """
+    live_strats_raw = os.environ.get("LIVE_STRATEGIES", "").strip()
+    live_strats = {s.strip() for s in live_strats_raw.split(",") if s.strip()}
+    return {
+        "DRY_RUN": os.environ.get("DRY_RUN", "(unset → defaults true)"),
+        "DRY_RUN_COINBASE": os.environ.get("DRY_RUN_COINBASE", "(unset → falls back to DRY_RUN)"),
+        "DRY_RUN_ALPACA": os.environ.get("DRY_RUN_ALPACA", "(unset → falls back to DRY_RUN)"),
+        "ALLOW_LIVE_TRADING": os.environ.get("ALLOW_LIVE_TRADING", "(unset → blocks LIVE_STRATEGIES)"),
+        "LIVE_STRATEGIES": live_strats_raw or "(unset → no per-strategy override)",
+        "_live_strats_set": live_strats,
+        "_allow_live": os.environ.get("ALLOW_LIVE_TRADING") == "1",
+    }
+
+
 # ─── Data loaders ───────────────────────────────────────────────────────
 
 
@@ -346,6 +365,76 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
     )
 
 
+def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> str:
+    """Banner that explains the current mode-classification state.
+
+    Shows: the relevant env vars, their parsed values, and what each
+    venue's representative strategy was classified as. Click "details"
+    to see the raw env-var dump. The dashboard always shows this
+    banner so "why is venue X in mode Y?" never requires reading code.
+    """
+    rows = []
+    for v, mode in venue_modes:
+        color, label = _MODE_BADGE.get(mode, ("#4b5563", mode))
+        rows.append(
+            f"<tr><td><strong>{html.escape(v)}</strong></td>"
+            f"<td><span class=badge style=\"background:{color}\">{label}</span></td></tr>"
+        )
+    rows_html = "\n".join(rows) or "<tr><td colspan=2>(no venues active)</td></tr>"
+
+    # Pre-compute warnings the user is most likely to need
+    warnings = []
+    live_set = diag.get("_live_strats_set") or set()
+    allow_live = diag.get("_allow_live")
+    if live_set and not allow_live:
+        warnings.append(
+            "⚠ <strong>LIVE_STRATEGIES is set but ALLOW_LIVE_TRADING ≠ 1</strong> — "
+            "the runtime safety gate is forcing all listed strategies to DRY. "
+            "Set repo Variable <code>ALLOW_LIVE_TRADING=1</code> to honour the override."
+        )
+    if not live_set and allow_live:
+        warnings.append(
+            "ℹ ALLOW_LIVE_TRADING=1 is set but LIVE_STRATEGIES is empty — "
+            "no strategy will trade real money on Coinbase. Set "
+            "<code>LIVE_STRATEGIES</code> to a comma-separated list."
+        )
+
+    warnings_html = ""
+    if warnings:
+        warnings_html = (
+            "<div style='background:#fef3c7;border:1px solid #f59e0b;"
+            "padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px'>"
+            + "<br>".join(warnings) + "</div>"
+        )
+
+    env_lines = "\n".join(
+        f"<tr><td><code>{html.escape(k)}</code></td>"
+        f"<td><code>{html.escape(str(v))}</code></td></tr>"
+        for k, v in diag.items() if not k.startswith("_")
+    )
+
+    return f"""
+<div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;
+            padding:10px 14px;margin-bottom:14px;font-size:13px;">
+  <strong>Mode by venue</strong>
+  <table style="margin-top:6px;font-size:12px;">{rows_html}</table>
+  {warnings_html}
+  <details style="margin-top:6px">
+    <summary style="cursor:pointer;color:#6b7280;font-size:11px">
+      Why these modes? (click to expand env-var state)
+    </summary>
+    <table style="margin-top:6px;font-size:11px;">{env_lines}</table>
+    <p style="font-size:11px;color:#6b7280;margin:6px 0 0">
+      Set repo Variables at
+      <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/settings/variables/actions" target=_blank>
+        Settings → Secrets and variables → Actions → Variables
+      </a>.
+    </p>
+  </details>
+</div>
+"""
+
+
 def _render_errors_section(errors: list[dict]) -> str:
     """Render the recent-errors panel; empty section when no errors."""
     if not errors:
@@ -447,6 +536,21 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     total_realized = sum(r[2].get("realized_pnl_usd", 0.0) for r in rows)
     total_unrealized = sum(unrealized_by_strategy.values())
     total_pnl = total_realized + total_unrealized
+
+    # Mode diagnostic: shows the env-var state that drives DRY/PAPER/LIVE
+    # classification so the user can debug "why is X showing DRY?" without
+    # reading source.
+    diag = _config_diagnostic()
+    venue_modes_summary = []
+    for v in ("coinbase", "alpaca", "kalshi"):
+        # Pick a representative strategy on this venue to derive its mode
+        sample = next(
+            (n for n, m, _, _ in rows if m and m.get("venue") == v),
+            None,
+        )
+        if sample:
+            mode = _strategy_mode(sample, v, diag["_live_strats_set"])
+            venue_modes_summary.append((v, mode))
     total_closed = sum(r[2].get("n_closed", 0) for r in rows)
     total_wins = sum(r[2].get("wins", 0) for r in rows)
     portfolio_winrate = (total_wins / total_closed) if total_closed else 0.0
@@ -533,6 +637,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   <small><time data-ts="kill-switch">{html.escape(ks_at)}</time></small>
 </div>
 
+{_render_mode_diagnostic(diag, venue_modes_summary)}
+
 <div class="totals">
   <div class="stat" style="grid-column: span 2; border: 2px solid {pnl_color};">
     <div class="label">Total P&amp;L (realized + unrealized)</div>
@@ -602,11 +708,31 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 
 
 def main() -> int:
+    # Healthchecks dead-man's-switch ping. Without this, Healthchecks.io
+    # never sees a successful run and fires the dashboard alert every
+    # cycle even when the build completes cleanly. Best-effort: a
+    # failed ping never blocks the build itself.
+    try:
+        from common.heartbeat import ping_fail, ping_start, ping_success
+    except Exception:
+        ping_start = ping_success = ping_fail = lambda *a, **kw: False
+    try:
+        ping_start("dashboard")
+    except Exception:
+        pass
     try:
         render_dashboard()
+        try:
+            ping_success("dashboard", message="ok")
+        except Exception:
+            pass
         return 0
-    except Exception:
+    except Exception as e:
         logger.exception("Dashboard build failed")
+        try:
+            ping_fail("dashboard", message=f"{type(e).__name__}: {str(e)[:160]}")
+        except Exception:
+            pass
         return 1
 
 
