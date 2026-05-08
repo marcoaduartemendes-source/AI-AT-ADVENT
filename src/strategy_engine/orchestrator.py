@@ -1155,7 +1155,7 @@ class Orchestrator:
             entry["sell_qty"] += float(proposal.quantity or 0)
 
     def _record_trade(self, proposal: TradeProposal, order, decision,
-                       report: "CycleReport | None" = None) -> None:
+                       report: CycleReport | None = None) -> None:
         """Persist an executed trade to trading_performance.db so the
         dashboard can render it.
 
