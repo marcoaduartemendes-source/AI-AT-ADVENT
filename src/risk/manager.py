@@ -814,6 +814,15 @@ class RiskManager:
             KillSwitchState.NORMAL, 0.0, note="manual reset"
         )
 
+    def arm_kill_switch(self, note: str = "manual arm") -> None:
+        """Manually arm the KILL switch. The next orchestrator cycle
+        will see KILL and route every strategy through emergency_close.
+        Use when the user wants to halt trading immediately without
+        waiting for a drawdown trigger."""
+        self.db.record_kill_switch(
+            KillSwitchState.KILL, 0.0, note=note
+        )
+
     # ── Diagnostics ------------------------------------------------------
 
     def summary_dict(self) -> dict:

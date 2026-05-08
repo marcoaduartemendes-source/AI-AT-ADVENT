@@ -1,0 +1,109 @@
+name: Kill switch (arm / reset)
+
+# Global panic button. Arming the kill switch causes the next
+# orchestrator cycle (≤5 min) to force-close every position via
+# strategy.on_emergency_close — across all venues.
+#
+# Linked from the dashboard's "🛑 KILL ALL" button so the user can
+# halt trading without SSHing anywhere.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "arm = halt + close everything; reset = re-enable trading"
+        required: true
+        default: "arm"
+        type: choice
+        options:
+          - arm
+          - reset
+      reason:
+        description: "Optional note (recorded in risk_state.db)"
+        required: false
+        type: string
+        default: "manual via dashboard"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kill-switch-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    permissions:
+      contents: write    # save risk_state.db cache after flip
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Restore risk_state.db cache
+        # Read the orchestrator's most recent state cache so we mutate
+        # the same risk_state.db the orchestrator reads at cycle start.
+        # Using `actions/cache` (not the readonly variant) so we can
+        # save a new entry after we flip the kill flag.
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/risk_state.db
+            data/allocator.db
+            data/trading_performance.db
+            data/alert_dedup.db
+            data/strategy_alert_state.db
+            data/signal_bus.db
+          key: orchestrator-state-killswitch-${{ github.run_number }}
+          restore-keys: orchestrator-state-
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Flip kill-switch state
+        env:
+          ACTION: ${{ github.event.inputs.action }}
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            arm)
+              python src/run_orchestrator.py --arm-kill-switch
+              ;;
+            reset)
+              python src/run_orchestrator.py --reset-kill-switch
+              ;;
+            *)
+              echo "Unknown action: $ACTION"; exit 1
+              ;;
+          esac
+
+      - name: Summary
+        env:
+          ACTION: ${{ github.event.inputs.action }}
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          echo "## Kill-switch $ACTION" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Action:** $ACTION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Reason:** $REASON" >> $GITHUB_STEP_SUMMARY
+          echo "- **Effective:** next orchestrator cycle (≤5 min)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify webhook
+        if: always()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ACTION: ${{ github.event.inputs.action }}
+          REASON: ${{ github.event.inputs.reason }}
+        run: |
+          if [ -z "${ALERT_WEBHOOK_URL}" ]; then exit 0; fi
+          icon='\u{1F6D1}'   # 🛑
+          if [ "$ACTION" = "reset" ]; then icon='\u{2705}'; fi  # ✅
+          payload=$(printf '{"text":"%b Kill switch %s by user — %s"}' "$icon" "$ACTION" "$REASON")
+          curl -sS -X POST -H 'Content-Type: application/json' \
+               -d "$payload" "$ALERT_WEBHOOK_URL" || true
