@@ -52,13 +52,64 @@ from strategies import (
 )
 from strategy_engine.orchestrator import Orchestrator, OrchestratorConfig
 
+# Display logs in America/New_York (the user's home time zone) so the
+# operator can correlate Actions logs with US market hours without
+# doing UTC math. Timestamps in databases are still ISO-8601 UTC —
+# only the human-readable log line is localized.
+import logging.config
+import time as _time
+from datetime import datetime as _dt, UTC
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _NY_TZ = _ZoneInfo("America/New_York")
+except Exception:
+    _NY_TZ = UTC
+
+
+def _ny_converter(*args):
+    """Replacement for time.localtime that returns America/New_York
+    instead. Called by logging's Formatter.converter — has to accept
+    being called as a class-attribute (gets `self` first when assigned
+    as a regular function), so we just ignore non-numeric leading args.
+    """
+    secs = None
+    for a in args:
+        if isinstance(a, (int, float)):
+            secs = a
+            break
+    if secs is None:
+        secs = _time.time()
+    return _dt.fromtimestamp(secs, tz=UTC).astimezone(_NY_TZ).timetuple()
+
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s ET [%(levelname)s] %(name)s: %(message)s",
 )
+logging.Formatter.converter = staticmethod(_ny_converter)
 logger = logging.getLogger("run")
 
 DRY_RUN_DEFAULT = True
+
+
+def _per_broker_flag(envvar: str) -> bool | None:
+    """Parse a per-venue DRY override.
+
+    Returns True (DRY), False (paper/live trading), or None (fall
+    through to the global DRY_RUN). The empty-string case has to
+    return None — GitHub Actions injects every `${{ vars.X }}` ref
+    as the empty string when the underlying variable is unset, and
+    the previous behaviour (treat empty-string as DRY=True) was
+    the reason the cron orchestrator was silently leaving Alpaca
+    in DRY mode even when the user expected paper trading.
+    """
+    v = os.environ.get(envvar)
+    if v is None:
+        return None
+    v = v.strip()
+    if v == "":
+        return None        # empty env var == not set
+    return v.lower() != "false"
 
 
 # ─── Strategy wiring ──────────────────────────────────────────────────────
@@ -426,14 +477,31 @@ def main():
             _n_snapshots = int(_row[0]) if _row else 0
     except Exception:
         _n_snapshots = 0
-    dry_run_check = os.environ.get("DRY_RUN", "true").lower() != "false"
-    if (_n_snapshots == 0 and not dry_run_check
+    # Audit-fix F4 (2026-05-07): cold-start guard must consider any
+    # live-trading path, not only global DRY_RUN=false. With the
+    # recommended config (DRY_RUN=true, LIVE_STRATEGIES=..., per-venue
+    # DRY_RUN_*=false, ALLOW_LIVE_TRADING=1) the guard previously saw
+    # DRY_RUN=true and let the cycle through with zero equity history —
+    # KILL baseline = current equity = drawdown computed from a fresh
+    # peak. Now the guard refuses if ANY live-money path is active.
+    is_live_path = (
+        os.environ.get("DRY_RUN", "true").lower() == "false"
+        or _per_broker_flag("DRY_RUN_COINBASE") is False
+        or _per_broker_flag("DRY_RUN_ALPACA") is False
+        or _per_broker_flag("DRY_RUN_KALSHI") is False
+        or (
+            os.environ.get("LIVE_STRATEGIES", "").strip() != ""
+            and os.environ.get("ALLOW_LIVE_TRADING") == "1"
+        )
+    )
+    if (_n_snapshots == 0 and is_live_path
             and not args.allow_cold_start):
         logger.error(
             "Cold start detected (risk_state.db has 0 equity snapshots) "
-            "but DRY_RUN=false. Refusing to trade — the kill-switch baseline "
-            "would reset to current equity. Pass --allow-cold-start to "
-            "override."
+            "but a live-trading path is active. Refusing to trade — the "
+            "kill-switch baseline would reset to current equity and arm "
+            "at -KILL_DD_PCT of whatever today's number is. "
+            "Pass --allow-cold-start to override."
         )
         return 3
     allocator = MetaAllocator(registry=registry, performance=StrategyPerformance())
@@ -441,25 +509,6 @@ def main():
 
     dry_default = os.environ.get("DRY_RUN", "true").lower() != "false"
     dry_run = dry_default and not args.live
-
-    def _per_broker_flag(envvar: str) -> bool | None:
-        """Parse a per-venue DRY override.
-
-        Returns True (DRY), False (paper/live trading), or None (fall
-        through to the global DRY_RUN). The empty-string case has to
-        return None — GitHub Actions injects every `${{ vars.X }}` ref
-        as the empty string when the underlying variable is unset, and
-        the previous behaviour (treat empty-string as DRY=True) was
-        the reason the cron orchestrator was silently leaving Alpaca
-        in DRY mode even when the user expected paper trading.
-        """
-        v = os.environ.get(envvar)
-        if v is None:
-            return None
-        v = v.strip()
-        if v == "":
-            return None        # empty env var == not set
-        return v.lower() != "false"
 
     live_strategies_raw = os.environ.get("LIVE_STRATEGIES", "")
     live_strategies = {s.strip() for s in live_strategies_raw.split(",") if s.strip()}
