@@ -265,6 +265,51 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
     return out
 
 
+def _recent_trades(limit: int = 50) -> list[dict]:
+    """Last N trades from trading_performance.db, newest first.
+
+    Surfaces what's actually being submitted/filled so the user
+    doesn't have to dig through GH Actions logs to see "is the bot
+    actually trading?". Includes DRY proposals too — they're tagged
+    in the rendered table.
+    """
+    db_path = os.environ.get(
+        "TRADING_DB_PATH", "data/trading_performance.db"
+    )
+    if not Path(db_path).exists():
+        return []
+    out: list[dict] = []
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT timestamp, strategy, product_id, side, "
+                "       amount_usd, quantity, price, order_id, "
+                "       pnl_usd, dry_run, fill_status, venue "
+                "  FROM trades "
+                " ORDER BY id DESC "
+                f" LIMIT {int(limit)}"
+            ).fetchall()
+        for r in rows:
+            out.append({
+                "timestamp":  r["timestamp"],
+                "strategy":   r["strategy"],
+                "symbol":     r["product_id"],
+                "side":       r["side"],
+                "amount_usd": float(r["amount_usd"] or 0),
+                "quantity":   float(r["quantity"] or 0),
+                "price":      float(r["price"] or 0),
+                "order_id":   r["order_id"],
+                "pnl_usd":    (float(r["pnl_usd"]) if r["pnl_usd"] is not None else None),
+                "dry_run":    bool(r["dry_run"]),
+                "fill_status": r["fill_status"] or "UNKNOWN",
+                "venue":      r["venue"] or "",
+            })
+    except sqlite3.Error as e:
+        logger.warning(f"recent_trades read failed: {e}")
+    return out
+
+
 def _risk_snapshot() -> dict:
     """Latest equity + kill-switch event from risk_state.db."""
     out = {
@@ -438,6 +483,87 @@ def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> s
 """
 
 
+def _render_recent_trades(trades: list[dict]) -> str:
+    """Render the most-recent-trades panel.
+
+    User feedback 2026-05-08: "I want to see all the trades on the
+    dashboard". This panel is the primary 'is the bot trading?' view —
+    if it's empty, no trades have been recorded recently. If it shows
+    DRY rows for the venues you expect to be live, your config is off.
+    """
+    if not trades:
+        return """
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Recent trades
+</h2>
+<p style="color:#6b7280; font-size:13px;">
+  No trades recorded yet. If the orchestrator is running but this
+  stays empty, check the Notify-on-failure webhook for errors —
+  most likely a strategy is short-circuiting before it can submit.
+</p>"""
+
+    def _row(t):
+        ts = html.escape(t.get("timestamp") or "")
+        strat = html.escape(t.get("strategy") or "")
+        sym = html.escape(t.get("symbol") or "")
+        side = html.escape(t.get("side") or "")
+        side_color = "#166534" if side == "BUY" else "#7f1d1d"
+        venue = html.escape(t.get("venue") or "")
+        amount = t.get("amount_usd", 0)
+        qty = t.get("quantity", 0)
+        price = t.get("price", 0)
+        status = html.escape(t.get("fill_status") or "")
+        # DRY rows shouldn't be confused with live fills.
+        mode_pill = ('<span style="background:#4b5563;color:white;'
+                     'padding:1px 6px;border-radius:4px;font-size:11px;">DRY</span>'
+                     if t.get("dry_run") else
+                     '<span style="background:#15803d;color:white;'
+                     'padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span>')
+        pnl = t.get("pnl_usd")
+        if pnl is None:
+            pnl_cell = "—"
+        else:
+            pnl_color = "#166534" if pnl > 0 else ("#7f1d1d" if pnl < 0 else "#4b5563")
+            pnl_cell = f'<span style="color:{pnl_color}">{_fmt_money(pnl)}</span>'
+        # Status pill
+        status_color = {
+            "FILLED": "#15803d", "PENDING": "#d97706",
+            "PARTIALLY_FILLED": "#d97706",
+            "CANCELED": "#6b7280", "REJECTED": "#7f1d1d",
+        }.get(status.upper(), "#6b7280")
+        return (
+            f"<tr>"
+            f"<td><time data-ts='trade'>{ts}</time></td>"
+            f"<td>{strat}</td>"
+            f"<td>{venue}</td>"
+            f"<td><code>{sym}</code></td>"
+            f'<td style="color:{side_color};font-weight:600">{side}</td>'
+            f"<td>{qty:.6f}</td>"
+            f'<td style="text-align:right">{_fmt_money(amount)}</td>'
+            f"<td>{_fmt_money(price) if price else '—'}</td>"
+            f'<td><span style="background:{status_color};color:white;'
+            f'padding:1px 6px;border-radius:4px;font-size:11px">{status}</span></td>'
+            f"<td>{mode_pill}</td>"
+            f'<td style="text-align:right">{pnl_cell}</td>'
+            f"</tr>"
+        )
+    rows_html = "\n".join(_row(t) for t in trades)
+    return f"""
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Recent trades ({len(trades)})
+</h2>
+<table style="font-size:12px;">
+  <thead>
+    <tr><th>When</th><th>Strategy</th><th>Venue</th><th>Symbol</th>
+        <th>Side</th><th>Qty</th><th>Notional</th><th>Price</th>
+        <th>Status</th><th>Mode</th><th>P&amp;L</th></tr>
+  </thead>
+  <tbody>
+{rows_html}
+  </tbody>
+</table>"""
+
+
 def _render_errors_section(errors: list[dict]) -> str:
     """Render the recent-errors panel; empty section when no errors."""
     if not errors:
@@ -498,6 +624,10 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     risk = _risk_snapshot()
     metas = _strategy_meta()
     errors = _recent_errors(10)
+    # Last 50 trades — surfaced on the dashboard so the user can answer
+    # "is the bot actually trading right now?" without digging through
+    # the GH Actions log.
+    trades_recent = _recent_trades(50)
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -706,6 +836,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {body_rows}
   </tbody>
 </table>
+
+{_render_recent_trades(trades_recent)}
 
 {_render_errors_section(errors)}
 
