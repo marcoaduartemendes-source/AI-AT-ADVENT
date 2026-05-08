@@ -90,6 +90,40 @@ def equity_regime(ctx) -> str:
     return sig.get("equity_regime", "NORMAL")
 
 
+def crypto_vol_scaler(ctx, default: float = 1.0) -> float:
+    """Return the crypto vol-regime scaler from
+    `crypto_vol_regime_overlay`. Folds in the regime multiplier
+    (LOW=1.0, MEDIUM=0.7, HIGH=0.3) so callers can multiply
+    target_alloc_usd unconditionally.
+
+    Usage in a crypto momentum / breakout strategy:
+        size_usd = ctx.target_alloc_usd * crypto_vol_scaler(ctx)
+    """
+    try:
+        sig = (ctx.scout_signals or {}).get("crypto_vol_scaler") if ctx else None
+    except AttributeError:
+        return default
+    if not isinstance(sig, dict):
+        return default
+    val = sig.get("crypto_momentum")
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+def crypto_regime(ctx) -> str:
+    """Return 'LOW' | 'MEDIUM' | 'HIGH' | 'UNKNOWN' from the crypto
+    vol-regime overlay."""
+    try:
+        sig = (ctx.scout_signals or {}).get("crypto_vol_scaler") if ctx else None
+    except AttributeError:
+        return "UNKNOWN"
+    if not isinstance(sig, dict):
+        return "UNKNOWN"
+    return sig.get("crypto_regime", "UNKNOWN")
+
+
 def past_cooldown(pos: dict, cooldown_days: int) -> bool:
     """True if the position's entry_time is older than `cooldown_days`.
     Missing or unparseable entry_time → treated as past cooldown so a
