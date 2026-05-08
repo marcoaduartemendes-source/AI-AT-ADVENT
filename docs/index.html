@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Auto-reload every 30s. Underlying file updates as fast as the
+     dashboard cron fires (5 min on GitHub Actions; 30s on the VPS
+     systemd timer if enabled). The page will pick up new data on
+     the next reload after a build commits. -->
+<meta http-equiv="refresh" content="30">
 <title>AI-AT-ADVENT — Strategy Performance</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -186,6 +191,14 @@
         <th>Venue</th><th>Exception</th></tr>
   </thead>
   <tbody>
+<tr><td><time data-ts='error'>2026-05-08T19:06:00.281077+00:00</time></td><td><code>strategy.compute</code></td><td>broken</td><td>alpaca</td><td><strong>RuntimeError</strong>: simulated bug<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 358, in run_cycle
+    proposals = strategy.compute(ctx)
+                ^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/home/user/AI-AT-ADVENT/tests/test_orchestrator_e2e.py&quot;, line 268, in compute
+    raise RuntimeError(&quot;simulated bug&quot;)
+RuntimeError: simulated bug
+</pre></details></td></tr>
 <tr><td><time data-ts='error'>2026-05-08T18:56:49.463762+00:00</time></td><td><code>strategy.compute</code></td><td>broken</td><td>alpaca</td><td><strong>RuntimeError</strong>: simulated bug<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
   File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 358, in run_cycle
     proposals = strategy.compute(ctx)
@@ -258,18 +271,10 @@ RuntimeError: simulated bug
     raise RuntimeError(&quot;simulated bug&quot;)
 RuntimeError: simulated bug
 </pre></details></td></tr>
-<tr><td><time data-ts='error'>2026-05-08T13:57:51.532601+00:00</time></td><td><code>strategy.compute</code></td><td>broken</td><td>alpaca</td><td><strong>RuntimeError</strong>: simulated bug<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
-  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 338, in run_cycle
-    proposals = strategy.compute(ctx)
-                ^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/home/user/AI-AT-ADVENT/tests/test_orchestrator_e2e.py&quot;, line 268, in compute
-    raise RuntimeError(&quot;simulated bug&quot;)
-RuntimeError: simulated bug
-</pre></details></td></tr>
   </tbody>
 </table>
 
-<footer>Generated <time data-ts="generated">2026-05-08 14:56 ET</time></footer>
+<footer>Generated <time data-ts="generated">2026-05-08 15:06 ET</time></footer>
 
 </body>
 </html>

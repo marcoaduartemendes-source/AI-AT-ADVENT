@@ -1,11 +1,17 @@
 [Unit]
-Description=AI-AT-ADVENT dashboard rebuild (every 15 min)
+Description=AI-AT-ADVENT dashboard rebuild (every 30s)
 Requires=dashboard.service
 
 [Timer]
-OnCalendar=*:0/15
-Persistent=true
-AccuracySec=10s
+# 30s cadence — keeps the recent-trades panel near-real-time.
+# OnUnitActiveSec triggers the next run 30s AFTER the previous run
+# completes, so we don't pile up overlapping builds when a single
+# rebuild takes longer than 30s (which can happen if broker calls
+# stall). OnBootSec gives a 60s warmup so SQLite migrations from
+# orchestrator.service can finish before the first dashboard build.
+OnBootSec=60s
+OnUnitActiveSec=30s
+AccuracySec=5s
 Unit=dashboard.service
 
 [Install]

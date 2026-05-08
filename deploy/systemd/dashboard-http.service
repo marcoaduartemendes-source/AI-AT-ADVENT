@@ -1,0 +1,30 @@
+[Unit]
+Description=AI-AT-ADVENT dashboard static HTTP server (port 8080)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Long-running HTTP server (NOT oneshot like dashboard.service which
+# rebuilds the file). Serves /opt/ai-at-advent/docs over HTTP so the
+# browser can fetch the latest index.html as fast as dashboard.timer
+# rebuilds it (30s). User opens http://<vps-ip>:8080/ in a browser
+# and the meta-refresh in the HTML reloads the file every 30s.
+#
+# Why not nginx: this is a single static file with auto-reload — the
+# stdlib http.server is enough and adds zero install footprint.
+Type=simple
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent/docs
+ExecStart=/opt/ai-at-advent/.venv/bin/python -m http.server 8080 --bind 0.0.0.0
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadOnlyPaths=/opt/ai-at-advent/docs
+
+[Install]
+WantedBy=multi-user.target

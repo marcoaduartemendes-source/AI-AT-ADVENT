@@ -125,10 +125,19 @@ jobs:
           # Tag rows with which deployment recorded them — useful
           # during the GH→Hetzner transition window.
           DEPLOY_ENV:              github-actions
-          # Alert dedup config (SQLite-backed; cached above so it
-          # works across cycles).
-          ALERTS_MUTE:                  ${{ vars.ALERTS_MUTE }}
-          ALERT_DEDUP_COOLDOWN_SECONDS: ${{ vars.ALERT_DEDUP_COOLDOWN_SECONDS || '3600' }}
+          # Alert dedup + mute config (SQLite-backed; cached above
+          # so dedup state survives across cycles).
+          # Default: mute info/warning, only critical kill-switch
+          # alerts fire. Two strategies of unstable code generated a
+          # Pushover spam storm before the user could react. Set
+          # repo Variable ALERTS_MUTE=0 to opt into the verbose
+          # firehose. 2026-05-08 user request: "im getting bombarded
+          # with pushover alerts fix it".
+          ALERTS_MUTE:                  ${{ vars.ALERTS_MUTE || '1' }}
+          # Cooldown bumped from 1h → 6h so the same recurring drift
+          # message doesn't ping every hour. Critical alerts always
+          # bypass dedup so safety signals are not delayed.
+          ALERT_DEDUP_COOLDOWN_SECONDS: ${{ vars.ALERT_DEDUP_COOLDOWN_SECONDS || '21600' }}
           # Healthchecks.io dead-man's-switch URLs. When set, the
           # orchestrator pings start/success/fail at each cycle so a
           # crashed runner / silent failure surfaces via Healthchecks
