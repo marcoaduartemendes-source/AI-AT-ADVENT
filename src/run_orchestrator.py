@@ -429,6 +429,11 @@ def main():
                           "in risk_state.db; orchestrator picks up the "
                           "new state on the next cycle. Use after you've "
                           "investigated the equity drop that triggered KILL.")
+    ap.add_argument("--arm-kill-switch", action="store_true",
+                     help="Manually arm the kill switch. Next cycle "
+                          "force-closes every position. Use as the "
+                          "panic button when you need to halt trading "
+                          "immediately.")
     args = ap.parse_args()
 
     # Manual KILL reset path. Done before anything else so the operator
@@ -441,16 +446,27 @@ def main():
             "`python src/run_orchestrator.py --status`."
         )
         return 0
+    if args.arm_kill_switch:
+        rm = RiskManager()
+        rm.arm_kill_switch(note="manual arm via dashboard")
+        logger.error(
+            "Kill-switch ARMED. Next orchestrator cycle will close "
+            "all positions. Run with --reset-kill-switch to recover."
+        )
+        return 0
 
     # Two-key guard: even with DRY_RUN=false the orchestrator refuses to
-    # place real orders unless ALLOW_LIVE_TRADING=1. Forces an explicit,
-    # recent decision rather than one stale toggle going live.
+    # place real orders unless ALLOW_LIVE_TRADING is truthy. Accepts
+    # "1", "true", "yes" (case-insensitive) — a user setting the var
+    # to "true" (instead of the literal "1") was getting forced into
+    # DRY mode silently. Observed 2026-05-08.
     dry_env = os.environ.get("DRY_RUN", "true").lower()
-    allow_live = os.environ.get("ALLOW_LIVE_TRADING") == "1"
+    allow_live = (os.environ.get("ALLOW_LIVE_TRADING", "")
+                  .strip().lower() in ("1", "true", "yes"))
     if dry_env == "false" and not allow_live:
         logger.warning(
-            "DRY_RUN=false but ALLOW_LIVE_TRADING != '1' — forcing DRY mode. "
-            "Set ALLOW_LIVE_TRADING=1 to actually place live orders."
+            "DRY_RUN=false but ALLOW_LIVE_TRADING is not truthy — forcing DRY mode. "
+            "Set ALLOW_LIVE_TRADING=1 (or true/yes) to place live orders."
         )
         os.environ["DRY_RUN"] = "true"
     # Same gate applies to LIVE_STRATEGIES (the per-strategy override
@@ -459,9 +475,9 @@ def main():
     # moment a strategy ships — the audit's failure mode 2026-05-07.
     if os.environ.get("LIVE_STRATEGIES") and not allow_live:
         logger.warning(
-            "LIVE_STRATEGIES is set but ALLOW_LIVE_TRADING != '1' — "
+            "LIVE_STRATEGIES is set but ALLOW_LIVE_TRADING is not truthy — "
             "ignoring per-strategy LIVE override. Set "
-            "ALLOW_LIVE_TRADING=1 to honour LIVE_STRATEGIES."
+            "ALLOW_LIVE_TRADING=1 (or true/yes) to honour LIVE_STRATEGIES."
         )
         os.environ["LIVE_STRATEGIES"] = ""
 
@@ -519,7 +535,7 @@ def main():
         or _per_broker_flag("DRY_RUN_KALSHI") is False
         or (
             os.environ.get("LIVE_STRATEGIES", "").strip() != ""
-            and os.environ.get("ALLOW_LIVE_TRADING") == "1"
+            and allow_live
         )
     )
     if (_n_snapshots == 0 and is_live_path

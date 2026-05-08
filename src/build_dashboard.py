@@ -87,10 +87,12 @@ def _strategy_mode(name: str, venue: str, live_strategies: set[str]) -> str:
         venue_dry = global_dry
 
     # Per-strategy LIVE override beats every DRY flag — but only
-    # when ALLOW_LIVE_TRADING=1 is also set. Mirrors the orchestrator's
-    # two-key gate so the badge can't claim LIVE while the runtime
-    # gate has actually neutralized LIVE_STRATEGIES.
-    allow_live = os.environ.get("ALLOW_LIVE_TRADING") == "1"
+    # when ALLOW_LIVE_TRADING is truthy. Mirrors the orchestrator's
+    # two-key gate. Accepts "1", "true", "yes" (case-insensitive)
+    # so a user who set the var to "true" doesn't get a misleading
+    # DRY badge.
+    allow_live = (os.environ.get("ALLOW_LIVE_TRADING", "")
+                  .strip().lower() in ("1", "true", "yes"))
     if name in live_strategies and allow_live:
         return "LIVE"
 
@@ -124,7 +126,8 @@ def _config_diagnostic() -> dict:
         "ALLOW_LIVE_TRADING": os.environ.get("ALLOW_LIVE_TRADING", "(unset → blocks LIVE_STRATEGIES)"),
         "LIVE_STRATEGIES": live_strats_raw or "(unset → no per-strategy override)",
         "_live_strats_set": live_strats,
-        "_allow_live": os.environ.get("ALLOW_LIVE_TRADING") == "1",
+        "_allow_live": (os.environ.get("ALLOW_LIVE_TRADING", "")
+                         .strip().lower() in ("1", "true", "yes")),
     }
 
 
@@ -388,15 +391,15 @@ def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> s
     allow_live = diag.get("_allow_live")
     if live_set and not allow_live:
         warnings.append(
-            "⚠ <strong>LIVE_STRATEGIES is set but ALLOW_LIVE_TRADING ≠ 1</strong> — "
+            "⚠ <strong>LIVE_STRATEGIES is set but ALLOW_LIVE_TRADING is not truthy</strong> — "
             "the runtime safety gate is forcing all listed strategies to DRY. "
-            "Set repo Variable <code>ALLOW_LIVE_TRADING=1</code> to honour the override."
+            "Set repo Variable <code>ALLOW_LIVE_TRADING=1</code> (or true/yes) to honour the override."
         )
     if not live_set and allow_live:
         warnings.append(
-            "ℹ ALLOW_LIVE_TRADING=1 is set but LIVE_STRATEGIES is empty — "
-            "no strategy will trade real money on Coinbase. Set "
-            "<code>LIVE_STRATEGIES</code> to a comma-separated list."
+            "ℹ ALLOW_LIVE_TRADING is truthy but LIVE_STRATEGIES is empty — "
+            "no strategy will trade real money on Coinbase via the per-strategy override. "
+            "(The DRY_RUN_COINBASE=false flag still routes the whole venue live.)"
         )
 
     warnings_html = ""
@@ -602,6 +605,13 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
                 font-weight: 600; font-size: 16px; margin-bottom: 16px;
                 display: flex; justify-content: space-between; align-items: center; }}
   .ks-banner small {{ font-weight: 400; opacity: 0.85; font-size: 12px; }}
+  .ks-actions {{ display: flex; gap: 8px; }}
+  .ks-btn {{ display: inline-block; padding: 6px 12px; border-radius: 6px;
+             font-size: 12px; font-weight: 600; text-decoration: none;
+             border: 1px solid rgba(255,255,255,0.4); }}
+  .ks-arm   {{ background: rgba(239, 68, 68, 0.95); color: white; }}
+  .ks-reset {{ background: rgba(34, 197, 94, 0.95); color: white; }}
+  .ks-btn:hover {{ filter: brightness(1.1); }}
   .totals {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
              gap: 12px; margin-bottom: 20px; }}
   .stat {{ background: white; border: 1px solid #e5e7eb; border-radius: 8px;
@@ -635,6 +645,14 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 <div class="ks-banner" style="background:{ks_color}">
   <span>{ks_emoji} Kill switch: {html.escape(ks)}</span>
   <small><time data-ts="kill-switch">{html.escape(ks_at)}</time></small>
+  <span class="ks-actions">
+    <a class="ks-btn ks-arm" target="_blank"
+       href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions/workflows/kill_switch.yml"
+       title="Open the kill_switch workflow with action=arm preselected. Triggers an immediate close of every position on the next cycle.">🛑 ARM KILL</a>
+    <a class="ks-btn ks-reset" target="_blank"
+       href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions/workflows/kill_switch.yml"
+       title="Reset kill switch to NORMAL — strategies resume trading on the next cycle.">✅ RESET</a>
+  </span>
 </div>
 
 {_render_mode_diagnostic(diag, venue_modes_summary)}
