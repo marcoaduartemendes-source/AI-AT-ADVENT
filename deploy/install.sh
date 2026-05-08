@@ -104,6 +104,10 @@ for unit in orchestrator scouts dashboard; do
     cp "$INSTALL_DIR/deploy/systemd/$unit.service" "/etc/systemd/system/$unit.service"
     cp "$INSTALL_DIR/deploy/systemd/$unit.timer"   "/etc/systemd/system/$unit.timer"
 done
+# dashboard-http.service is a long-running HTTP server (no timer —
+# it stays up). User opens http://<vps-ip>:8080/ to view the dashboard
+# refreshed every 30s by dashboard.timer.
+cp "$INSTALL_DIR/deploy/systemd/dashboard-http.service" "/etc/systemd/system/dashboard-http.service"
 systemctl daemon-reload
 
 # ─── Done ─────────────────────────────────────────────────────────────
@@ -119,14 +123,20 @@ cat <<'BANNER'
 
        nano /etc/aaa.env
 
-  2. Start the timers:
+  2. Start the timers + the dashboard HTTP server:
 
        systemctl enable --now orchestrator.timer scouts.timer dashboard.timer
+       systemctl enable --now dashboard-http.service
 
   3. Verify:
 
        systemctl list-timers --all
        journalctl -u orchestrator.service -f
+       curl -I http://localhost:8080/    # → 200 OK once dashboard built
+
+  4. Dashboard URL: http://<vps-ip>:8080/
+     (Open firewall port 8080 if needed; cloud providers often block
+     non-standard ports by default.)
 
   4. After 24h of clean runs, disable the GitHub Actions cron in
      .github/workflows/orchestrator.yml etc to avoid double-runs.

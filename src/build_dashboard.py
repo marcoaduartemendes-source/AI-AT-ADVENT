@@ -724,6 +724,11 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Auto-reload every 30s. Underlying file updates as fast as the
+     dashboard cron fires (5 min on GitHub Actions; 30s on the VPS
+     systemd timer if enabled). The page will pick up new data on
+     the next reload after a build commits. -->
+<meta http-equiv="refresh" content="30">
 <title>AI-AT-ADVENT — Strategy Performance</title>
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
