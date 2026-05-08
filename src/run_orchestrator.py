@@ -30,7 +30,10 @@ from strategies import (
     CommodityCarry,
     CrossVenueArb,
     CryptoBasisTrade,
+    CryptoBreakout,
     CryptoFundingCarry,
+    CryptoPairsTrading,
+    CryptoVolRegimeOverlay,
     CryptoFundingCarryV2,
     CryptoXSMom,
     DividendGrowth,
@@ -278,6 +281,27 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.05, max_alloc_pct=0.15, min_alloc_pct=0.01,
         description="PEAD gated on RSS news corroboration (P5)",
     ),
+    # ── Phase 6 — advanced crypto strategies (2026-05-08).
+    # All three default to DRY: opt into real money by adding the
+    # name to LIVE_STRATEGIES + ensuring ALLOW_LIVE_TRADING=1.
+    StrategyMeta(
+        name="crypto_pairs_trading",
+        asset_classes=["CRYPTO_SPOT", "CRYPTO_PERP"], venue="coinbase",
+        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
+        description="Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)",
+    ),
+    StrategyMeta(
+        name="crypto_breakout",
+        asset_classes=["CRYPTO_SPOT"], venue="coinbase",
+        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
+        description="Donchian 30d-high breakout w/ trail-stop (P6)",
+    ),
+    StrategyMeta(
+        name="crypto_vol_regime_overlay",
+        asset_classes=["CRYPTO_SPOT"], venue="coinbase",
+        target_alloc_pct=0.00, max_alloc_pct=0.00, min_alloc_pct=0.0,
+        description="Publishes crypto vol-regime scaler; no trades (P6)",
+    ),
 ]
 
 # Backward compat alias used by older test scripts
@@ -294,6 +318,10 @@ def build_strategies(brokers):
         instances["crypto_xsmom"] = CryptoXSMom(cb)
         # Phase 5 — multi-venue consensus version
         instances["crypto_funding_carry_v2"] = CryptoFundingCarryV2(cb)
+        # Phase 6 — advanced crypto strategies
+        instances["crypto_pairs_trading"] = CryptoPairsTrading(cb)
+        instances["crypto_breakout"] = CryptoBreakout(cb)
+        instances["crypto_vol_regime_overlay"] = CryptoVolRegimeOverlay(cb)
     if "alpaca" in brokers:
         al = brokers["alpaca"]
         instances["risk_parity_etf"] = RiskParityETF(al)

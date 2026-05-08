@@ -61,7 +61,12 @@ class CryptoXSMom(Strategy):
         top_n = max(1, int(len(returns) * TOP_QUINTILE_FRAC))
         winners = {sym for sym, _ in returns[:top_n]}
 
-        per_leg = ctx.target_alloc_usd / max(top_n, 1)
+        # Crypto vol-regime scaler from crypto_vol_regime_overlay.
+        # Default 1.0 when the overlay hasn't published yet → unchanged
+        # behaviour. HIGH regime cuts size to 0.3×, MEDIUM to 0.7×.
+        from ._helpers import crypto_vol_scaler
+        regime_mult = crypto_vol_scaler(ctx, 1.0)
+        per_leg = (ctx.target_alloc_usd * regime_mult) / max(top_n, 1)
         proposals: list[TradeProposal] = []
 
         # Open positions for new winners
