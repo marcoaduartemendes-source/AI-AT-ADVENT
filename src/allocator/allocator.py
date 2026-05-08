@@ -192,6 +192,18 @@ class MetaAllocator:
                 weights[n] = prev_pct - self.cfg.max_weekly_delta_pct
             weights[n] = max(0.0, weights[n])
 
+        # 3.5) Floor active-strategy weights at min_alloc_pct.
+        # Audit-fix 2026-05-08: active strategies whose weight had
+        # rounded to ~0 silently produced no proposals every cycle.
+        # The dashboard showed "0 trades" with no visible reason. We
+        # apply the floor BEFORE the final >100% normalization so the
+        # next loop respects max_alloc_pct ceilings while pushing
+        # below-floor strategies up to their floor.
+        for n in list(weights.keys()):
+            meta = self.registry.meta(n)
+            if meta is not None and weights[n] < meta.min_alloc_pct:
+                weights[n] = meta.min_alloc_pct
+
         # 4) Final normalization — sums to <= 100% no matter what.
         # The floor/ceiling and weekly-delta clamps can push the total above
         # 1.0 when many strategies bump up to their min_alloc_pct floor at

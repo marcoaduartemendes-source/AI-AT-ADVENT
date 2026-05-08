@@ -75,6 +75,26 @@ class OrchestratorConfig:
 
 
 @dataclass
+class StrategyOutcome:
+    """Per-strategy outcome for a single cycle. Persisted so the
+    dashboard can answer 'why didn't strategy X trade?' without
+    requiring the user to read GH Actions logs.
+    """
+    strategy: str
+    venue: str
+    state: str = "ACTIVE"               # registry state
+    target_alloc_pct: float = 0.0       # what allocator gave
+    target_alloc_usd: float = 0.0
+    proposed: int = 0                   # strategy.compute() returned N
+    approved: int = 0                   # passed risk + clamp
+    rejected: int = 0
+    submitted: int = 0                  # actually placed at broker
+    dry_logged: int = 0                 # logged DRY, not placed
+    skip_reasons: list[str] = field(default_factory=list)
+    error: str = ""                     # populated if compute() raised
+
+
+@dataclass
 class CycleReport:
     timestamp: datetime
     risk: RiskState | None = None
@@ -85,6 +105,9 @@ class CycleReport:
     trades_submitted: int = 0
     errors: list[str] = field(default_factory=list)
     rebalanced: bool = False
+    cycle_seconds: float = 0.0
+    venue_health: dict[str, str] = field(default_factory=dict)
+    strategy_outcomes: dict[str, StrategyOutcome] = field(default_factory=dict)
 
 
 class Orchestrator:
@@ -125,6 +148,7 @@ class Orchestrator:
 
     def run_cycle(self, scout_signals: dict | None = None) -> CycleReport:
         report = CycleReport(timestamp=datetime.now(UTC))
+        cycle_start = time.time()
         # Cache pending orders per venue for the whole cycle so we don't
         # re-query the broker dozens of times.
         self._pending_cache: dict[str, dict] = {}
@@ -322,8 +346,14 @@ class Orchestrator:
 
         latest_alloc = self.registry.latest_allocations()
         for name, strategy in self.strategies.items():
+            outcome = StrategyOutcome(
+                strategy=name, venue=strategy.venue,
+                state=self.registry.get_state(name).value,
+            )
+            report.strategy_outcomes[name] = outcome
             strategy_state = self.registry.get_state(name)
             if strategy_state in (StrategyState.FROZEN, StrategyState.RETIRED):
+                outcome.skip_reasons.append(f"state={strategy_state.value}")
                 logger.debug(f"[{name}] skipped — state={strategy_state.value}")
                 continue
 
@@ -335,6 +365,10 @@ class Orchestrator:
                 if meta:
                     target_pct = meta.target_alloc_pct
                     target_usd = state.equity_usd * target_pct
+            outcome.target_alloc_pct = target_pct
+            outcome.target_alloc_usd = target_usd
+            if target_usd <= 0:
+                outcome.skip_reasons.append("target_alloc_usd=0")
 
             ctx = StrategyContext(
                 timestamp=report.timestamp,
@@ -378,6 +412,7 @@ class Orchestrator:
                 err_msg = f"compute: {type(e).__name__}: {str(e)[:160]}"
                 self._record_strategy_outcome(name, had_error=True,
                                                 error_text=err_msg)
+                outcome.error = err_msg
                 continue
 
             # Strategy compute succeeded → record clean cycle for the
@@ -385,11 +420,108 @@ class Orchestrator:
             # accumulating.
             self._record_strategy_outcome(name, had_error=False)
 
+            outcome.proposed = len(proposals)
+            if not proposals:
+                outcome.skip_reasons.append("no proposals")
             report.proposals_total += len(proposals)
             for p in proposals:
+                # Snapshot counters so we can attribute the delta to
+                # this specific proposal (and thus this strategy).
+                pre_approved = report.proposals_approved
+                pre_rejected = report.proposals_rejected
+                pre_submitted = report.trades_submitted
                 self._handle_proposal(p, state, report, strategy)
+                if report.proposals_approved > pre_approved:
+                    outcome.approved += 1
+                if report.proposals_rejected > pre_rejected:
+                    outcome.rejected += 1
+                if report.trades_submitted > pre_submitted:
+                    outcome.submitted += 1
+                else:
+                    # Approved but not submitted = DRY-logged.
+                    if report.proposals_approved > pre_approved:
+                        outcome.dry_logged += 1
 
+        # Cycle telemetry — surfaced on the dashboard so the operator
+        # can answer "did the cycle actually run? what did it do?"
+        # without needing GH Actions log access.
+        report.cycle_seconds = round(time.time() - cycle_start, 2)
+        report.venue_health = self._venue_health_snapshot()
+        try:
+            self._persist_cycle_diagnostics(report)
+        except Exception as e:
+            logger.warning(f"persist_cycle_diagnostics failed: {e}")
         return report
+
+    def _venue_health_snapshot(self) -> dict[str, str]:
+        """Per-venue reachability status for the dashboard. 'ok' if the
+        per-cycle account fetch succeeded, 'unreachable' otherwise.
+        Reads from the risk manager's snapshot cache (already populated
+        by compute_state)."""
+        out: dict[str, str] = {}
+        snap = getattr(self.risk, "_broker_snapshots", {}) or {}
+        for venue in self.brokers:
+            v = snap.get(venue) or {}
+            if "account" in v:
+                out[venue] = "ok"
+            else:
+                out[venue] = "unreachable"
+        return out
+
+    def _persist_cycle_diagnostics(self, report: CycleReport) -> None:
+        """Write the cycle's per-strategy outcomes to a SQLite table
+        the dashboard reads. Idempotent — schema-on-first-write."""
+        if self._tracker is None:
+            return
+        import json as _json
+        with self._tracker._conn() as c:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS cycle_diagnostics (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp       TEXT    NOT NULL,
+                    cycle_seconds   REAL    NOT NULL,
+                    proposals_total INTEGER NOT NULL,
+                    proposals_submitted INTEGER NOT NULL,
+                    n_errors        INTEGER NOT NULL,
+                    venue_health    TEXT    NOT NULL,
+                    strategy_outcomes TEXT  NOT NULL
+                )
+            """)
+            c.execute(
+                "INSERT INTO cycle_diagnostics "
+                "(timestamp, cycle_seconds, proposals_total, "
+                " proposals_submitted, n_errors, venue_health, "
+                " strategy_outcomes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    report.timestamp.isoformat(),
+                    report.cycle_seconds,
+                    report.proposals_total,
+                    report.trades_submitted,
+                    len(report.errors),
+                    _json.dumps(report.venue_health),
+                    _json.dumps({
+                        n: {
+                            "venue": o.venue,
+                            "state": o.state,
+                            "target_alloc_pct": o.target_alloc_pct,
+                            "target_alloc_usd": o.target_alloc_usd,
+                            "proposed": o.proposed,
+                            "approved": o.approved,
+                            "rejected": o.rejected,
+                            "submitted": o.submitted,
+                            "dry_logged": o.dry_logged,
+                            "skip_reasons": o.skip_reasons,
+                            "error": o.error,
+                        } for n, o in report.strategy_outcomes.items()
+                    }),
+                ),
+            )
+            # Keep only the most recent 200 cycles to bound DB size.
+            c.execute(
+                "DELETE FROM cycle_diagnostics WHERE id NOT IN "
+                "(SELECT id FROM cycle_diagnostics "
+                " ORDER BY id DESC LIMIT 200)"
+            )
 
     @staticmethod
     def _record_strategy_outcome(name: str, *, had_error: bool,
@@ -1251,14 +1383,28 @@ class Orchestrator:
                 entry_price=entry_price_at_submit,
                 venue=proposal.venue,
             )
-            self._tracker.record_trade(record)
+            # Retry with exponential backoff: SQLite locks under
+            # concurrent dashboard reads sometimes need a moment.
+            # Three attempts with 0.2s, 0.4s, 0.8s sleeps.
+            last_err: Exception | None = None
+            for attempt in range(3):
+                try:
+                    self._tracker.record_trade(record)
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    if attempt < 2:
+                        time.sleep(0.2 * (2 ** attempt))
+            if last_err is not None:
+                raise last_err
         except Exception as e:
             # Surfaced via report.errors so the dashboard's error
             # panel shows it — silently warn-logging meant the user
             # saw "0 trades" without ever knowing the recording side
             # was broken (audit P1, 2026-05-08).
-            msg = (f"[{proposal.strategy}] record_trade failed: {e} "
-                   f"(order placed, ledger out-of-sync)")
+            msg = (f"[{proposal.strategy}] record_trade failed after "
+                   f"3 retries: {e} (order placed, ledger out-of-sync)")
             logger.warning(msg)
             if report is not None:
                 report.errors.append(msg)
