@@ -108,7 +108,21 @@ class CoinbaseClient:
             data=body_str,
             timeout=15,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            # Surface the response body in the exception message — the
+            # default raise_for_status() only prints the status code, so
+            # 400 errors looked opaque ("400 Bad Request for url=…")
+            # without telling us WHY Coinbase rejected. Observed
+            # 2026-05-08 with crypto_xsmom: the body would have shown
+            # the actual reason (likely INVALID_PRODUCT or INVALID_SIZE).
+            try:
+                detail = resp.text[:500]
+            except Exception:
+                detail = "(no body)"
+            raise requests.HTTPError(
+                f"{resp.status_code} {resp.reason} for {path}: {detail}",
+                response=resp,
+            )
         return resp.json()
 
     # ── Endpoints ────────────────────────────────────────────────────────────

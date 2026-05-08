@@ -71,18 +71,21 @@ class TestCryptoPairsTrading:
         assert proposals == []
 
     def test_high_z_triggers_pair_entry(self):
-        # Last day BTC spikes hugely → ratio z >> 2 → expect SHORT BTC perp + LONG ETH spot
+        # Last day BTC spikes hugely → ratio z >> 2 → BTC is "rich",
+        # ETH is "cheap". Spot-only mode: long the cheap leg only
+        # (no perp short until F6 lands).
         btc = [40000.0] * 30 + [40000.0, 40000.0, 40000.0, 40000.0, 60000.0]
         eth = [2000.0] * 35
         s = self._make_strategy(btc_closes=btc, eth_closes=eth)
         proposals = s.compute(_ctx())
-        # Should produce at least one BTC SELL (perp short) + one ETH BUY (spot long)
         symbols_sides = {(p.symbol, p.side) for p in proposals}
-        assert any("BTC" in sym and side == OrderSide.SELL
-                   for sym, side in symbols_sides), (
-            f"Expected BTC SELL (short), got {symbols_sides}"
-        )
+        # Long the cheap leg (ETH) when BTC is rich.
         assert ("ETH-USD", OrderSide.BUY) in symbols_sides
+        # No SELLs until perp support lands (would have been rejected
+        # by the spot adapter anyway).
+        assert not any(side == OrderSide.SELL for _, side in symbols_sides), (
+            f"Spot-only mode should not propose SELLs on entry, got {symbols_sides}"
+        )
 
     def test_zero_alloc_emits_nothing(self):
         s = self._make_strategy([1] * 35, [1] * 35)

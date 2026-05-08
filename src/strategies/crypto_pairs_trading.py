@@ -82,32 +82,28 @@ class CryptoPairsTrading(Strategy):
             )
 
             # Entry: |z| > 2 and not already holding.
+            # Spot-only mode: until perp short support lands (F6 — Coinbase
+            # INTX/CFM endpoints), we long the CHEAP leg only. Captures
+            # mean-reversion of the relative price, just without the
+            # delta-neutral hedge. The previous code emitted a SELL on a
+            # perp symbol that the spot adapter then rejected ("Coinbase
+            # MARKET SELL requires quantity") — bug observed 2026-05-08.
             if not in_position and abs(z) > ENTRY_Z:
-                # z > 0  → A is rich relative to B → SELL A (short via perp), BUY B spot
-                # z < 0  → A is cheap → BUY A spot, SELL B (short via perp)
                 if z > 0:
-                    short_leg = pair["a_perp"]
                     long_leg = pair["b_spot"]
                     rich, cheap = pair["a_spot"], pair["b_spot"]
                 else:
-                    short_leg = pair["b_perp"]
                     long_leg = pair["a_spot"]
                     rich, cheap = pair["b_spot"], pair["a_spot"]
                 reason = (
                     f"{pair['name']} z={z:+.2f} ratio={ratio_now:.4f} "
-                    f"→ short {rich}, long {cheap}"
+                    f"→ long cheap leg {cheap} (rich={rich}, spot-only)"
                 )
                 proposals.append(TradeProposal(
                     strategy=self.name, venue=self.venue, symbol=long_leg,
                     side=OrderSide.BUY, order_type=OrderType.MARKET,
                     notional_usd=per_leg_usd, confidence=0.75, reason=reason,
                     metadata={"pair": pair["name"], "z": z, "leg": "long_spot"},
-                ))
-                proposals.append(TradeProposal(
-                    strategy=self.name, venue=self.venue, symbol=short_leg,
-                    side=OrderSide.SELL, order_type=OrderType.MARKET,
-                    notional_usd=per_leg_usd, confidence=0.75, reason=reason,
-                    metadata={"pair": pair["name"], "z": z, "leg": "short_perp"},
                 ))
 
             # Exit: |z| < 0.5 and currently holding either leg.
