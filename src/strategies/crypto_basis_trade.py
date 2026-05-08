@@ -101,7 +101,20 @@ class CryptoBasisTrade(Strategy):
                 # a SELL would fail with "Coinbase MARKET SELL requires
                 # quantity".
                 spot_qty = per_leg / spot_price if spot_price else 0.0
-                fut_qty = per_leg / future_price if future_price else 0.0
+                fut_qty_raw = per_leg / future_price if future_price else 0.0
+                # Round futures qty DOWN to the contract's base_increment
+                # (e.g. 0.1 ETH for ET futures) so Coinbase doesn't reject
+                # with INVALID_SIZE_PRECISION.
+                fut_qty = self._round_to_increment(
+                    fut_qty_raw, front.get("base_increment", 1.0)
+                )
+                if fut_qty <= 0:
+                    logger.info(
+                        f"[{self.name}] SKIP {front['product_id']} basis entry: "
+                        f"sized qty {fut_qty_raw:.6f} < contract increment "
+                        f"{front.get('base_increment')}"
+                    )
+                    continue
                 spot_kwargs = (
                     {"notional_usd": per_leg}
                     if spot_side == OrderSide.BUY
@@ -196,9 +209,33 @@ class CryptoBasisTrade(Strategy):
                 price = 0.0
             if price <= 0:
                 continue
-            candidates.append({"product_id": pid, "expiry": dt, "price": price})
+            # base_increment tells us the minimum size step. ET futures
+            # use 0.1 ETH per contract; without rounding to this, Coinbase
+            # rejects the order with INVALID_SIZE_PRECISION (observed
+            # 2026-05-08). Default to 1.0 if missing — safer to over-round
+            # than to send an invalid fractional size.
+            try:
+                base_inc = float(p.get("base_increment") or 1.0)
+            except (TypeError, ValueError):
+                base_inc = 1.0
+            if base_inc <= 0:
+                base_inc = 1.0
+            candidates.append({
+                "product_id": pid, "expiry": dt, "price": price,
+                "base_increment": base_inc,
+            })
         candidates.sort(key=lambda c: c["expiry"])
         return candidates[0] if candidates else None
+
+    @staticmethod
+    def _round_to_increment(qty: float, increment: float) -> float:
+        """Round qty DOWN to nearest multiple of increment. Returns 0
+        if qty < increment (caller should skip the proposal in that
+        case)."""
+        if increment <= 0 or qty <= 0:
+            return 0.0
+        steps = int(qty / increment)
+        return round(steps * increment, 10)
 
     def _spot_price(self, spot_sym: str) -> float | None:
         data = cached_get(f"{PUBLIC_PRODUCTS}/{spot_sym}", ttl_seconds=30)

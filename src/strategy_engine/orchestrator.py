@@ -132,6 +132,16 @@ class Orchestrator:
         # lazily by _positions_for and invalidated at the start of
         # every cycle.
         self._position_view_cache: dict[str, dict] = {}
+        # Per-cycle running counter of qty SOLD across strategies on
+        # the same (venue, symbol). Read+updated by _clamp_sell_quantity
+        # so strategy N+1 sees the pool diminished by strategies 1..N.
+        # Without this, multi-strategy SELL contention triggers HTTP
+        # 403 "insufficient qty available" — observed 2026-05-08.
+        self._sold_this_cycle: dict[tuple[str, str], float] = {}
+        # Per-strategy position cache (ledger-attributed) — see
+        # _positions_for_strategy. Reset every cycle so closed-out
+        # positions don't linger.
+        self._per_strategy_pos_cache: dict[tuple[str, str], dict] = {}
         # Venues whose pending-orders read failed this cycle. Strategies
         # are blocked from opening NEW positions on a degraded venue
         # (closing positions still allowed) — see _pending_orders_for
@@ -329,7 +339,17 @@ class Orchestrator:
                 target_alloc_pct=target_pct,
                 target_alloc_usd=target_usd,
                 risk_multiplier=state.multiplier.effective,
-                open_positions=self._positions_for(strategy.venue),
+                # Per-strategy position attribution: a strategy only sees
+                # positions IT opened (via the trades ledger). Without this,
+                # 6 different strategies all see the same GLD position and
+                # all propose to SELL it simultaneously → 5 of 6 hit Alpaca
+                # HTTP 403 "insufficient qty available" (observed 2026-05-08
+                # — 70+ errors per cycle). Falls back to the full venue
+                # snapshot when the ledger reports nothing for the strategy
+                # (e.g. cold start, position opened before this fix).
+                open_positions=self._positions_for_strategy(
+                    name, strategy.venue,
+                ),
                 scout_signals=scout_signals.get(strategy.venue, {}),
                 pending_orders=self._pending_orders_for(strategy.venue),
             )
@@ -446,6 +466,84 @@ class Orchestrator:
                 entry["sell_qty"] += float(o.quantity or 0)
         if cache is not None:
             cache[venue] = out
+        return out
+
+    def _positions_for_strategy(
+        self, strategy_name: str, venue: str,
+    ) -> dict[str, PositionView]:
+        """Per-strategy position view, derived from the trades ledger.
+
+        Without this, every strategy sees the full account positions
+        and 6 strategies all decide to SELL GLD because GLD appears
+        in everyone's `open_positions` — collectively trying to sell
+        more GLD than exists. Per-strategy attribution: a strategy
+        only sees the symbols where its OWN net buys exceed its
+        OWN net sells.
+
+        Builds on top of the venue snapshot (so market_price /
+        unrealized_pnl_usd come from the broker), but masks down to
+        the symbols + qty owned by THIS strategy. Symbols not in the
+        broker snapshot are skipped — the broker is the source of
+        truth for whether the position still exists at all.
+
+        Cached per-cycle so repeated calls within a strategy's compute
+        don't re-hit the SQLite ledger.
+        """
+        cache = getattr(self, "_per_strategy_pos_cache", None)
+        if cache is None:
+            cache = {}
+            self._per_strategy_pos_cache = cache
+        key = (strategy_name, venue)
+        if key in cache:
+            return cache[key]
+
+        from strategies._helpers import net_qty_from_ledger
+        try:
+            ledger_qty = net_qty_from_ledger(strategy_name, venue)
+        except Exception as e:
+            logger.debug(f"[{strategy_name}] ledger fetch failed: {e}")
+            ledger_qty = {}
+
+        venue_positions = self._positions_for(venue)
+
+        # Strategy holds nothing per the ledger → empty view (it
+        # legitimately can't sell anything; only opens new positions).
+        if not ledger_qty:
+            cache[key] = {}
+            return {}
+
+        out: dict[str, PositionView] = {}
+        for symbol, net_qty in ledger_qty.items():
+            if net_qty <= 0:
+                # Short legs (handled by on_emergency_close ledger
+                # fallback for KILL — not surfaced as longable spot
+                # positions).
+                continue
+            full = venue_positions.get(symbol)
+            if full is None:
+                # Strategy's ledger shows ownership but the broker
+                # doesn't see it — could be a partial fill in flight,
+                # a manual-close outside the orchestrator, or a stale
+                # ledger row. Don't pretend we still own it.
+                continue
+            # Cap the per-strategy qty at the broker's actual qty so
+            # we never propose a SELL larger than what exists, even
+            # if the ledger has rounding drift.
+            attributed_qty = min(net_qty, float(full.quantity or 0))
+            if attributed_qty <= 0:
+                continue
+            out[symbol] = PositionView(
+                venue=full.venue,
+                symbol=full.symbol,
+                quantity=attributed_qty,
+                avg_entry_price=full.avg_entry_price,
+                market_price=full.market_price,
+                unrealized_pnl_usd=full.unrealized_pnl_usd
+                    * (attributed_qty / max(float(full.quantity or 1), 1e-9)),
+                entry_time=full.entry_time,
+                asset_class=full.asset_class,
+            )
+        cache[key] = out
         return out
 
     def _positions_for(self, venue: str) -> dict[str, PositionView]:
@@ -653,20 +751,48 @@ class Orchestrator:
         path on the broker so server-side notional→qty conversion
         can't drift over the limit. Returns False (and increments
         report.proposals_rejected) only if 0 qty is available — caller
-        should skip in that case."""
+        should skip in that case.
+
+        Multi-strategy contention: when N strategies all want to SELL
+        the same symbol in one cycle, the cached qty_available is
+        shared. Without intra-cycle bookkeeping, strategy 2..N each
+        try to sell ~90% of the *original* qty_available — but
+        strategy 1 already consumed most of it, so 2..N hit Alpaca
+        HTTP 403 "insufficient qty available" (observed 2026-05-08).
+        Fix: deduct each strategy's clamped qty from a per-cycle
+        running counter so subsequent strategies see the diminished
+        pool. Counter is reset at cycle start in run_cycle().
+        """
         if proposal.side != OrderSide.SELL:
             return True
 
         BUFFER = 0.90  # keep 10% safety margin under qty_available
+        # Tiny-qty cutoff: Alpaca formats `f"{q:.6f}"` rounds 5e-7 → "0.000000"
+        # which the API rejects as "qty must be > 0". And anything below ~1e-4
+        # share is below typical fractional minimums anyway.
+        MIN_SELL_QTY = 1e-4
+
+        consumed = getattr(self, "_sold_this_cycle", None)
+        if consumed is None:
+            consumed = {}
+            self._sold_this_cycle = consumed
+        key = (proposal.venue, proposal.symbol)
+        already_consumed = consumed.get(key, 0.0)
+
         cached = self.risk.cached_positions(proposal.venue)
+        matched = False
         for pos in cached:
             if pos.symbol != proposal.symbol:
                 continue
-            avail = float(pos.raw.get("qty_available_parsed", pos.quantity)
+            matched = True
+            avail_raw = float(pos.raw.get("qty_available_parsed", pos.quantity)
                             if pos.raw else pos.quantity)
-            if avail <= 0:
+            avail = max(avail_raw - already_consumed, 0.0)
+            if avail <= MIN_SELL_QTY:
                 logger.info(f"[{proposal.strategy}] SKIP SELL "
-                            f"{proposal.symbol}: 0 qty available")
+                            f"{proposal.symbol}: 0 qty available "
+                            f"(raw={avail_raw:.4f}, "
+                            f"consumed_this_cycle={already_consumed:.4f})")
                 report.proposals_rejected += 1
                 return False
 
@@ -677,18 +803,42 @@ class Orchestrator:
                 break
 
             max_qty = avail * BUFFER
+            final_qty = min(requested_qty, max_qty)
+            if final_qty < MIN_SELL_QTY:
+                logger.info(f"[{proposal.strategy}] SKIP SELL "
+                            f"{proposal.symbol}: clamped qty "
+                            f"{final_qty:.6f} < min {MIN_SELL_QTY}")
+                report.proposals_rejected += 1
+                return False
+
             if requested_qty > max_qty:
                 logger.info(f"[{proposal.strategy}] CLAMP SELL "
                             f"{proposal.symbol} qty {requested_qty:.4f} "
                             f"→ {max_qty:.4f} "
                             f"(qty_available={avail:.4f}, buffer=10%)")
-                proposal.quantity = max_qty
-            else:
-                proposal.quantity = requested_qty
+            proposal.quantity = final_qty
+            consumed[key] = already_consumed + final_qty
             # Force qty path on the broker so its server-side
             # notional→qty conversion can't drift back over.
             proposal.notional_usd = None
             break
+        if not matched:
+            # Closing orders with an explicit quantity bypass the
+            # "must be held in cache" check — KILL emergency-close +
+            # ledger-derived shorts (perp/futures) legitimately reach
+            # this path with positions the cached_positions() snapshot
+            # doesn't surface. Trust the caller's quantity in that case.
+            if proposal.is_closing and proposal.quantity:
+                return True
+            # The broker has no position for this symbol — we don't
+            # own it, so we can't sell it. Without this guard the
+            # SELL went through with notional_usd, the adapter
+            # computed a qty, and Alpaca rejected with HTTP 422
+            # "qty must be > 0" or HTTP 403. Observed 2026-05-08.
+            logger.info(f"[{proposal.strategy}] SKIP SELL "
+                        f"{proposal.symbol}: not held on {proposal.venue}")
+            report.proposals_rejected += 1
+            return False
         return True
 
     def _execute_proposal(
