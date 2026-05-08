@@ -135,7 +135,21 @@ jobs:
           # alerting (out-of-band from the in-process alert sinks
           # that wouldn't fire if the process itself died).
           HEALTHCHECKS_PING_URL_ORCHESTRATOR: ${{ secrets.HEALTHCHECKS_PING_URL_ORCHESTRATOR }}
-        run: python src/run_orchestrator.py --once
+        # Tee stdout+stderr so the failure-notify step can attach the
+        # tail to the webhook (otherwise log access requires a logged-in
+        # GitHub session). `set -o pipefail` keeps the original exit code.
+        run: |
+          set -o pipefail
+          python -u src/run_orchestrator.py --once 2>&1 | tee /tmp/orchestrator.log
+
+      - name: Upload orchestrator log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-log
+          path: /tmp/orchestrator.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Notify on workflow failure
         if: failure()
@@ -143,11 +157,22 @@ jobs:
           ALERT_WEBHOOK_URL:  ${{ secrets.ALERT_WEBHOOK_URL }}
           ALERT_WEBHOOK_TYPE: ${{ vars.ALERT_WEBHOOK_TYPE }}
         run: |
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # Also dump the tail of the orchestrator log into THIS step's
+          # stdout — annotation summaries don't show step content, but
+          # this step's content is always visible without expanding.
+          echo "════════ orchestrator.log tail (last 80 lines) ════════"
+          tail -n 80 /tmp/orchestrator.log 2>/dev/null || echo "(no log file)"
+          echo "═══════════════════════════════════════════════════════"
+
           if [ -z "${ALERT_WEBHOOK_URL}" ]; then
-            echo "ALERT_WEBHOOK_URL not set; skipping failure notification"
+            echo "ALERT_WEBHOOK_URL not set; skipping webhook notification"
             exit 0
           fi
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          payload=$(printf '{"text":"\\u274c orchestrator workflow failed: %s"}' "$run_url")
+          # Send the tail of the log to the webhook so the user sees
+          # WHY it failed without digging through GH Actions UI.
+          tail_log=$(tail -n 30 /tmp/orchestrator.log 2>/dev/null | \
+                     python3 -c 'import sys,json; print(json.dumps(sys.stdin.read())[1:-1])' || echo "(log unavailable)")
+          payload=$(printf '{"text":"\\u274c orchestrator failed: %s\\n```%s```"}' "$run_url" "$tail_log")
           curl -sS -X POST -H 'Content-Type: application/json' \
                -d "$payload" "$ALERT_WEBHOOK_URL" || true
