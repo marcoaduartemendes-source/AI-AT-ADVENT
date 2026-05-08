@@ -154,8 +154,11 @@ class Orchestrator:
         # clean.
         try:
             self.risk._broker_snapshots = {}
-        except Exception:
-            pass
+        except Exception as e:
+            # Promoted from silent pass → log so a future bug in
+            # risk-snapshot init surfaces instead of vanishing
+            # (audit P1, 2026-05-08).
+            logger.warning(f"risk snapshot reset failed: {e}")
 
         # Phase-0: poll previously-PENDING orders for fills and backfill
         # the trade ledger with real fill prices. Without this every
@@ -498,16 +501,30 @@ class Orchestrator:
             return cache[key]
 
         from strategies._helpers import net_qty_from_ledger
+        ledger_failed = False
         try:
             ledger_qty = net_qty_from_ledger(strategy_name, venue)
         except Exception as e:
-            logger.debug(f"[{strategy_name}] ledger fetch failed: {e}")
+            # Promoted from debug→warning so a SQLite lock / schema
+            # mismatch surfaces in the orchestrator log instead of
+            # silently blocking every SELL the strategy would have
+            # made (audit P1, 2026-05-08).
+            logger.warning(f"[{strategy_name}] ledger fetch failed: {e}")
             ledger_qty = {}
+            ledger_failed = True
 
         venue_positions = self._positions_for(venue)
 
-        # Strategy holds nothing per the ledger → empty view (it
-        # legitimately can't sell anything; only opens new positions).
+        # Ledger failure: fall back to the FULL venue snapshot so
+        # closing trades still work. The previous behaviour ({} →
+        # strategy "owns nothing") silently blocked every SELL
+        # whenever the ledger DB was momentarily unreachable.
+        if ledger_failed:
+            cache[key] = venue_positions
+            return venue_positions
+
+        # Strategy legitimately holds nothing per the ledger — empty
+        # view is the right answer.
         if not ledger_qty:
             cache[key] = {}
             return {}
@@ -883,7 +900,7 @@ class Orchestrator:
             # the wash-trade rejection from Alpaca on opposing-side
             # orders fired by different strategies in one cycle).
             self._mark_pending_intracycle(proposal, order, decision)
-            self._record_trade(proposal, order, decision)
+            self._record_trade(proposal, order, decision, report)
         except Exception as e:
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
@@ -1137,7 +1154,8 @@ class Orchestrator:
             entry["n_sell_pending"] += 1
             entry["sell_qty"] += float(proposal.quantity or 0)
 
-    def _record_trade(self, proposal: TradeProposal, order, decision) -> None:
+    def _record_trade(self, proposal: TradeProposal, order, decision,
+                       report: "CycleReport | None" = None) -> None:
         """Persist an executed trade to trading_performance.db so the
         dashboard can render it.
 
@@ -1235,7 +1253,15 @@ class Orchestrator:
             )
             self._tracker.record_trade(record)
         except Exception as e:
-            logger.warning(f"[{proposal.strategy}] record_trade failed: {e}")
+            # Surfaced via report.errors so the dashboard's error
+            # panel shows it — silently warn-logging meant the user
+            # saw "0 trades" without ever knowing the recording side
+            # was broken (audit P1, 2026-05-08).
+            msg = (f"[{proposal.strategy}] record_trade failed: {e} "
+                   f"(order placed, ledger out-of-sync)")
+            logger.warning(msg)
+            if report is not None:
+                report.errors.append(msg)
 
     def _emergency_close_all(self, report: CycleReport, state: RiskState) -> None:
         """KILL switch fired — every strategy closes its own positions."""
