@@ -708,11 +708,31 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 
 
 def main() -> int:
+    # Healthchecks dead-man's-switch ping. Without this, Healthchecks.io
+    # never sees a successful run and fires the dashboard alert every
+    # cycle even when the build completes cleanly. Best-effort: a
+    # failed ping never blocks the build itself.
+    try:
+        from common.heartbeat import ping_fail, ping_start, ping_success
+    except Exception:
+        ping_start = ping_success = ping_fail = lambda *a, **kw: False
+    try:
+        ping_start("dashboard")
+    except Exception:
+        pass
     try:
         render_dashboard()
+        try:
+            ping_success("dashboard", message="ok")
+        except Exception:
+            pass
         return 0
-    except Exception:
+    except Exception as e:
         logger.exception("Dashboard build failed")
+        try:
+            ping_fail("dashboard", message=f"{type(e).__name__}: {str(e)[:160]}")
+        except Exception:
+            pass
         return 1
 
 
