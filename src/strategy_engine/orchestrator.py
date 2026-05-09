@@ -149,6 +149,16 @@ class Orchestrator:
     def run_cycle(self, scout_signals: dict | None = None) -> CycleReport:
         report = CycleReport(timestamp=datetime.now(UTC))
         cycle_start = time.time()
+        # Heartbeat write at the very start of the cycle, before
+        # ANYTHING else can fail. Disambiguates "orchestrator not
+        # running" (heartbeat absent) from "orchestrator running but
+        # diagnostics broken" (heartbeat present, cycle_diagnostics
+        # empty). The dashboard reads this to show "Orchestrator alive
+        # — last heartbeat 2m ago" even when nothing else has worked.
+        try:
+            self._write_heartbeat(report.timestamp)
+        except Exception as e:
+            logger.debug(f"heartbeat write failed: {e}")
         try:
             return self._run_cycle_body(report, cycle_start, scout_signals)
         finally:
@@ -165,6 +175,29 @@ class Orchestrator:
                 self._persist_cycle_diagnostics(report)
             except Exception as e:
                 logger.warning(f"persist_cycle_diagnostics failed: {e}")
+
+    def _write_heartbeat(self, timestamp) -> None:
+        """Tiny single-row table the dashboard polls to confirm the
+        orchestrator is at least starting cycles. Idempotent."""
+        if self._tracker is None:
+            return
+        with self._tracker._conn() as c:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS cycle_heartbeat (
+                    id        INTEGER PRIMARY KEY CHECK (id = 1),
+                    timestamp TEXT NOT NULL,
+                    git_sha   TEXT
+                )
+            """)
+            git_sha = os.environ.get("GITHUB_SHA", "")[:7] or "local"
+            c.execute(
+                "INSERT INTO cycle_heartbeat (id, timestamp, git_sha) "
+                "VALUES (1, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "  timestamp = excluded.timestamp, "
+                "  git_sha = excluded.git_sha",
+                (timestamp.isoformat(), git_sha),
+            )
 
     def _run_cycle_body(
         self, report: CycleReport, cycle_start: float,
