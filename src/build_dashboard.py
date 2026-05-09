@@ -533,6 +533,60 @@ def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> s
 """
 
 
+def _system_status_line(cycles: list[dict]) -> str:
+    """One-line "is the bot alive and what did it do today" header.
+
+    Renders right under the H1 so the operator gets the answer in the
+    first 2 seconds without scrolling. Counts only cycles from today
+    (UTC) so the numbers don't grow unbounded.
+    """
+    if not cycles:
+        return (
+            '<div style="background:#fef3c7;border:1px solid #f59e0b;'
+            'padding:8px 12px;border-radius:6px;margin-bottom:12px;'
+            'font-size:13px">'
+            "⏳ <strong>Bootstrapping</strong> — orchestrator hasn't "
+            "written its first cycle row yet. Wait ~5 min after the "
+            "next cron tick."
+            "</div>"
+        )
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt.utcnow()
+    today = now.date()
+    today_cycles = [c for c in cycles
+                    if c["timestamp"][:10] == today.isoformat()]
+    last = cycles[0]
+    try:
+        last_ts = _dt.fromisoformat(last["timestamp"].replace("Z", "+00:00"))
+        ago = now - last_ts.replace(tzinfo=None)
+        ago_str = (
+            f"{int(ago.total_seconds())}s ago" if ago < _td(minutes=1)
+            else f"{int(ago.total_seconds()/60)}m ago" if ago < _td(hours=1)
+            else f"{int(ago.total_seconds()/3600)}h ago"
+        )
+    except Exception:
+        ago_str = "unknown"
+    n_today = len(today_cycles)
+    err_today = sum(c["n_errors"] for c in today_cycles)
+    sub_today = sum(c["proposals_submitted"] for c in today_cycles)
+    prop_today = sum(c["proposals_total"] for c in today_cycles)
+    status_color = "#15803d" if ago < _td(minutes=15) else "#d97706" if ago < _td(hours=1) else "#7f1d1d"
+    status_icon = "🟢" if ago < _td(minutes=15) else "🟠" if ago < _td(hours=1) else "🔴"
+    return (
+        f'<div style="background:white;border:2px solid {status_color};'
+        f'padding:10px 14px;border-radius:8px;margin-bottom:14px;'
+        f'font-size:13px;display:flex;flex-wrap:wrap;gap:18px;'
+        f'align-items:center">'
+        f'<span style="font-size:18px">{status_icon}</span>'
+        f'<span><strong>Last cycle:</strong> {ago_str}'
+        f' ({last["cycle_seconds"]:.1f}s)</span>'
+        f'<span><strong>Today:</strong> {n_today} cycles · '
+        f'{prop_today} proposed · {sub_today} submitted · '
+        f'{err_today} errors</span>'
+        f'</div>'
+    )
+
+
 def _render_cycle_diagnostics(cycles: list[dict]) -> str:
     """Render the per-cycle 'is the bot alive?' + per-strategy
     'why didn't X trade?' diagnostic panels.
@@ -964,8 +1018,9 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 <h1>AI-AT-ADVENT — Strategy Performance</h1>
 <div class="meta">
   Snapshot: <time data-ts="snapshot">{html.escape(snapshot_at)}</time>
-  · Updated every 15 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
+  · Updated every 5 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
 </div>
+{_system_status_line(cycles_recent)}
 
 <div class="ks-banner" style="background:{ks_color}">
   <span>{ks_emoji} Kill switch: {html.escape(ks)}</span>

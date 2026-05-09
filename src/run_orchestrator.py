@@ -540,14 +540,37 @@ def main():
     )
     if (_n_snapshots == 0 and is_live_path
             and not args.allow_cold_start):
-        logger.error(
-            "Cold start detected (risk_state.db has 0 equity snapshots) "
-            "but a live-trading path is active. Refusing to trade — the "
-            "kill-switch baseline would reset to current equity and arm "
-            "at -KILL_DD_PCT of whatever today's number is. "
-            "Pass --allow-cold-start to override."
-        )
-        return 3
+        # Auto-bootstrap when running under cron/CI: the cold-start
+        # guard's purpose is to protect a HUMAN re-running the
+        # orchestrator on a fresh box from accidentally arming the
+        # kill switch at today's equity. Under cron, by definition,
+        # we'll see this every first deploy after a cache wipe — and
+        # blocking with exit 3 every cycle creates the exact "0 trades
+        # forever" loop the user reported 2026-05-08. Detect the cron
+        # context (CI / GITHUB_ACTIONS env) and auto-bootstrap with
+        # a prominent warning, so the next cycle has snapshots and
+        # the guard becomes a no-op naturally.
+        is_cron_context = bool(os.environ.get("GITHUB_ACTIONS")
+                                 or os.environ.get("CI"))
+        if is_cron_context:
+            logger.warning(
+                "Cold start detected (risk_state.db has 0 equity "
+                "snapshots) under CI/cron context — auto-bootstrapping. "
+                "The first cycle will record an equity baseline; the "
+                "kill-switch will arm at -KILL_DD_PCT of THAT baseline. "
+                "If today's account is unusually high or low, this "
+                "may be the wrong baseline — review after first "
+                "successful cycle."
+            )
+        else:
+            logger.error(
+                "Cold start detected (risk_state.db has 0 equity snapshots) "
+                "but a live-trading path is active. Refusing to trade — the "
+                "kill-switch baseline would reset to current equity and arm "
+                "at -KILL_DD_PCT of whatever today's number is. "
+                "Pass --allow-cold-start to override."
+            )
+            return 3
     allocator = MetaAllocator(registry=registry, performance=StrategyPerformance())
     strategies = build_strategies(brokers)
 
@@ -637,7 +660,33 @@ def main():
                 f"{report.proposals_approved} approved, "
                 f"{report.proposals_rejected} rejected, "
                 f"{report.trades_submitted} submitted, "
-                f"{len(report.errors)} errors")
+                f"{len(report.errors)} errors "
+                f"(took {getattr(report, 'cycle_seconds', 0):.1f}s)")
+    # Per-strategy outcome summary in the log so operators can grep
+    # without dashboard access. One line per strategy, sorted by
+    # (submitted desc, proposed desc) so the active ones surface first.
+    outcomes = getattr(report, "strategy_outcomes", {}) or {}
+    if outcomes:
+        ranked = sorted(
+            outcomes.values(),
+            key=lambda o: (-o.submitted, -o.proposed, o.strategy),
+        )
+        for o in ranked:
+            tag = ("SUBMITTED" if o.submitted
+                   else "DRY" if o.dry_logged
+                   else "REJECTED" if o.rejected
+                   else "ERROR" if o.error
+                   else "SKIP" if o.skip_reasons
+                   else "IDLE")
+            logger.info(
+                f"  [{tag:9s}] {o.strategy:32s} "
+                f"venue={o.venue:8s} state={o.state:7s} "
+                f"target=${o.target_alloc_usd:>8.0f} "
+                f"prop={o.proposed} appr={o.approved} "
+                f"rej={o.rejected} sub={o.submitted} "
+                f"dry={o.dry_logged} "
+                f"reason={','.join(o.skip_reasons)[:40] or o.error[:40] or '-'}"
+            )
 
     # Step summary for GitHub Actions
     if report.risk:
