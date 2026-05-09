@@ -683,7 +683,33 @@ def main():
     from common.heartbeat import ping_fail, ping_start, ping_success
     ping_start("orchestrator")
 
-    report = orchestrator.run_cycle(scout_signals={})  # scouts wired in W2
+    report = None
+    try:
+        report = orchestrator.run_cycle(scout_signals={})  # scouts wired in W2
+    except Exception as e:
+        # Critical: do NOT propagate — that fails the GH Actions job,
+        # which means actions/cache@v4 skips the post-save step, which
+        # means trades.db / cycle_status.json never persist. Better
+        # to log the failure prominently and continue to the rest of
+        # main() (which writes the diagnostic + does the cache save).
+        # 2026-05-09: this is the same class of bug as PR #17's
+        # exit-code-2 issue, just on a different failure path.
+        logger.exception(
+            f"run_cycle raised — converting to non-fatal so the cache "
+            f"save can still happen: {type(e).__name__}: {e}"
+        )
+        # Synthesize a minimal report so subsequent code doesn't NPE
+        from datetime import UTC, datetime
+        from strategy_engine.orchestrator import CycleReport
+        report = CycleReport(timestamp=datetime.now(UTC))
+        report.errors.append(
+            f"run_cycle uncaught: {type(e).__name__}: {str(e)[:240]}"
+        )
+        try:
+            from common.errors_db import record_error
+            record_error(scope="orchestrator.run_cycle")
+        except Exception:
+            pass
 
     logger.info(f"Cycle complete: {report.proposals_total} proposals, "
                 f"{report.proposals_approved} approved, "
