@@ -266,13 +266,22 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
 
 
 def _recent_trades(limit: int = 50) -> list[dict]:
-    """Last N trades from trading_performance.db, newest first.
+    """Last N trades, newest first.
 
-    Surfaces what's actually being submitted/filled so the user
-    doesn't have to dig through GH Actions logs to see "is the bot
-    actually trading?". Includes DRY proposals too — they're tagged
-    in the rendered table.
+    Same two-source pattern as _recent_cycles:
+      1. docs/trades_recent.json (committed by orchestrator) — primary
+      2. trading_performance.db.trades — fallback
     """
+    json_path = Path("docs/trades_recent.json")
+    if json_path.exists():
+        try:
+            import json as _json
+            rows = _json.loads(json_path.read_text(encoding="utf-8"))
+            if isinstance(rows, list):
+                return rows[:limit]
+        except Exception as e:
+            logger.warning(f"trades_recent.json read failed: {e}")
+
     db_path = os.environ.get(
         "TRADING_DB_PATH", "data/trading_performance.db"
     )

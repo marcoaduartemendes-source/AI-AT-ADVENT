@@ -187,6 +187,15 @@ class Orchestrator:
                 self._dump_cycle_status_json(report)
             except Exception as e:
                 logger.warning(f"dump_cycle_status_json failed: {e}")
+            # And the same for recent trades — read the cache-backed
+            # trades.db, write the latest rows to docs/trades_recent.json
+            # so the dashboard's Recent trades panel can show the
+            # truth even if cache restore on the dashboard side is
+            # off.
+            try:
+                self._dump_recent_trades_json()
+            except Exception as e:
+                logger.warning(f"dump_recent_trades_json failed: {e}")
 
     def _write_heartbeat(self, timestamp) -> None:
         """Tiny single-row table the dashboard polls to confirm the
@@ -271,6 +280,53 @@ class Orchestrator:
         # Atomic write
         tmp_path = out_path.with_suffix(".json.tmp")
         tmp_path.write_text(_json.dumps(buffer, indent=2), encoding="utf-8")
+        tmp_path.replace(out_path)
+
+    def _dump_recent_trades_json(self, limit: int = 50) -> None:
+        """Snapshot the last N trades from trading_performance.db
+        into docs/trades_recent.json. Same belt-and-suspenders
+        rationale as _dump_cycle_status_json — bypasses the cache
+        flow on the dashboard side."""
+        if self._tracker is None:
+            return
+        import json as _json
+        from pathlib import Path as _Path
+        rows: list[dict] = []
+        try:
+            with self._tracker._conn() as c:
+                c.row_factory = sqlite3.Row
+                cursor = c.execute(
+                    "SELECT timestamp, strategy, product_id, side, "
+                    "       amount_usd, quantity, price, order_id, "
+                    "       pnl_usd, dry_run, fill_status, venue "
+                    "  FROM trades "
+                    " ORDER BY id DESC "
+                    f" LIMIT {int(limit)}"
+                )
+                for r in cursor.fetchall():
+                    rows.append({
+                        "timestamp": r["timestamp"],
+                        "strategy": r["strategy"],
+                        "symbol": r["product_id"],
+                        "side": r["side"],
+                        "amount_usd": float(r["amount_usd"] or 0),
+                        "quantity": float(r["quantity"] or 0),
+                        "price": float(r["price"] or 0),
+                        "order_id": r["order_id"],
+                        "pnl_usd": (float(r["pnl_usd"])
+                                     if r["pnl_usd"] is not None else None),
+                        "dry_run": bool(r["dry_run"]),
+                        "fill_status": r["fill_status"] or "UNKNOWN",
+                        "venue": r["venue"] or "",
+                    })
+        except Exception as e:
+            logger.debug(f"trades read for json dump failed: {e}")
+            return
+        out_dir = _Path("docs")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "trades_recent.json"
+        tmp_path = out_path.with_suffix(".json.tmp")
+        tmp_path.write_text(_json.dumps(rows, indent=2), encoding="utf-8")
         tmp_path.replace(out_path)
 
     def _run_cycle_body(
