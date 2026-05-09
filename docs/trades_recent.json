@@ -1,0 +1,16 @@
+[
+  {
+    "timestamp": "2026-05-09T20:12:02.435522+00:00",
+    "strategy": "closer",
+    "symbol": "SPY",
+    "side": "SELL",
+    "amount_usd": 100.0,
+    "quantity": 10.0,
+    "price": 725.0,
+    "order_id": "mock-1-989bd8",
+    "pnl_usd": null,
+    "dry_run": false,
+    "fill_status": "FILLED",
+    "venue": "alpaca"
+  }
+]
