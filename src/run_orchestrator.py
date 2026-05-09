@@ -506,6 +506,35 @@ def main():
             f"{len(names)} strategies: {', '.join(sorted(names))}"
         )
 
+    # Strategy → required env-var map. Strategies whose key is missing
+    # used to short-circuit silently every cycle in compute() (returning
+    # []), which made the dashboard look like the strategy was idle for
+    # no visible reason. Now we WATCH them at startup with a clear log
+    # line so the operator immediately sees "this strategy needs key X
+    # which isn't set". WATCH > FROZEN because we still want the
+    # allocator to compute outcomes for them (so the dashboard's per-
+    # strategy outcome panel shows the real reason).
+    STRATEGY_DEPS: dict[str, list[str]] = {
+        "earnings_momentum":   ["FMP_API_KEY"],
+        "earnings_news_pead":  ["FMP_API_KEY"],
+        "pead":                ["FMP_API_KEY"],
+        "macro_kalshi_v2":     ["FRED_API_KEY"],
+        "commodity_carry":     ["FMP_API_KEY"],
+    }
+    missing_deps: dict[str, list[str]] = {}
+    for sname, vars_needed in STRATEGY_DEPS.items():
+        if registry.meta(sname) is None:
+            continue   # strategy not registered (venue missing)
+        missing = [v for v in vars_needed if not os.environ.get(v)]
+        if missing:
+            missing_deps[sname] = missing
+    if missing_deps:
+        for sname, missing in sorted(missing_deps.items()):
+            logger.warning(
+                f"[deps] {sname}: missing {', '.join(missing)} — "
+                f"strategy will short-circuit every cycle until set"
+            )
+
     risk_manager = RiskManager(brokers=brokers)
 
     # Cold-start guard: refuse to trade when risk_state.db has no

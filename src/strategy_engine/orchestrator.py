@@ -149,6 +149,13 @@ class Orchestrator:
     def run_cycle(self, scout_signals: dict | None = None) -> CycleReport:
         report = CycleReport(timestamp=datetime.now(UTC))
         cycle_start = time.time()
+        # Try to flush any dead-letter records from prior cycles
+        # before doing anything else. Best-effort; silent failure
+        # here is fine — the rows stay in the queue for next cycle.
+        try:
+            self._retry_dead_letters()
+        except Exception as e:
+            logger.debug(f"dead-letter retry sweep failed: {e}")
         # Cache pending orders per venue for the whole cycle so we don't
         # re-query the broker dozens of times.
         self._pending_cache: dict[str, dict] = {}
@@ -1408,6 +1415,151 @@ class Orchestrator:
             logger.warning(msg)
             if report is not None:
                 report.errors.append(msg)
+            # Dead-letter queue: persist the unrecorded order so a
+            # later cycle can retry. Without this, a transient SQLite
+            # lock at the worst moment loses the trade record forever
+            # while the order is real on the broker. Phantom-position
+            # class bug — same family as the original "770 stuck
+            # PENDING orders" failure mode.
+            try:
+                self._record_dead_letter(record, str(e))
+            except Exception as dl_err:
+                logger.warning(
+                    f"[{proposal.strategy}] dead-letter persist also "
+                    f"failed: {dl_err} — order is now invisible to the "
+                    f"orchestrator. Manual reconcile required."
+                )
+
+    def _retry_dead_letters(self) -> None:
+        """Retry any record_trade rows that previously failed.
+
+        Walks the dead-letter table and re-attempts the insert. On
+        success, removes the row. On failure, increments retry_count
+        (and if >5, leaves a warning log; the row stays in the queue
+        but the operator should manual-reconcile).
+        """
+        if self._tracker is None:
+            return
+        try:
+            with self._tracker._conn() as c:
+                rows = c.execute(
+                    "SELECT id, timestamp, strategy, product_id, side, "
+                    "       venue, quantity, price, amount_usd, "
+                    "       order_id, fill_status, dry_run, retry_count "
+                    "  FROM record_trade_dead_letter "
+                    " WHERE retry_count < 5 "
+                    " ORDER BY id ASC LIMIT 50"
+                ).fetchall()
+        except Exception:
+            # Table doesn't exist yet on first deploy — nothing to do.
+            return
+        from trading.performance import TradeRecord
+        from datetime import UTC, datetime
+        for r in rows or []:
+            (row_id, ts, strat, pid, side, venue, qty, px, amount,
+             order_id, fill_status, dry, retry_count) = r
+            try:
+                # ts is an ISO string from the dead-letter row; the
+                # TradeRecord dataclass expects a datetime.
+                try:
+                    ts_dt = datetime.fromisoformat(
+                        ts.replace("Z", "+00:00") if isinstance(ts, str) else ts
+                    )
+                except Exception:
+                    ts_dt = datetime.now(UTC)
+                rec = TradeRecord(
+                    timestamp=ts_dt,
+                    strategy=strat,
+                    product_id=pid,
+                    side=side,
+                    quantity=qty,
+                    price=px,
+                    amount_usd=amount,
+                    order_id=order_id,
+                    pnl_usd=None,
+                    dry_run=bool(dry),
+                    fill_status=fill_status,
+                    venue=venue,
+                )
+                self._tracker.record_trade(rec)
+                # Successful retry → drop the dead-letter row
+                with self._tracker._conn() as c:
+                    c.execute(
+                        "DELETE FROM record_trade_dead_letter WHERE id = ?",
+                        (row_id,),
+                    )
+                logger.info(
+                    f"[deadletter] recovered {strat} {side} {pid} "
+                    f"(retry #{retry_count + 1})"
+                )
+            except Exception as e:
+                # Bump retry_count, leave the row for next cycle
+                try:
+                    with self._tracker._conn() as c:
+                        c.execute(
+                            "UPDATE record_trade_dead_letter SET "
+                            "  retry_count = retry_count + 1, "
+                            "  last_retry_at = ? "
+                            "WHERE id = ?",
+                            (datetime.now(UTC).isoformat(), row_id),
+                        )
+                except Exception:
+                    pass
+                if retry_count + 1 >= 5:
+                    logger.warning(
+                        f"[deadletter] {strat} {side} {pid} has "
+                        f"failed 5 retries — manual reconcile needed: {e}"
+                    )
+
+    def _record_dead_letter(self, record, original_error: str) -> None:
+        """Persist a failed-to-record trade to a dead-letter table.
+        On the next cycle, _retry_dead_letters() picks these up and
+        attempts the insert again. Keeps the broker side and ledger
+        side eventually consistent."""
+        if self._tracker is None:
+            return
+        with self._tracker._conn() as c:
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS record_trade_dead_letter (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp    TEXT NOT NULL,
+                    strategy     TEXT NOT NULL,
+                    product_id   TEXT NOT NULL,
+                    side         TEXT NOT NULL,
+                    venue        TEXT,
+                    quantity     REAL,
+                    price        REAL,
+                    amount_usd   REAL,
+                    order_id     TEXT,
+                    fill_status  TEXT,
+                    dry_run      INTEGER NOT NULL DEFAULT 0,
+                    original_error TEXT NOT NULL,
+                    retry_count  INTEGER NOT NULL DEFAULT 0,
+                    last_retry_at TEXT
+                )
+            """)
+            from datetime import UTC, datetime
+            c.execute(
+                "INSERT INTO record_trade_dead_letter "
+                "(timestamp, strategy, product_id, side, venue, "
+                " quantity, price, amount_usd, order_id, fill_status, "
+                " dry_run, original_error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    datetime.now(UTC).isoformat(),
+                    record.strategy,
+                    record.product_id,
+                    record.side,
+                    getattr(record, "venue", None),
+                    float(record.quantity or 0),
+                    float(record.price or 0),
+                    float(record.amount_usd or 0),
+                    record.order_id or "",
+                    getattr(record, "fill_status", None) or "UNKNOWN",
+                    1 if getattr(record, "dry_run", False) else 0,
+                    original_error[:500],
+                ),
+            )
 
     def _emergency_close_all(self, report: CycleReport, state: RiskState) -> None:
         """KILL switch fired — every strategy closes its own positions."""
