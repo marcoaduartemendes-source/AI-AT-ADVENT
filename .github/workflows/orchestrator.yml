@@ -154,7 +154,17 @@ jobs:
         # GitHub session). `set -o pipefail` keeps the original exit code.
         run: |
           set -o pipefail
-          python -u src/run_orchestrator.py --once 2>&1 | tee /tmp/orchestrator.log
+          # --allow-cold-start: the chicken-and-egg breaker.
+          # The cold-start guard refuses to trade when risk_state.db
+          # has 0 equity snapshots AND a live-trading path is active.
+          # On a fresh runner, that's always true (the cache restore
+          # may not have populated risk_state.db yet, or the prior
+          # cycle's exit-code-2 bug killed every save). Without this
+          # flag the guard returns 3 every cycle and we never break
+          # out of the empty-cache state. Pass it now to bootstrap;
+          # once equity snapshots accumulate (≥1 successful cycle),
+          # the guard becomes a no-op naturally.
+          python -u src/run_orchestrator.py --once --allow-cold-start 2>&1 | tee /tmp/orchestrator.log
 
       - name: Upload orchestrator log
         if: always()
