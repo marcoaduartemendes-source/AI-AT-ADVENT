@@ -160,6 +160,60 @@ class TestColdStartAutoBootstrap:
         )
 
 
+class TestCycleDiagnosticsAlwaysPersistsOnEarlyReturn:
+    """Every cycle must write a cycle_diagnostics row, including
+    cycles that early-return because of KILL switch, all-venues-
+    closed, or compute_state failure. Without this, the dashboard's
+    Cycle activity panel stays empty forever even though cycles
+    are running — observed 2026-05-09 after PRs 17/18/19/20 all
+    merged but the panel still showed "Bootstrapping"."""
+
+    def test_compute_state_failure_still_persists(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from strategy_engine.orchestrator import (
+            Orchestrator, OrchestratorConfig,
+        )
+        from trading.performance import PerformanceTracker
+
+        db_path = str(tmp_path / "trading_performance.db")
+        tracker = PerformanceTracker(db_path=db_path)
+
+        # Build a minimal Orchestrator with mocked components
+        risk = MagicMock()
+        risk.compute_state.side_effect = Exception("simulated broker outage")
+        risk._broker_snapshots = {}
+        registry = MagicMock()
+        registry.latest_allocations.return_value = {}
+        allocator = MagicMock()
+
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.brokers = {}
+        orch.risk = risk
+        orch.registry = registry
+        orch.allocator = allocator
+        orch.strategies = {}
+        orch.cfg = OrchestratorConfig(dry_run=True)
+        orch._tracker = tracker
+        orch._last_rebalance_ts = 0
+        orch._venues_ok_consecutive_failures = 0
+
+        # Run one cycle. compute_state raises → early return.
+        report = orch.run_cycle()
+        assert report is not None
+
+        import sqlite3
+        with sqlite3.connect(db_path) as c:
+            n_rows = c.execute(
+                "SELECT COUNT(*) FROM cycle_diagnostics"
+            ).fetchone()[0]
+        assert n_rows == 1, (
+            "cycle_diagnostics row must be written even when "
+            "compute_state fails. Without this, every cycle that "
+            "hits an early return is invisible to the dashboard."
+        )
+
+
 class TestDeadLetterQueueRecoversTrades:
     """When record_trade fails after all retries, the row goes to a
     dead-letter table. Next cycle's _retry_dead_letters() flushes it.

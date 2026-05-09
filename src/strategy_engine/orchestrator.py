@@ -149,6 +149,27 @@ class Orchestrator:
     def run_cycle(self, scout_signals: dict | None = None) -> CycleReport:
         report = CycleReport(timestamp=datetime.now(UTC))
         cycle_start = time.time()
+        try:
+            return self._run_cycle_body(report, cycle_start, scout_signals)
+        finally:
+            # ALWAYS write diagnostics — even on KILL early-return,
+            # all-venues-closed early-return, or compute_state failure.
+            # Without this, the dashboard's Cycle activity panel showed
+            # "Bootstrapping" forever because every cycle hit an early
+            # return path before reaching the persist call.
+            # Observed 2026-05-09: PRs 17/18/19/20 all merged but
+            # the panel stayed empty.
+            try:
+                report.cycle_seconds = round(time.time() - cycle_start, 2)
+                report.venue_health = self._venue_health_snapshot()
+                self._persist_cycle_diagnostics(report)
+            except Exception as e:
+                logger.warning(f"persist_cycle_diagnostics failed: {e}")
+
+    def _run_cycle_body(
+        self, report: CycleReport, cycle_start: float,
+        scout_signals: dict | None = None,
+    ) -> CycleReport:
         # Try to flush any dead-letter records from prior cycles
         # before doing anything else. Best-effort; silent failure
         # here is fine — the rows stay in the queue for next cycle.
@@ -449,15 +470,8 @@ class Orchestrator:
                     if report.proposals_approved > pre_approved:
                         outcome.dry_logged += 1
 
-        # Cycle telemetry — surfaced on the dashboard so the operator
-        # can answer "did the cycle actually run? what did it do?"
-        # without needing GH Actions log access.
-        report.cycle_seconds = round(time.time() - cycle_start, 2)
-        report.venue_health = self._venue_health_snapshot()
-        try:
-            self._persist_cycle_diagnostics(report)
-        except Exception as e:
-            logger.warning(f"persist_cycle_diagnostics failed: {e}")
+        # Telemetry persistence is in the run_cycle() finally block
+        # so it ALWAYS runs (including early-returns above).
         return report
 
     def _venue_health_snapshot(self) -> dict[str, str]:
