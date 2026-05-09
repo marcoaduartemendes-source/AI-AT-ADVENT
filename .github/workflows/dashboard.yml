@@ -2,12 +2,13 @@ name: Build Dashboard
 
 on:
   schedule:
-    - cron: "*/5 * * * *"    # every 5 min — matches the orchestrator cadence so
-                              # new trades show up on the dashboard within one
-                              # interval. The content-hash gate suppresses no-op
-                              # commits so the GH Actions burn stays modest.
-                              # Bumped from 30 → 5 min 2026-05-08 after the user
-                              # said "I want it as live as possible".
+    # Backup-only schedule. The PRIMARY dashboard rebuild now happens
+    # at the end of orchestrator.yml (the same job that wrote the
+    # trades). This separate workflow runs every 30 min as a safety
+    # net in case the in-orchestrator rebuild step fails. If that
+    # never happens, this just emits no-op commits (suppressed by
+    # the content-hash gate) costing ~30s of CI minutes/hour.
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
