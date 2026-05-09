@@ -160,6 +160,67 @@ class TestColdStartAutoBootstrap:
         )
 
 
+class TestDeadLetterQueueRecoversTrades:
+    """When record_trade fails after all retries, the row goes to a
+    dead-letter table. Next cycle's _retry_dead_letters() flushes it.
+    Without this, an order placed at the broker but unrecorded in
+    trading_performance.db is invisible forever — the original
+    'phantom-loss' bug class.
+    """
+
+    def test_dead_letter_persists_then_recovers(self, tmp_path):
+        from datetime import UTC, datetime
+        from strategy_engine.orchestrator import Orchestrator
+        from trading.performance import PerformanceTracker
+        from trading.portfolio import TradeRecord
+
+        db_path = str(tmp_path / "trading_performance.db")
+        tracker = PerformanceTracker(db_path=db_path)
+        orch = Orchestrator.__new__(Orchestrator)
+        orch._tracker = tracker
+
+        # Manually insert a dead-letter row (simulates a record_trade
+        # failure earlier).
+        record = TradeRecord(
+            timestamp=datetime.now(UTC),
+            strategy="canary_strategy",
+            product_id="BTC-USD",
+            side="BUY",
+            amount_usd=100.0,
+            quantity=0.001,
+            price=100000.0,
+            order_id="test-order-1",
+            dry_run=False,
+            fill_status="FILLED",
+            venue="coinbase",
+        )
+        orch._record_dead_letter(record, "simulated SQLite lock")
+
+        import sqlite3
+        with sqlite3.connect(db_path) as c:
+            n_dl = c.execute(
+                "SELECT COUNT(*) FROM record_trade_dead_letter"
+            ).fetchone()[0]
+        assert n_dl == 1
+
+        # Now run the retry sweep — should succeed and remove the row.
+        orch._retry_dead_letters()
+
+        with sqlite3.connect(db_path) as c:
+            n_dl_after = c.execute(
+                "SELECT COUNT(*) FROM record_trade_dead_letter"
+            ).fetchone()[0]
+            n_trades = c.execute(
+                "SELECT COUNT(*) FROM trades WHERE strategy='canary_strategy'"
+            ).fetchone()[0]
+        assert n_dl_after == 0, (
+            "Dead-letter row should be removed after successful retry"
+        )
+        assert n_trades == 1, (
+            "Trade should have been recorded via the retry path"
+        )
+
+
 class TestCycleDiagnosticsPersistence:
     """The cycle_diagnostics table must be created and written to
     on first run, so the dashboard's Cycle activity panel populates
