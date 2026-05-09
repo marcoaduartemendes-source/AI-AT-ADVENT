@@ -168,6 +168,80 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Rebuild dashboard from same cache
+        # Rebuild docs/index.html in the same job that just wrote
+        # trading_performance.db, so the dashboard is ALWAYS in sync
+        # with the latest cycle's data — no separate dashboard cron
+        # racing on cache restore. Failure here is non-fatal: the
+        # orchestrator's work is already done; only the rendered HTML
+        # is stale until the next cycle.
+        if: always()
+        env:
+          # Mirror the dashboard.yml env so mode classification matches
+          DRY_RUN:                 ${{ vars.ORCHESTRATOR_DRY_RUN || 'true' }}
+          DRY_RUN_COINBASE:        ${{ vars.DRY_RUN_COINBASE || 'true' }}
+          DRY_RUN_ALPACA:          ${{ vars.DRY_RUN_ALPACA || 'false' }}
+          DRY_RUN_KALSHI:          ${{ vars.DRY_RUN_KALSHI || 'false' }}
+          LIVE_STRATEGIES:         ${{ vars.LIVE_STRATEGIES }}
+          ALLOW_LIVE_TRADING:      ${{ vars.ALLOW_LIVE_TRADING }}
+        continue-on-error: true
+        run: |
+          python src/build_dashboard.py || echo "(dashboard build failed; continuing)"
+
+      - name: Commit dashboard if content changed
+        if: always()
+        continue-on-error: true
+        run: |
+          set -e
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p docs
+          # Hash the rendered HTML with dynamic timestamps stripped, so
+          # we only commit when the underlying numbers change — same
+          # logic as dashboard.yml.
+          python - <<'PY'
+          import hashlib, pathlib, re
+          path = pathlib.Path("docs/index.html")
+          if not path.exists():
+              print("no dashboard file"); raise SystemExit
+          html = path.read_text(encoding="utf-8")
+          patterns = [
+            r'<time data-ts="[^"]+">[^<]*</time>',
+            r'"generated_at":\s*"[^"]+"',
+            r'"last_ok_at":\s*"[^"]+"',
+            r'"as_of":\s*"[^"]+"',
+            r'data-generated="[^"]*"',
+            r'fresh.{0,4}seconds.{0,4}\d+',
+          ]
+          stripped = html
+          for p in patterns:
+              stripped = re.sub(p, "", stripped)
+          h = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
+          pathlib.Path("docs/.dashboard-content-hash").write_text(h)
+          PY
+          git add docs/index.html docs/.dashboard-content-hash
+          if git diff --cached --quiet; then
+            echo "No dashboard changes."
+            exit 0
+          fi
+          # Skip when only the hash file moved (timestamp-only change)
+          if ! git diff --cached --name-only | grep -qx docs/.dashboard-content-hash; then
+            echo "Only timestamp moved; skip."
+            git restore --staged docs/index.html
+            exit 0
+          fi
+          git commit -m "chore: refresh trading dashboard (orchestrator)"
+          # Pull-rebase + push retry to handle the race against
+          # concurrent commits. Best-effort; failure here means the
+          # rendered HTML is one cycle stale, which is acceptable.
+          for i in 1 2 3; do
+            git pull --rebase origin "$(git rev-parse --abbrev-ref HEAD)" 2>/dev/null || true
+            if git push; then echo "pushed"; exit 0; fi
+            sleep $((i * 2))
+          done
+          echo "push failed after retries; dashboard will be stale until next cycle"
+          exit 0
+
       - name: Notify on workflow failure
         if: failure()
         env:
