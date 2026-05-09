@@ -219,7 +219,11 @@ jobs:
           h = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
           pathlib.Path("docs/.dashboard-content-hash").write_text(h)
           PY
-          git add docs/index.html docs/.dashboard-content-hash
+          # Also stage docs/cycle_status.json — written by the
+          # orchestrator's _dump_cycle_status_json() in the same
+          # cycle. This is the belt-and-suspenders path that
+          # bypasses actions/cache entirely.
+          git add docs/index.html docs/.dashboard-content-hash docs/cycle_status.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No dashboard changes."
             exit 0

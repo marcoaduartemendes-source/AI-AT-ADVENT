@@ -175,6 +175,18 @@ class Orchestrator:
                 self._persist_cycle_diagnostics(report)
             except Exception as e:
                 logger.warning(f"persist_cycle_diagnostics failed: {e}")
+            # Belt-and-suspenders: also dump the cycle summary to a
+            # JSON file in docs/ that gets committed alongside
+            # index.html. This bypasses the actions/cache flow
+            # entirely. If SQLite persistence is somehow being lost
+            # between cycles (cache races, cache eviction, runner
+            # crash before save), the dashboard can still render
+            # truth from this file. The file accumulates the last
+            # 50 cycles in a ring buffer.
+            try:
+                self._dump_cycle_status_json(report)
+            except Exception as e:
+                logger.warning(f"dump_cycle_status_json failed: {e}")
 
     def _write_heartbeat(self, timestamp) -> None:
         """Tiny single-row table the dashboard polls to confirm the
@@ -198,6 +210,68 @@ class Orchestrator:
                 "  git_sha = excluded.git_sha",
                 (timestamp.isoformat(), git_sha),
             )
+
+    def _dump_cycle_status_json(self, report: CycleReport) -> None:
+        """Belt-and-suspenders: write the cycle's diagnostics to a
+        JSON file in docs/ that gets committed to the repo, bypassing
+        the actions/cache flow that has historically been the source
+        of "0 trades for 5 days" symptoms.
+
+        Maintains a ring buffer of the last 50 cycles. Writes are
+        atomic (temp + rename) so a partial write doesn't corrupt
+        the file. Reads are best-effort — corrupted JSON is treated
+        as "start over".
+        """
+        import json as _json
+        from pathlib import Path as _Path
+        out_dir = _Path("docs")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "cycle_status.json"
+
+        # Load existing buffer (if any), append this cycle, trim.
+        buffer: list[dict] = []
+        if out_path.exists():
+            try:
+                buffer = _json.loads(out_path.read_text(encoding="utf-8"))
+                if not isinstance(buffer, list):
+                    buffer = []
+            except Exception:
+                buffer = []
+
+        entry = {
+            "timestamp": report.timestamp.isoformat(),
+            "cycle_seconds": report.cycle_seconds,
+            "git_sha": os.environ.get("GITHUB_SHA", "")[:7] or "local",
+            "proposals_total": report.proposals_total,
+            "proposals_submitted": report.trades_submitted,
+            "n_errors": len(report.errors),
+            "first_error": (report.errors[0][:240] if report.errors else None),
+            "venue_health": report.venue_health,
+            "strategy_outcomes": {
+                n: {
+                    "venue": o.venue,
+                    "state": o.state,
+                    "target_alloc_usd": round(o.target_alloc_usd, 2),
+                    "target_alloc_pct": round(o.target_alloc_pct, 4),
+                    "proposed": o.proposed,
+                    "approved": o.approved,
+                    "rejected": o.rejected,
+                    "submitted": o.submitted,
+                    "dry_logged": o.dry_logged,
+                    "skip_reasons": o.skip_reasons,
+                    "error": o.error,
+                } for n, o in (report.strategy_outcomes or {}).items()
+            },
+        }
+        buffer.append(entry)
+        # Ring buffer: keep last 50 cycles (~4 hours at 5-min cron)
+        if len(buffer) > 50:
+            buffer = buffer[-50:]
+
+        # Atomic write
+        tmp_path = out_path.with_suffix(".json.tmp")
+        tmp_path.write_text(_json.dumps(buffer, indent=2), encoding="utf-8")
+        tmp_path.replace(out_path)
 
     def _run_cycle_body(
         self, report: CycleReport, cycle_start: float,

@@ -337,7 +337,32 @@ def _read_heartbeat() -> dict | None:
 def _recent_cycles(limit: int = 5) -> list[dict]:
     """Last N cycle diagnostics for the dashboard's 'Cycle activity'
     panel. Empty when the table doesn't exist yet (first deploy after
-    PR #16 lands)."""
+    PR #16 lands).
+
+    Two sources, in order:
+      1. docs/cycle_status.json (committed by orchestrator) — primary
+         source after PR with this comment lands. Bypasses the
+         actions/cache flow entirely.
+      2. trading_performance.db.cycle_diagnostics (cache-restored) —
+         fallback for backwards-compat with cycles written before
+         the JSON-dump path existed.
+    """
+    # Primary: docs/cycle_status.json
+    json_path = Path("docs/cycle_status.json")
+    if json_path.exists():
+        try:
+            import json as _json
+            buf = _json.loads(json_path.read_text(encoding="utf-8"))
+            if isinstance(buf, list) and buf:
+                # JSON has newest at end; reverse for newest-first
+                # then trim to limit
+                rev = list(reversed(buf))[:limit]
+                # Normalize: rename proposals_submitted (already named)
+                return rev
+        except Exception as e:
+            logger.warning(f"cycle_status.json read failed: {e}")
+
+    # Fallback: SQLite cycle_diagnostics
     db_path = os.environ.get(
         "TRADING_DB_PATH", "data/trading_performance.db"
     )

@@ -1,0 +1,173 @@
+[
+  {
+    "timestamp": "2026-05-09T18:44:40.228069+00:00",
+    "cycle_seconds": 0.11,
+    "git_sha": "local",
+    "proposals_total": 0,
+    "proposals_submitted": 0,
+    "n_errors": 0,
+    "first_error": null,
+    "venue_health": {
+      "alpaca": "unreachable"
+    },
+    "strategy_outcomes": {}
+  },
+  {
+    "timestamp": "2026-05-09T18:44:40.550256+00:00",
+    "cycle_seconds": 0.02,
+    "git_sha": "local",
+    "proposals_total": 0,
+    "proposals_submitted": 0,
+    "n_errors": 1,
+    "first_error": "risk.compute_state failed: simulated broker outage",
+    "venue_health": {},
+    "strategy_outcomes": {}
+  },
+  {
+    "timestamp": "2026-05-09T18:44:40.591577+00:00",
+    "cycle_seconds": 0.02,
+    "git_sha": "local",
+    "proposals_total": 0,
+    "proposals_submitted": 0,
+    "n_errors": 1,
+    "first_error": "risk.compute_state failed: simulate failure",
+    "venue_health": {},
+    "strategy_outcomes": {}
+  },
+  {
+    "timestamp": "2026-05-09T18:44:43.584372+00:00",
+    "cycle_seconds": 0.03,
+    "git_sha": "local",
+    "proposals_total": 1,
+    "proposals_submitted": 1,
+    "n_errors": 0,
+    "first_error": null,
+    "venue_health": {
+      "alpaca": "ok"
+    },
+    "strategy_outcomes": {
+      "_dummy": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 55000.0,
+        "target_alloc_pct": 0.55,
+        "proposed": 1,
+        "approved": 1,
+        "rejected": 0,
+        "submitted": 1,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "error": ""
+      }
+    }
+  },
+  {
+    "timestamp": "2026-05-09T18:44:43.686077+00:00",
+    "cycle_seconds": 0.04,
+    "git_sha": "local",
+    "proposals_total": 2,
+    "proposals_submitted": 1,
+    "n_errors": 0,
+    "first_error": null,
+    "venue_health": {
+      "alpaca": "ok"
+    },
+    "strategy_outcomes": {
+      "buyer": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 50000.0,
+        "target_alloc_pct": 0.5,
+        "proposed": 1,
+        "approved": 1,
+        "rejected": 0,
+        "submitted": 1,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "error": ""
+      },
+      "seller": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 50000.0,
+        "target_alloc_pct": 0.5,
+        "proposed": 1,
+        "approved": 0,
+        "rejected": 1,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "error": ""
+      }
+    }
+  },
+  {
+    "timestamp": "2026-05-09T18:44:43.842220+00:00",
+    "cycle_seconds": 0.05,
+    "git_sha": "local",
+    "proposals_total": 0,
+    "proposals_submitted": 0,
+    "n_errors": 1,
+    "first_error": "[broken] compute failed: simulated bug",
+    "venue_health": {
+      "alpaca": "ok"
+    },
+    "strategy_outcomes": {
+      "broken": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 55000.0,
+        "target_alloc_pct": 0.55,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "error": "compute: RuntimeError: simulated bug"
+      }
+    }
+  },
+  {
+    "timestamp": "2026-05-09T18:44:43.994816+00:00",
+    "cycle_seconds": 0.03,
+    "git_sha": "local",
+    "proposals_total": 0,
+    "proposals_submitted": 0,
+    "n_errors": 0,
+    "first_error": null,
+    "venue_health": {
+      "alpaca": "ok"
+    },
+    "strategy_outcomes": {
+      "flaky": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 55000.0,
+        "target_alloc_pct": 0.55,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "error": ""
+      }
+    }
+  },
+  {
+    "timestamp": "2026-05-09T18:44:44.101933+00:00",
+    "cycle_seconds": 0.03,
+    "git_sha": "local",
+    "proposals_total": 0,
+    "proposals_submitted": 1,
+    "n_errors": 0,
+    "first_error": null,
+    "venue_health": {
+      "alpaca": "unreachable"
+    },
+    "strategy_outcomes": {}
+  }
+]
