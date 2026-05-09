@@ -680,6 +680,56 @@ def _system_status_line(cycles: list[dict],
     )
 
 
+def _cycles_since_last(cycles: list[dict]) -> dict[str, dict]:
+    """Compute, per strategy, how many cycles since last
+    proposal/submit/error. Cycles are newest-first.
+
+    Returns dict keyed by strategy name with:
+      {"since_proposed": N, "since_submitted": N, "since_error": N}
+
+    N is the index in the buffer where it last happened (0 = current
+    cycle), or -1 if never observed in the buffer window.
+    """
+    out: dict[str, dict] = {}
+    for i, c in enumerate(cycles):
+        for sname, o in (c.get("strategy_outcomes") or {}).items():
+            if sname not in out:
+                out[sname] = {
+                    "since_proposed": -1,
+                    "since_submitted": -1,
+                    "since_error": -1,
+                }
+            entry = out[sname]
+            if entry["since_proposed"] < 0 and (o.get("proposed", 0) or 0) > 0:
+                entry["since_proposed"] = i
+            if entry["since_submitted"] < 0 and (o.get("submitted", 0) or 0) > 0:
+                entry["since_submitted"] = i
+            if entry["since_error"] < 0 and (o.get("error") or "").strip():
+                entry["since_error"] = i
+    return out
+
+
+def _broker_reachability_streaks(cycles: list[dict]) -> dict[str, int]:
+    """Per-venue: current consecutive-unreachable streak (0 if last
+    cycle was 'ok'). Cycles are newest-first."""
+    streaks: dict[str, int] = {}
+    if not cycles:
+        return streaks
+    # Get all venues mentioned across the buffer
+    venues = set()
+    for c in cycles:
+        venues.update((c.get("venue_health") or {}).keys())
+    for venue in venues:
+        streak = 0
+        for c in cycles:
+            status = (c.get("venue_health") or {}).get(venue)
+            if status == "ok":
+                break
+            streak += 1
+        streaks[venue] = streak
+    return streaks
+
+
 def _render_cycle_diagnostics(cycles: list[dict]) -> str:
     """Render the per-cycle 'is the bot alive?' + per-strategy
     'why didn't X trade?' diagnostic panels.
@@ -705,14 +755,33 @@ def _render_cycle_diagnostics(cycles: list[dict]) -> str:
 </p>"""
 
     latest = cycles[0]
-    # Venue health badges
+    # Venue health badges with reachability streak suffix.
+    # Streak count tells the operator if a venue's been down briefly
+    # (1 cycle = transient) vs persistently (5+ = real outage).
+    streaks = _broker_reachability_streaks(cycles)
     vh = latest.get("venue_health") or {}
+
+    def _venue_badge(vname: str, status: str) -> str:
+        ok = status == "ok"
+        bg = "#15803d" if ok else "#7f1d1d"
+        suffix = ""
+        if not ok:
+            n = streaks.get(vname, 1)
+            suffix = f" ({n} cycle{'' if n == 1 else 's'})"
+        return (
+            f'<span style="background:{bg};color:white;padding:2px 8px;'
+            f'border-radius:4px;font-size:11px">'
+            f'{html.escape(vname)}: {html.escape(status)}{suffix}'
+            f'</span>'
+        )
     vh_html = " · ".join(
-        f'<span style="background:{"#15803d" if v == "ok" else "#7f1d1d"};color:white;padding:2px 8px;border-radius:4px;font-size:11px">{html.escape(name)}: {html.escape(v)}</span>'
-        for name, v in sorted(vh.items())
+        _venue_badge(name, v) for name, v in sorted(vh.items())
     ) or "(no venues active)"
 
-    # Per-strategy outcome table
+    # Per-strategy outcome table — also compute "cycles since last X"
+    # for each strategy so the operator can spot a strategy that's
+    # gone idle (proposed N cycles ago, hasn't moved since).
+    cycles_since = _cycles_since_last(cycles)
     outcomes = latest.get("strategy_outcomes") or {}
     rows = []
     for name in sorted(outcomes.keys()):
@@ -735,6 +804,17 @@ def _render_cycle_diagnostics(cycles: list[dict]) -> str:
         else:
             row_color = "white"
             why = '<span style="color:#6b7280">—</span>'
+        # "Cycles since last *" — shows -1 (formatted as "—") if
+        # the strategy hasn't done it inside the buffer window.
+        cs = cycles_since.get(name, {})
+        sub_cells = cs.get("since_submitted", -1)
+        prop_cells = cs.get("since_proposed", -1)
+        last_sub_str = "—" if sub_cells < 0 else (
+            "now" if sub_cells == 0 else f"{sub_cells}c ago"
+        )
+        last_prop_str = "—" if prop_cells < 0 else (
+            "now" if prop_cells == 0 else f"{prop_cells}c ago"
+        )
         rows.append(
             f'<tr style="background:{row_color}">'
             f"<td><strong>{html.escape(name)}</strong></td>"
@@ -746,10 +826,12 @@ def _render_cycle_diagnostics(cycles: list[dict]) -> str:
             f"<td style='text-align:right'>{o.get('approved', 0)}</td>"
             f"<td style='text-align:right'>{o.get('rejected', 0)}</td>"
             f"<td style='text-align:right'>{o.get('submitted', 0)}</td>"
+            f"<td style='text-align:right;font-size:10px;color:#6b7280'>{last_prop_str}</td>"
+            f"<td style='text-align:right;font-size:10px;color:#6b7280'>{last_sub_str}</td>"
             f"<td>{why}</td>"
             f"</tr>"
         )
-    rows_html = "\n".join(rows) or '<tr><td colspan="10">(no strategies ran)</td></tr>'
+    rows_html = "\n".join(rows) or '<tr><td colspan="12">(no strategies ran)</td></tr>'
 
     # Cycle history sparkline-ish summary
     history_rows = []
@@ -786,6 +868,8 @@ def _render_cycle_diagnostics(cycles: list[dict]) -> str:
       <th style='text-align:right'>Target%</th><th style='text-align:right'>Target$</th>
       <th style='text-align:right'>Proposed</th><th style='text-align:right'>Approved</th>
       <th style='text-align:right'>Rejected</th><th style='text-align:right'>Submitted</th>
+      <th style='text-align:right;font-size:10px' title='Cycles since last proposal'>Last prop.</th>
+      <th style='text-align:right;font-size:10px' title='Cycles since last successful submit'>Last sub.</th>
       <th>Outcome / why</th></tr></thead>
   <tbody>{rows_html}</tbody>
 </table>"""
