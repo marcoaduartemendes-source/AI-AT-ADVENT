@@ -657,7 +657,20 @@ def main():
     else:
         ping_success("orchestrator", message=summary)
 
-    return 0 if not report.errors else 2
+    # Always return 0 when the cycle completed.
+    # Reasoning: per-strategy errors (record_trade hiccup, broker
+    # rate-limit on one venue, single bad symbol) are NOT fatal.
+    # They're written to errors.db, surfaced on the dashboard error
+    # panel, and pinged to Healthchecks via ping_fail above.
+    # Returning non-zero here failed the entire GH Actions job, which
+    # caused actions/cache to skip saving the new trades.db rows AND
+    # fired the Notify-on-failure webhook for non-actionable noise.
+    # Observed 2026-05-08: a single record_trade SQLite-lock retry
+    # exhaustion produced "Process completed with exit code 2" and
+    # killed the cycle's persistence — vicious loop on "0 trades".
+    # Fatal failures (cold-start guard, no brokers, argparse) still
+    # exit non-zero earlier in main().
+    return 0
 
 
 if __name__ == "__main__":
