@@ -214,6 +214,58 @@ class TestCycleDiagnosticsAlwaysPersistsOnEarlyReturn:
         )
 
 
+class TestHeartbeatWrites:
+    """Heartbeat is written at the very start of run_cycle, BEFORE
+    anything else can fail. Lets the dashboard distinguish 'orchestrator
+    not running' from 'orchestrator running but diagnostics broken'."""
+
+    def test_heartbeat_writes_on_run_cycle(self, tmp_path):
+        from datetime import UTC, datetime
+        from unittest.mock import MagicMock
+
+        from strategy_engine.orchestrator import (
+            Orchestrator, OrchestratorConfig,
+        )
+        from trading.performance import PerformanceTracker
+
+        db_path = str(tmp_path / "trading_performance.db")
+        tracker = PerformanceTracker(db_path=db_path)
+
+        risk = MagicMock()
+        risk.compute_state.side_effect = Exception("simulate failure")
+        risk._broker_snapshots = {}
+
+        orch = Orchestrator.__new__(Orchestrator)
+        orch.brokers = {}
+        orch.risk = risk
+        orch.registry = MagicMock()
+        orch.registry.latest_allocations.return_value = {}
+        orch.allocator = MagicMock()
+        orch.strategies = {}
+        orch.cfg = OrchestratorConfig(dry_run=True)
+        orch._tracker = tracker
+        orch._last_rebalance_ts = 0
+        orch._venues_ok_consecutive_failures = 0
+
+        before = datetime.now(UTC)
+        orch.run_cycle()
+
+        import sqlite3
+        with sqlite3.connect(db_path) as c:
+            row = c.execute(
+                "SELECT timestamp FROM cycle_heartbeat WHERE id = 1"
+            ).fetchone()
+        assert row is not None, (
+            "Heartbeat row must be written even when compute_state fails. "
+            "Without it, the dashboard can't distinguish 'orchestrator "
+            "not running' from 'orchestrator running but broken'."
+        )
+        # Timestamp should be roughly now
+        from datetime import datetime as _dt
+        ts = _dt.fromisoformat(row[0])
+        assert ts >= before
+
+
 class TestDeadLetterQueueRecoversTrades:
     """When record_trade fails after all retries, the row goes to a
     dead-letter table. Next cycle's _retry_dead_letters() flushes it.

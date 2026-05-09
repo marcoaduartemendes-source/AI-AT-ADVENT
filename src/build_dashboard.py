@@ -310,6 +310,30 @@ def _recent_trades(limit: int = 50) -> list[dict]:
     return out
 
 
+def _read_heartbeat() -> dict | None:
+    """Read the orchestrator heartbeat. Disambiguates 'not running'
+    from 'running but diagnostics empty'."""
+    db_path = os.environ.get(
+        "TRADING_DB_PATH", "data/trading_performance.db"
+    )
+    if not Path(db_path).exists():
+        return None
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT timestamp, git_sha FROM cycle_heartbeat WHERE id = 1"
+            ).fetchone()
+        if row:
+            return {"timestamp": row["timestamp"], "git_sha": row["git_sha"]}
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet (first deploy after this PR).
+        return None
+    except Exception as e:
+        logger.warning(f"heartbeat read failed: {e}")
+    return None
+
+
 def _recent_cycles(limit: int = 5) -> list[dict]:
     """Last N cycle diagnostics for the dashboard's 'Cycle activity'
     panel. Empty when the table doesn't exist yet (first deploy after
@@ -533,14 +557,49 @@ def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> s
 """
 
 
-def _system_status_line(cycles: list[dict]) -> str:
+def _system_status_line(cycles: list[dict],
+                          heartbeat: dict | None = None) -> str:
     """One-line "is the bot alive and what did it do today" header.
 
     Renders right under the H1 so the operator gets the answer in the
     first 2 seconds without scrolling. Counts only cycles from today
     (UTC) so the numbers don't grow unbounded.
+
+    When `cycles` is empty but `heartbeat` exists, we know the
+    orchestrator IS running (heartbeat is written before anything
+    else can fail) but diagnostics persistence is broken. That's
+    a different message than "never ran".
     """
+    from datetime import datetime as _dt, timedelta as _td
     if not cycles:
+        # Heartbeat present → orchestrator IS running but diagnostics
+        # write is failing. Different problem than "never ran".
+        if heartbeat:
+            try:
+                hb_ts = _dt.fromisoformat(
+                    heartbeat["timestamp"].replace("Z", "+00:00")
+                ).replace(tzinfo=None)
+                hb_ago = _dt.utcnow() - hb_ts
+                hb_str = (
+                    f"{int(hb_ago.total_seconds())}s ago" if hb_ago < _td(minutes=1)
+                    else f"{int(hb_ago.total_seconds()/60)}m ago" if hb_ago < _td(hours=1)
+                    else f"{int(hb_ago.total_seconds()/3600)}h ago"
+                )
+            except Exception:
+                hb_str = "unknown"
+            sha = heartbeat.get("git_sha") or ""
+            return (
+                f'<div style="background:#fef3c7;border:1px solid #f59e0b;'
+                f'padding:8px 12px;border-radius:6px;margin-bottom:12px;'
+                f'font-size:13px">'
+                f"🟡 <strong>Orchestrator alive</strong> "
+                f"(heartbeat {hb_str}, sha {sha}) but no cycle "
+                f"diagnostics written yet. The orchestrator is "
+                f"starting cycles but failing before the diagnostics "
+                f"persist call. Check Actions tab for the orchestrator "
+                f"workflow's stdout."
+                f"</div>"
+            )
         return (
             '<div style="background:#fef3c7;border:1px solid #f59e0b;'
             'padding:8px 12px;border-radius:6px;margin-bottom:12px;'
@@ -977,6 +1036,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     # didn't strategy X trade?". The single biggest visibility win
     # against the user's "feels like a black box" complaint.
     cycles_recent = _recent_cycles(5)
+    heartbeat = _read_heartbeat()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -1125,7 +1185,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   Snapshot: <time data-ts="snapshot">{html.escape(snapshot_at)}</time>
   · Updated every 5 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
 </div>
-{_system_status_line(cycles_recent)}
+{_system_status_line(cycles_recent, heartbeat)}
 
 <div class="ks-banner" style="background:{ks_color}">
   <span>{ks_emoji} Kill switch: {html.escape(ks)}</span>
