@@ -698,6 +698,111 @@ def _render_cycle_diagnostics(cycles: list[dict]) -> str:
 </table>"""
 
 
+def _suggest_actions(cycles: list[dict], trades: list[dict],
+                       diag: dict) -> list[str]:
+    """Look at the data and produce actionable suggestions.
+
+    Each item is an HTML string ready to render. Empty list when
+    everything looks healthy. The list is the operator-facing
+    answer to "what should I do right now?" — surfaces the few
+    things they can act on without reading source code.
+    """
+    out: list[str] = []
+    # No cycles ever recorded.
+    if not cycles:
+        out.append(
+            "🟡 <strong>Bootstrapping</strong> — no cycle diagnostics "
+            "yet. Wait one cron tick. If this persists past 10 min, "
+            "check the Actions tab for orchestrator workflow failures."
+        )
+        return out
+
+    latest = cycles[0]
+    # Stale cycle (last write > 15 min ago)
+    from datetime import datetime as _dt, timedelta as _td
+    try:
+        last_ts = _dt.fromisoformat(
+            latest["timestamp"].replace("Z", "+00:00")
+        ).replace(tzinfo=None)
+        if _dt.utcnow() - last_ts > _td(minutes=15):
+            out.append(
+                "🔴 <strong>Cycles have stalled</strong> — last cycle "
+                f'was {latest["timestamp"]}, more than 15 min ago. '
+                "Check the Actions tab for orchestrator failures."
+            )
+    except Exception:
+        pass
+
+    # Strategies with 0 proposals across last 5 cycles → likely
+    # config issue (missing API key, no signal, frozen).
+    if cycles and latest.get("strategy_outcomes"):
+        chronic_idle = []
+        for sname, _ in latest["strategy_outcomes"].items():
+            never_proposed = all(
+                (c.get("strategy_outcomes", {}).get(sname, {}).get("proposed", 0) or 0) == 0
+                for c in cycles
+            )
+            if never_proposed:
+                chronic_idle.append(sname)
+        if chronic_idle and len(chronic_idle) > 2:
+            out.append(
+                "🟡 <strong>{} strategies have proposed nothing in "
+                "the last {} cycles</strong>: <code>{}</code>. "
+                "Likely causes: missing API key, FROZEN state, or "
+                "no signal. Check the per-strategy outcome panel "
+                "for the specific reason.".format(
+                    len(chronic_idle), len(cycles),
+                    ", ".join(sorted(chronic_idle)[:6])
+                    + (" …" if len(chronic_idle) > 6 else "")
+                )
+            )
+
+    # No trades recorded at all
+    n_filled = sum(
+        1 for t in trades
+        if t.get("fill_status", "").upper() == "FILLED" and not t.get("dry_run")
+    )
+    if not trades:
+        out.append(
+            "🟡 <strong>No trades recorded yet</strong>. "
+            "If a strategy proposed-and-submitted in the panel below "
+            "but trades.db is empty, check the dead-letter table: "
+            "<code>SELECT * FROM record_trade_dead_letter</code>"
+        )
+    elif n_filled == 0 and any(not t.get("dry_run") for t in trades):
+        out.append(
+            "🟠 <strong>Live orders submitted but none filled yet</strong>. "
+            "Check broker side: insufficient funds, market closed, "
+            "or rate limits. Coinbase wallet balance is the usual "
+            "culprit for INSUFFICIENT_FUND errors."
+        )
+
+    # ALLOW_LIVE_TRADING is set but LIVE_STRATEGIES is empty
+    live_set = diag.get("_live_strats_set") or set()
+    allow_live = diag.get("_allow_live")
+    if allow_live and not live_set:
+        out.append(
+            "ℹ <strong>ALLOW_LIVE_TRADING is on but LIVE_STRATEGIES is empty</strong>. "
+            "Per-strategy LIVE override is moot; only the per-venue flags drive live trading. "
+            "If that's intentional, ignore this message."
+        )
+
+    return out
+
+
+def _render_suggestions(suggestions: list[str]) -> str:
+    if not suggestions:
+        return ""
+    items = "\n".join(f"<li>{s}</li>" for s in suggestions)
+    return f"""
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Suggestions ({len(suggestions)})
+</h2>
+<ul style="padding-left:20px;font-size:13px;line-height:1.5">
+{items}
+</ul>"""
+
+
 def _render_recent_trades(trades: list[dict]) -> str:
     """Render the most-recent-trades panel.
 
@@ -1088,6 +1193,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </table>
 
 {_render_cycle_diagnostics(cycles_recent)}
+
+{_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 
 {_render_recent_trades(trades_recent)}
 
