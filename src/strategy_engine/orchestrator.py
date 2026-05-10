@@ -577,6 +577,20 @@ class Orchestrator:
             if target_usd <= 0:
                 outcome.skip_reasons.append("target_alloc_usd=0")
 
+            # Skip compute when venue is closed. Without this, Alpaca
+            # strategies running on the every-5-min cron during the
+            # weekend / overnight produce 30 proposals every cycle
+            # that all get rejected at the market_closed gate, filling
+            # the diagnostic with noise. The orchestrator's pre-cycle
+            # "all venues closed" guard only fires when EVERY venue
+            # is closed (and crypto is 24/7 → always open), so this
+            # per-strategy skip is the missing piece.
+            if not is_market_open(strategy.venue):
+                outcome.skip_reasons.append(
+                    f"venue_closed ({venue_window_str(strategy.venue)})"
+                )
+                continue
+
             ctx = StrategyContext(
                 timestamp=report.timestamp,
                 portfolio_equity_usd=state.equity_usd,
