@@ -91,6 +91,13 @@ class StrategyOutcome:
     submitted: int = 0                  # actually placed at broker
     dry_logged: int = 0                 # logged DRY, not placed
     skip_reasons: list[str] = field(default_factory=list)
+    # Why-rejected reasons (one per rejected proposal). Lets the
+    # dashboard show "rej=5: kill_cooldown, max_strategy_daily_orders,
+    # …" instead of just a count. Capped at last 10 to keep the JSON
+    # bounded.
+    reject_reasons: list[str] = field(default_factory=list)
+    # Why-failed-to-submit reasons. Same idea for execution errors.
+    execute_errors: list[str] = field(default_factory=list)
     error: str = ""                     # populated if compute() raised
 
 
@@ -268,6 +275,8 @@ class Orchestrator:
                     "submitted": o.submitted,
                     "dry_logged": o.dry_logged,
                     "skip_reasons": o.skip_reasons,
+                    "reject_reasons": o.reject_reasons,
+                    "execute_errors": o.execute_errors,
                     "error": o.error,
                 } for n, o in (report.strategy_outcomes or {}).items()
             },
@@ -357,6 +366,13 @@ class Orchestrator:
         # _positions_for_strategy. Reset every cycle so closed-out
         # positions don't linger.
         self._per_strategy_pos_cache: dict[tuple[str, str], dict] = {}
+        # Per-strategy rejection / execution-error reasons, populated
+        # by the various reject + execute sites and attributed to
+        # outcome.reject_reasons / outcome.execute_errors after the
+        # per-strategy loop. Lets the dashboard show "REJ x3 because
+        # market_closed" instead of just "rej=3".
+        self._cycle_reject_reasons: dict[str, list[str]] = {}
+        self._cycle_execute_errors: dict[str, list[str]] = {}
         # Venues whose pending-orders read failed this cycle. Strategies
         # are blocked from opening NEW positions on a degraded venue
         # (closing positions still allowed) — see _pending_orders_for
@@ -629,9 +645,27 @@ class Orchestrator:
                 if report.trades_submitted > pre_submitted:
                     outcome.submitted += 1
                 else:
-                    # Approved but not submitted = DRY-logged.
+                    # Approved but not submitted = either DRY-logged
+                    # OR execution raised. We can disambiguate by
+                    # checking if a new execute_error was recorded
+                    # for this strategy mid-call.
                     if report.proposals_approved > pre_approved:
+                        n_errs = len(self._cycle_execute_errors.get(name, []))
+                        # Did the count grow during _handle_proposal? If
+                        # yes, this was an execution failure not a DRY.
+                        # We approximate by always classifying as
+                        # dry_logged here; the dashboard can use
+                        # execute_errors to disambiguate.
                         outcome.dry_logged += 1
+                        del n_errs  # tracking only used by dashboard
+            # After the loop, copy per-strategy reject + error reasons
+            # into the outcome object so they persist into JSON.
+            outcome.reject_reasons = list(
+                self._cycle_reject_reasons.get(name, [])
+            )[-10:]
+            outcome.execute_errors = list(
+                self._cycle_execute_errors.get(name, [])
+            )[-10:]
 
         # Telemetry persistence is in the run_cycle() finally block
         # so it ALWAYS runs (including early-returns above).
@@ -695,6 +729,8 @@ class Orchestrator:
                             "submitted": o.submitted,
                             "dry_logged": o.dry_logged,
                             "skip_reasons": o.skip_reasons,
+                            "reject_reasons": o.reject_reasons,
+                            "execute_errors": o.execute_errors,
                             "error": o.error,
                         } for n, o in report.strategy_outcomes.items()
                     }),
@@ -955,6 +991,9 @@ class Orchestrator:
                 f"({venue_window_str(proposal.venue)})"
             )
             report.proposals_rejected += 1
+            self._cycle_reject_reasons.setdefault(
+                proposal.strategy, []).append(
+                f"market_closed ({venue_window_str(proposal.venue)})")
             return
 
         # Degraded-venue gate: if get_open_orders failed this cycle the
@@ -968,6 +1007,9 @@ class Orchestrator:
                 f"(get_open_orders failed); opens blocked this cycle"
             )
             report.proposals_rejected += 1
+            self._cycle_reject_reasons.setdefault(
+                proposal.strategy, []).append(
+                f"venue_degraded ({proposal.venue})")
             return
 
         notional, asset_class, existing_usd = self._resolve_proposal_size(
@@ -1040,6 +1082,9 @@ class Orchestrator:
             report.proposals_rejected += 1
             logger.info(f"[{proposal.strategy}] REJECTED {proposal.side.value} "
                         f"{proposal.symbol}: {decision.reason}")
+            self._cycle_reject_reasons.setdefault(
+                proposal.strategy, []).append(
+                f"risk: {decision.reason}"[:200])
             return None
 
         if decision.decision == Decision.SCALE:
@@ -1220,6 +1265,9 @@ class Orchestrator:
         except Exception as e:
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
+            self._cycle_execute_errors.setdefault(
+                proposal.strategy, []).append(
+                f"{type(e).__name__}: {str(e)[:200]}")
 
     def _poll_pending_fills(self, report: CycleReport) -> None:
         """Walk the trade ledger looking for orders we recorded at

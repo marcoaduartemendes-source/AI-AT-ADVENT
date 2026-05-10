@@ -787,14 +787,24 @@ def _render_cycle_diagnostics(cycles: list[dict]) -> str:
     for name in sorted(outcomes.keys()):
         o = outcomes[name]
         skip = o.get("skip_reasons") or []
+        rej_reasons = o.get("reject_reasons") or []
+        exec_errs = o.get("execute_errors") or []
         err = o.get("error") or ""
-        # Color the row by outcome severity
+        # Color the row by outcome severity. Order matters: explicit
+        # execute errors win over generic dry_logged because the
+        # outcome counter can't disambiguate the two perfectly.
         if err:
-            row_color = "#fee2e2"   # error → red tint
+            row_color = "#fee2e2"   # compute() error → red tint
             why = f'<span style="color:#7f1d1d">{html.escape(err[:120])}</span>'
+        elif exec_errs:
+            row_color = "#fee2e2"   # execution error → red tint
+            why = f'<span style="color:#7f1d1d" title="{html.escape(" | ".join(exec_errs))}">EXEC: {html.escape(exec_errs[0][:120])}</span>'
         elif o.get("submitted", 0) > 0:
             row_color = "#dcfce7"   # submitted → green
             why = f'<span style="color:#166534">submitted {o["submitted"]} order(s)</span>'
+        elif rej_reasons:
+            row_color = "#fef3c7"   # rejected → amber
+            why = f'<span style="color:#92400e" title="{html.escape(" | ".join(rej_reasons))}">REJ: {html.escape(rej_reasons[0][:120])}</span>'
         elif o.get("dry_logged", 0) > 0:
             row_color = "#dbeafe"   # DRY → blue
             why = f'<span style="color:#1e40af">{o["dry_logged"]} DRY-logged</span>'
