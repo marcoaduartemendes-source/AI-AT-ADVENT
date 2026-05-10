@@ -176,6 +176,46 @@ class CoinbaseAdapter(BrokerAdapter):
         if side == OrderSide.BUY:
             if notional_usd is None:
                 raise BrokerError("Coinbase MARKET BUY requires notional_usd")
+            # Pre-flight check: cap notional_usd to actual available
+            # USD balance minus a 5% buffer for fees and price drift.
+            # Without this, every cycle in production has been firing
+            # INSUFFICIENT_FUND errors because the strategy sized its
+            # order to the configured per-venue cap regardless of
+            # whether the wallet could cover it.
+            try:
+                acct = self.get_account()
+                cash = float(acct.cash_usd or 0)
+                # Reserve 5% for fees + price slippage between order
+                # construction and fill. Coinbase taker fee is 0.6%
+                # default; 5% buffer covers fee + 4% drift.
+                spendable = max(cash * 0.95, 0.0)
+                if spendable < 1.0:
+                    raise BrokerError(
+                        f"Coinbase USD wallet too low: ${cash:.2f} "
+                        f"available (need >$1 after 5% buffer). "
+                        f"Fund the spot USD wallet to enable trading."
+                    )
+                if notional_usd > spendable:
+                    logger.info(
+                        f"[coinbase] CLAMP BUY {symbol} notional "
+                        f"${notional_usd:.2f} → ${spendable:.2f} "
+                        f"(USD wallet={cash:.2f}, 5% fee buffer)"
+                    )
+                    notional_usd = spendable
+            except BrokerError as e:
+                # Re-raise only the WALLET-TOO-LOW BrokerError (which
+                # is a real "user needs to fund" signal). Other
+                # BrokerErrors from get_account (e.g. transient API
+                # failure) should fall through and let the actual
+                # order attempt either succeed or surface its own
+                # error — same semantics as before pre-flight existed.
+                if "wallet too low" in str(e):
+                    raise
+                logger.debug(f"coinbase pre-flight balance check skipped: {e}")
+            except Exception as e:
+                # Pre-flight check failure is non-fatal — fall through
+                # and let Coinbase reject if the wallet really is empty.
+                logger.debug(f"coinbase pre-flight balance check skipped: {e}")
             res = self.client.create_market_buy(
                 symbol, f"{notional_usd:.2f}",
                 client_order_id=client_order_id,
