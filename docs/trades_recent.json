@@ -4,13 +4,13 @@
     "strategy": "rsi_mean_reversion",
     "symbol": "LLY",
     "side": "BUY",
-    "amount_usd": 609.1695021351434,
-    "quantity": 0.0,
-    "price": 0.0,
+    "amount_usd": 609.16999939774,
+    "quantity": 0.611235977,
+    "price": 996.62,
     "order_id": "6f83c8ad-7d12-4c89-99cb-4977d9485d2a",
     "pnl_usd": null,
     "dry_run": false,
-    "fill_status": "PENDING",
+    "fill_status": "FILLED",
     "venue": "alpaca"
   },
   {
