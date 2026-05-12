@@ -577,15 +577,16 @@ class Orchestrator:
             if target_usd <= 0:
                 outcome.skip_reasons.append("target_alloc_usd=0")
 
-            # Skip compute when venue is closed. Without this, Alpaca
-            # strategies running on the every-5-min cron during the
-            # weekend / overnight produce 30 proposals every cycle
-            # that all get rejected at the market_closed gate, filling
-            # the diagnostic with noise. The orchestrator's pre-cycle
-            # "all venues closed" guard only fires when EVERY venue
-            # is closed (and crypto is 24/7 → always open), so this
-            # per-strategy skip is the missing piece.
-            if not is_market_open(strategy.venue):
+            # Skip compute when venue is closed AND the broker is not
+            # in paper mode. Alpaca PAPER accounts accept orders 24/7
+            # and queue them until market open — gating those wastes
+            # activity. Live Alpaca still gets gated because the broker
+            # cancels day orders submitted outside the regular session.
+            # User feedback 2026-05-10: "many of the alpaca strategies
+            # have never transacted fix that" — paper queue lets them.
+            adapter = self.brokers.get(strategy.venue)
+            venue_is_paper = bool(adapter and getattr(adapter, "is_paper", False))
+            if not is_market_open(strategy.venue) and not venue_is_paper:
                 outcome.skip_reasons.append(
                     f"venue_closed ({venue_window_str(strategy.venue)})"
                 )
@@ -998,8 +999,14 @@ class Orchestrator:
         # Market-hours gate (fixes the 770-PENDING / 128-CANCELED
         # state on Alpaca caused by orders fired at 23:40 UTC). The
         # broker silently cancels day orders submitted outside the
-        # US regular session; we now skip those proposals up front.
-        if not is_market_open(proposal.venue):
+        # US regular session.
+        # EXCEPTION: paper-mode adapters queue orders 24/7 and fill
+        # them at next open. Letting paper through keeps strategies
+        # actively trading on the weekend → user gets visible
+        # round-trips without waiting for Monday.
+        _adapter = self.brokers.get(proposal.venue)
+        _is_paper = bool(_adapter and getattr(_adapter, "is_paper", False))
+        if not is_market_open(proposal.venue) and not _is_paper:
             logger.debug(
                 f"[{proposal.strategy}] SKIP {proposal.venue} closed "
                 f"({venue_window_str(proposal.venue)})"

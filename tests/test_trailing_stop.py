@@ -78,8 +78,17 @@ def test_trailing_stop_critical_escalates_kill_switch(tmp_path):
     assert state.equity_usd == 101_000
 
 
-def test_trailing_stop_warning_below_critical(tmp_path):
-    """5% drop from 14-day high → WARNING (not CRITICAL)."""
+def test_trailing_stop_warning_below_critical(tmp_path, monkeypatch):
+    """5% drop from 14-day high → WARNING (not CRITICAL).
+
+    Disable the monthly_loss_limit gate so it doesn't override the
+    trailing-stop logic this test is isolating. The MTD check fires
+    when the seeded loss > 4% (default monthly_loss_limit_pct) and
+    today's calendar day is past the 1st — without this monkeypatch,
+    the test would flake mid-month even though the trailing-stop
+    code is correct.
+    """
+    monkeypatch.setenv("MONTHLY_LOSS_LIMIT_PCT", "1.0")
     db = EquitySnapshotDB(db_path=str(tmp_path / "risk.db"), supabase=None)
     _seed_equity(db, [
         (100_000, 10),
@@ -110,10 +119,15 @@ def test_trailing_stop_does_not_fire_below_threshold(tmp_path):
     assert state.kill_switch == KillSwitchState.NORMAL
 
 
-def test_trailing_stop_disabled_when_critical_pct_zero(tmp_path):
+def test_trailing_stop_disabled_when_critical_pct_zero(tmp_path, monkeypatch):
     """Setting trailing_stop_critical_pct=0 disables the trailing
-    stop entirely — drawdown thresholds still apply."""
+    stop entirely — drawdown thresholds still apply.
+
+    Monthly budget gate also disabled here (see sibling test) to
+    isolate the trailing-stop disable behaviour.
+    """
     import dataclasses
+    monkeypatch.setenv("MONTHLY_LOSS_LIMIT_PCT", "1.0")
     base = RiskConfig.from_env()
     cfg = dataclasses.replace(base, trailing_stop_critical_pct=0.0)
     db = EquitySnapshotDB(db_path=str(tmp_path / "risk.db"), supabase=None)
