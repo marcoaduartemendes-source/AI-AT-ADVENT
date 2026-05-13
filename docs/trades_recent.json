@@ -4,13 +4,13 @@
     "strategy": "rsi_mean_reversion",
     "symbol": "AAPL",
     "side": "SELL",
-    "amount_usd": 998.9890588336144,
+    "amount_usd": 0.056186431999999994,
     "quantity": 0.000188,
-    "price": 298.845,
+    "price": 298.864,
     "order_id": "d17b5b42-c5d9-4f88-92d5-aa915c4ae8b9",
-    "pnl_usd": null,
+    "pnl_usd": 0.001413355423999992,
     "dry_run": false,
-    "fill_status": "PENDING",
+    "fill_status": "FILLED",
     "venue": "alpaca"
   },
   {
