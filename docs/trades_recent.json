@@ -1,5 +1,33 @@
 [
   {
+    "timestamp": "2026-05-13T15:22:43.179576+00:00",
+    "strategy": "bollinger_breakout",
+    "symbol": "V",
+    "side": "BUY",
+    "amount_usd": 608.9895691795666,
+    "quantity": 0.0,
+    "price": 320.58,
+    "order_id": "52b086f1-2c10-437a-bc2b-f8143b1d3b0a",
+    "pnl_usd": null,
+    "dry_run": false,
+    "fill_status": "PENDING",
+    "venue": "alpaca"
+  },
+  {
+    "timestamp": "2026-05-13T15:22:41.436289+00:00",
+    "strategy": "rsi_mean_reversion",
+    "symbol": "AAPL",
+    "side": "SELL",
+    "amount_usd": 997.2204195315404,
+    "quantity": 0.018874,
+    "price": 296.89,
+    "order_id": "57cd7951-340a-43f1-b521-ad5e65645fee",
+    "pnl_usd": null,
+    "dry_run": false,
+    "fill_status": "PENDING",
+    "venue": "alpaca"
+  },
+  {
     "timestamp": "2026-05-12T17:28:47.804856+00:00",
     "strategy": "rsi_mean_reversion",
     "symbol": "LLY",
@@ -659,34 +687,6 @@
   },
   {
     "timestamp": "2026-05-07T04:47:22.987734+00:00",
-    "strategy": "crypto_xsmom",
-    "symbol": "FIL-USD",
-    "side": "BUY",
-    "amount_usd": 100.0,
-    "quantity": 0.0,
-    "price": 0.0,
-    "order_id": "unknown",
-    "pnl_usd": null,
-    "dry_run": false,
-    "fill_status": "PENDING",
-    "venue": ""
-  },
-  {
-    "timestamp": "2026-05-07T04:47:22.624586+00:00",
-    "strategy": "crypto_xsmom",
-    "symbol": "ICP-USD",
-    "side": "BUY",
-    "amount_usd": 100.0,
-    "quantity": 0.0,
-    "price": 0.0,
-    "order_id": "unknown",
-    "pnl_usd": null,
-    "dry_run": false,
-    "fill_status": "PENDING",
-    "venue": ""
-  },
-  {
-    "timestamp": "2026-05-07T01:20:01.834584+00:00",
     "strategy": "crypto_xsmom",
     "symbol": "FIL-USD",
     "side": "BUY",
