@@ -67,6 +67,15 @@ jobs:
           KALSHI_KEY_ID:       ${{ secrets.KALSHI_KEY_ID }}
           KALSHI_PRIVATE_KEY:  ${{ secrets.KALSHI_PRIVATE_KEY }}
           KALSHI_ENDPOINT:     ${{ secrets.KALSHI_ENDPOINT }}
+          # Historical-data vendors. The orchestrator step was MISSING
+          # these for the entire project lifetime — which is why
+          # benchmark.json had empty benchmarks AND why earnings_momentum
+          # / earnings_news_pead / commodity_carry / macro_kalshi_v2
+          # silently short-circuited every cycle (their data source
+          # was never passed in). Observed 2026-05-15.
+          FMP_API_KEY:         ${{ secrets.FMP_API_KEY }}
+          FRED_API_KEY:        ${{ secrets.FRED_API_KEY }}
+          POLYGON_API_KEY:     ${{ secrets.POLYGON_API_KEY }}
           # Orchestrator config
           # Global DRY default stays true — protects real-money venues
           # (Coinbase). Per-venue overrides below enable paper trading
