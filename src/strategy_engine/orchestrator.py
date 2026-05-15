@@ -203,6 +203,14 @@ class Orchestrator:
                 self._dump_recent_trades_json()
             except Exception as e:
                 logger.warning(f"dump_recent_trades_json failed: {e}")
+            # Benchmark comparison: portfolio trailing return vs
+            # SPY/QQQ/BTC over 7/14/30d. Runs here because this job
+            # has both the FMP key and risk_state.db's equity curve.
+            try:
+                from common.benchmark import write_benchmark_json
+                write_benchmark_json()
+            except Exception as e:
+                logger.warning(f"write_benchmark_json failed: {e}")
 
     def _write_heartbeat(self, timestamp) -> None:
         """Tiny single-row table the dashboard polls to confirm the

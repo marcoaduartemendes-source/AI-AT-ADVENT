@@ -977,6 +977,95 @@ def _suggest_actions(cycles: list[dict], trades: list[dict],
     return out
 
 
+def _read_benchmark() -> dict | None:
+    """docs/benchmark.json written by the orchestrator's
+    write_benchmark_json(). None if not yet produced."""
+    p = Path("docs/benchmark.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"benchmark.json read failed: {e}")
+        return None
+
+
+def _render_benchmark(bench: dict | None) -> str:
+    """Portfolio trailing return vs SPY / QQQ / BTC over 7/14/30d."""
+    if not bench:
+        return ""
+    port = bench.get("portfolio") or {}
+    pw = port.get("windows") or {}
+    bm = bench.get("benchmarks") or {}
+    windows = [str(w) for w in bench.get("windows", [7, 14, 30])]
+
+    if not pw and not bm:
+        return (
+            '<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">'
+            "Performance vs market</h2>"
+            '<p style="color:#6b7280;font-size:13px">Benchmark not yet '
+            "computed (needs ≥1 equity snapshot + FMP_API_KEY). Will "
+            "populate within a cycle or two.</p>"
+        )
+
+    def _cell(v) -> str:
+        if v is None:
+            return '<td style="text-align:right;color:#9ca3af">—</td>'
+        color = "#166534" if v > 0 else ("#7f1d1d" if v < 0 else "#4b5563")
+        return (f'<td style="text-align:right;color:{color};'
+                f'font-weight:600">{v:+.2f}%</td>')
+
+    hdr = "".join(f"<th style='text-align:right'>{w}d</th>" for w in windows)
+    rows = []
+    # Portfolio row first, bolded
+    eq = port.get("current_equity")
+    eq_str = f" (equity ${eq:,.0f})" if eq else ""
+    rows.append(
+        f"<tr style='background:#eff6ff'>"
+        f"<td><strong>Portfolio</strong>{eq_str}</td>"
+        + "".join(_cell(pw.get(w)) for w in windows)
+        + "</tr>"
+    )
+    for sym, info in bm.items():
+        bw = info.get("windows") or {}
+        rows.append(
+            f"<tr><td>{html.escape(info.get('name', sym))} "
+            f"<code style='color:#6b7280'>{html.escape(sym)}</code></td>"
+            + "".join(_cell(bw.get(w)) for w in windows)
+            + "</tr>"
+        )
+    # Alpha row: portfolio minus SPY per window
+    spy = (bm.get("SPY") or {}).get("windows") or {}
+    if spy and pw:
+        def _alpha(w):
+            a, b = pw.get(w), spy.get(w)
+            if a is None or b is None:
+                return None
+            return round(a - b, 3)
+        rows.append(
+            "<tr style='background:#fefce8'>"
+            "<td><strong>Alpha vs S&amp;P 500</strong></td>"
+            + "".join(_cell(_alpha(w)) for w in windows)
+            + "</tr>"
+        )
+    as_of = html.escape((bench.get("as_of") or "")[:19])
+    return f"""
+<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Performance vs market <span style="font-weight:400;color:#6b7280;font-size:12px">(as of {as_of})</span>
+</h2>
+<table style="font-size:12px">
+  <thead><tr><th>Series</th>{hdr}</tr></thead>
+  <tbody>
+{chr(10).join(rows)}
+  </tbody>
+</table>
+<p style="color:#6b7280;font-size:11px;margin-top:4px">
+  Trailing total return. Portfolio = paper+live equity curve from
+  risk_state.db. Benchmarks = FMP adjusted closes. Alpha = portfolio − SPY.
+</p>"""
+
+
 def _render_suggestions(suggestions: list[str]) -> str:
     if not suggestions:
         return ""
@@ -1165,6 +1254,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     # against the user's "feels like a black box" complaint.
     cycles_recent = _recent_cycles(5)
     heartbeat = _read_heartbeat()
+    benchmark = _read_benchmark()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -1381,6 +1471,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </table>
 
 {_render_cycle_diagnostics(cycles_recent)}
+
+{_render_benchmark(benchmark)}
 
 {_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 
