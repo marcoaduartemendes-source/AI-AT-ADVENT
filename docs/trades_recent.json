@@ -1,16 +1,30 @@
 [
   {
+    "timestamp": "2026-05-17T04:14:31.474068+00:00",
+    "strategy": "rsi_mean_reversion",
+    "symbol": "AAPL",
+    "side": "SELL",
+    "amount_usd": 989.1305396985002,
+    "quantity": 0.001197,
+    "price": 300.23,
+    "order_id": "f5fcf88e-9ca7-462e-be33-eb0a1e3ae62b",
+    "pnl_usd": null,
+    "dry_run": false,
+    "fill_status": "PENDING",
+    "venue": "alpaca"
+  },
+  {
     "timestamp": "2026-05-17T00:00:53.180511+00:00",
     "strategy": "rsi_mean_reversion",
     "symbol": "AAPL",
     "side": "SELL",
-    "amount_usd": 989.0544130977332,
-    "quantity": 0.001197,
-    "price": 300.23,
+    "amount_usd": 0.0,
+    "quantity": 0.0,
+    "price": 0.0,
     "order_id": "d876f4cf-4e9b-42ad-84d6-67215dd72caa",
     "pnl_usd": null,
     "dry_run": false,
-    "fill_status": "PENDING",
+    "fill_status": "CANCELED",
     "venue": "alpaca"
   },
   {
@@ -681,20 +695,6 @@
     "price": 95.196,
     "order_id": "c4b4e2f4-773d-4fd7-8f54-a78bd182eb70",
     "pnl_usd": 0.0018250417259999792,
-    "dry_run": false,
-    "fill_status": "FILLED",
-    "venue": "alpaca"
-  },
-  {
-    "timestamp": "2026-05-14T18:51:14.436371+00:00",
-    "strategy": "rsi_mean_reversion",
-    "symbol": "XOM",
-    "side": "SELL",
-    "amount_usd": 2.335484468,
-    "quantity": 0.015298,
-    "price": 152.666,
-    "order_id": "f417edeb-3c60-457e-96b9-039f607af9e8",
-    "pnl_usd": 0.11077119641199996,
     "dry_run": false,
     "fill_status": "FILLED",
     "venue": "alpaca"
