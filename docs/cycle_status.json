@@ -1,465 +1,5 @@
 [
   {
-    "timestamp": "2026-05-13T21:05:50.298673+00:00",
-    "cycle_seconds": 19.62,
-    "git_sha": "553a28d",
-    "proposals_total": 6,
-    "proposals_submitted": 0,
-    "n_errors": 2,
-    "first_error": "[crypto_xsmom] execution failed: Coinbase USD wallet too low: $0.00 available (need >$1 after 5% buffer). Fund the spot USD wallet to enable trading.",
-    "venue_health": {
-      "coinbase": "ok",
-      "alpaca": "ok",
-      "kalshi": "ok"
-    },
-    "strategy_outcomes": {
-      "crypto_funding_carry": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 5993.09,
-        "target_alloc_pct": 0.06,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "crypto_basis_trade": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 3995.4,
-        "target_alloc_pct": 0.04,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "commodity_carry": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 3495.97,
-        "target_alloc_pct": 0.035,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "crypto_xsmom": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 2,
-        "approved": 2,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 2,
-        "skip_reasons": [],
-        "reject_reasons": [],
-        "execute_errors": [
-          "BrokerError: Coinbase USD wallet too low: $0.00 available (need >$1 after 5% buffer). Fund the spot USD wallet to enable trading.",
-          "BrokerError: Coinbase USD wallet too low: $0.00 available (need >$1 after 5% buffer). Fund the spot USD wallet to enable trading."
-        ],
-        "error": ""
-      },
-      "crypto_funding_carry_v2": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "crypto_pairs_trading": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "crypto_breakout": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "crypto_vol_regime_overlay": {
-        "venue": "coinbase",
-        "state": "ACTIVE",
-        "target_alloc_usd": 0.0,
-        "target_alloc_pct": 0.0,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "target_alloc_usd=0",
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "risk_parity_etf": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 14982.74,
-        "target_alloc_pct": 0.15,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "tsmom_etf": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 6492.52,
-        "target_alloc_pct": 0.065,
-        "proposed": 2,
-        "approved": 0,
-        "rejected": 2,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [],
-        "reject_reasons": [
-          "risk: ETF exposure $57,207 \u2265 45% cap ($44,948) \u2014 no headroom for new entries",
-          "risk: ETF exposure $57,207 \u2265 45% cap ($44,948) \u2014 no headroom for new entries"
-        ],
-        "execute_errors": [],
-        "error": ""
-      },
-      "vol_managed_overlay": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 0.0,
-        "target_alloc_pct": 0.0,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "target_alloc_usd=0",
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "rsi_mean_reversion": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 14982.74,
-        "target_alloc_pct": 0.15,
-        "proposed": 1,
-        "approved": 0,
-        "rejected": 1,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "sector_rotation": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "pairs_trading": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "bollinger_breakout": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "earnings_momentum": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 2996.55,
-        "target_alloc_pct": 0.03,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "dividend_growth": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "gap_trading": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1498.27,
-        "target_alloc_pct": 0.015,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "turn_of_month": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1498.27,
-        "target_alloc_pct": 0.015,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "low_vol_anomaly": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1498.27,
-        "target_alloc_pct": 0.015,
-        "proposed": 1,
-        "approved": 0,
-        "rejected": 1,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [],
-        "reject_reasons": [
-          "risk: ETF exposure $57,207 \u2265 45% cap ($44,948) \u2014 no headroom for new entries"
-        ],
-        "execute_errors": [],
-        "error": ""
-      },
-      "internationals_rotation": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1498.27,
-        "target_alloc_pct": 0.015,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "earnings_news_pead": {
-        "venue": "alpaca",
-        "state": "ACTIVE",
-        "target_alloc_usd": 2497.12,
-        "target_alloc_pct": 0.025,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "kalshi_calibration_arb": {
-        "venue": "kalshi",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1997.7,
-        "target_alloc_pct": 0.02,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "macro_kalshi": {
-        "venue": "kalshi",
-        "state": "ACTIVE",
-        "target_alloc_usd": 1498.27,
-        "target_alloc_pct": 0.015,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "macro_kalshi_v2": {
-        "venue": "kalshi",
-        "state": "ACTIVE",
-        "target_alloc_usd": 998.85,
-        "target_alloc_pct": 0.01,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      },
-      "cross_venue_arb": {
-        "venue": "kalshi",
-        "state": "ACTIVE",
-        "target_alloc_usd": 998.85,
-        "target_alloc_pct": 0.01,
-        "proposed": 0,
-        "approved": 0,
-        "rejected": 0,
-        "submitted": 0,
-        "dry_logged": 0,
-        "skip_reasons": [
-          "no proposals"
-        ],
-        "reject_reasons": [],
-        "execute_errors": [],
-        "error": ""
-      }
-    }
-  },
-  {
     "timestamp": "2026-05-13T22:22:46.756130+00:00",
     "cycle_seconds": 6.98,
     "git_sha": "a119ef5",
@@ -22958,6 +22498,464 @@
         "venue": "kalshi",
         "state": "ACTIVE",
         "target_alloc_usd": 989.11,
+        "target_alloc_pct": 0.01,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      }
+    }
+  },
+  {
+    "timestamp": "2026-05-17T12:42:56.926077+00:00",
+    "cycle_seconds": 11.1,
+    "git_sha": "2dc33e5",
+    "proposals_total": 10,
+    "proposals_submitted": 3,
+    "n_errors": 2,
+    "first_error": "[crypto_xsmom] execution failed: Coinbase USD wallet too low: $0.00 available (need >$1 after 5% buffer). Fund the spot USD wallet to enable trading.",
+    "venue_health": {
+      "coinbase": "ok",
+      "alpaca": "ok",
+      "kalshi": "ok"
+    },
+    "strategy_outcomes": {
+      "crypto_funding_carry": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 5934.77,
+        "target_alloc_pct": 0.06,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "crypto_basis_trade": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 3956.51,
+        "target_alloc_pct": 0.04,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "commodity_carry": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 3461.95,
+        "target_alloc_pct": 0.035,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "crypto_xsmom": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 2,
+        "approved": 2,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 2,
+        "skip_reasons": [],
+        "reject_reasons": [],
+        "execute_errors": [
+          "BrokerError: Coinbase USD wallet too low: $0.00 available (need >$1 after 5% buffer). Fund the spot USD wallet to enable trading.",
+          "BrokerError: Coinbase USD wallet too low: $0.00 available (need >$1 after 5% buffer). Fund the spot USD wallet to enable trading."
+        ],
+        "error": ""
+      },
+      "crypto_funding_carry_v2": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "crypto_pairs_trading": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "crypto_breakout": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "crypto_vol_regime_overlay": {
+        "venue": "coinbase",
+        "state": "ACTIVE",
+        "target_alloc_usd": 0.0,
+        "target_alloc_pct": 0.0,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "target_alloc_usd=0",
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "risk_parity_etf": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 14836.92,
+        "target_alloc_pct": 0.15,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "tsmom_etf": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 6429.33,
+        "target_alloc_pct": 0.065,
+        "proposed": 2,
+        "approved": 0,
+        "rejected": 2,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "reject_reasons": [
+          "risk: ETF exposure $56,556 \u2265 45% cap ($44,511) \u2014 no headroom for new entries",
+          "risk: ETF exposure $56,556 \u2265 45% cap ($44,511) \u2014 no headroom for new entries"
+        ],
+        "execute_errors": [],
+        "error": ""
+      },
+      "vol_managed_overlay": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 0.0,
+        "target_alloc_pct": 0.0,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "target_alloc_usd=0",
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "rsi_mean_reversion": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 14836.92,
+        "target_alloc_pct": 0.15,
+        "proposed": 4,
+        "approved": 3,
+        "rejected": 1,
+        "submitted": 3,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "sector_rotation": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "pairs_trading": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 1,
+        "approved": 0,
+        "rejected": 1,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "bollinger_breakout": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "earnings_momentum": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 2967.38,
+        "target_alloc_pct": 0.03,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "dividend_growth": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "gap_trading": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1483.69,
+        "target_alloc_pct": 0.015,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "turn_of_month": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1483.69,
+        "target_alloc_pct": 0.015,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "low_vol_anomaly": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1483.69,
+        "target_alloc_pct": 0.015,
+        "proposed": 1,
+        "approved": 0,
+        "rejected": 1,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [],
+        "reject_reasons": [
+          "risk: ETF exposure $56,556 \u2265 45% cap ($44,511) \u2014 no headroom for new entries"
+        ],
+        "execute_errors": [],
+        "error": ""
+      },
+      "internationals_rotation": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1483.69,
+        "target_alloc_pct": 0.015,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "earnings_news_pead": {
+        "venue": "alpaca",
+        "state": "ACTIVE",
+        "target_alloc_usd": 2472.82,
+        "target_alloc_pct": 0.025,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "kalshi_calibration_arb": {
+        "venue": "kalshi",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1978.26,
+        "target_alloc_pct": 0.02,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "macro_kalshi": {
+        "venue": "kalshi",
+        "state": "ACTIVE",
+        "target_alloc_usd": 1483.69,
+        "target_alloc_pct": 0.015,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "macro_kalshi_v2": {
+        "venue": "kalshi",
+        "state": "ACTIVE",
+        "target_alloc_usd": 989.13,
+        "target_alloc_pct": 0.01,
+        "proposed": 0,
+        "approved": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "dry_logged": 0,
+        "skip_reasons": [
+          "no proposals"
+        ],
+        "reject_reasons": [],
+        "execute_errors": [],
+        "error": ""
+      },
+      "cross_venue_arb": {
+        "venue": "kalshi",
+        "state": "ACTIVE",
+        "target_alloc_usd": 989.13,
         "target_alloc_pct": 0.01,
         "proposed": 0,
         "approved": 0,
