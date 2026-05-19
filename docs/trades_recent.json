@@ -1,16 +1,44 @@
 [
   {
+    "timestamp": "2026-05-19T23:50:11.223455+00:00",
+    "strategy": "low_vol_anomaly",
+    "symbol": "EFAV",
+    "side": "SELL",
+    "amount_usd": 986.426659436205,
+    "quantity": 0.011617,
+    "price": 91.64,
+    "order_id": "d9341a10-fbc7-4b7e-87b7-6dffa6cff82d",
+    "pnl_usd": null,
+    "dry_run": false,
+    "fill_status": "PENDING",
+    "venue": "alpaca"
+  },
+  {
+    "timestamp": "2026-05-19T23:49:55.021435+00:00",
+    "strategy": "rsi_mean_reversion",
+    "symbol": "WMT",
+    "side": "SELL",
+    "amount_usd": 986.426659436205,
+    "quantity": 0.000217,
+    "price": 134.26,
+    "order_id": "60ad0f4e-dc27-4e9f-84ff-d9a393fc2379",
+    "pnl_usd": null,
+    "dry_run": false,
+    "fill_status": "PENDING",
+    "venue": "alpaca"
+  },
+  {
     "timestamp": "2026-05-19T22:50:00.568856+00:00",
     "strategy": "low_vol_anomaly",
     "symbol": "EFAV",
     "side": "SELL",
-    "amount_usd": 984.7712964563525,
-    "quantity": 0.011617,
-    "price": 91.64,
+    "amount_usd": 0.0,
+    "quantity": 0.0,
+    "price": 0.0,
     "order_id": "426dd430-9b42-4060-b8f6-c1c064c4e934",
     "pnl_usd": null,
     "dry_run": false,
-    "fill_status": "PENDING",
+    "fill_status": "CANCELED",
     "venue": "alpaca"
   },
   {
@@ -18,13 +46,13 @@
     "strategy": "rsi_mean_reversion",
     "symbol": "WMT",
     "side": "SELL",
-    "amount_usd": 984.7712964563525,
-    "quantity": 0.000217,
-    "price": 134.14,
+    "amount_usd": 0.0,
+    "quantity": 0.0,
+    "price": 0.0,
     "order_id": "8cf98b9b-136d-4df3-9eb4-44269efbb1bb",
     "pnl_usd": null,
     "dry_run": false,
-    "fill_status": "PENDING",
+    "fill_status": "CANCELED",
     "venue": "alpaca"
   },
   {
@@ -669,34 +697,6 @@
     "pnl_usd": 0.0024179400000000463,
     "dry_run": false,
     "fill_status": "FILLED",
-    "venue": "alpaca"
-  },
-  {
-    "timestamp": "2026-05-18T12:56:43.357690+00:00",
-    "strategy": "rsi_mean_reversion",
-    "symbol": "WMT",
-    "side": "SELL",
-    "amount_usd": 78.72616224000001,
-    "quantity": 0.598587,
-    "price": 131.52,
-    "order_id": "fe8eba82-e11b-45ce-94d8-3e963ee82b9f",
-    "pnl_usd": 1.5120924164610037,
-    "dry_run": false,
-    "fill_status": "FILLED",
-    "venue": "alpaca"
-  },
-  {
-    "timestamp": "2026-05-18T12:56:43.034302+00:00",
-    "strategy": "tsmom_etf",
-    "symbol": "IWM",
-    "side": "SELL",
-    "amount_usd": 0.0,
-    "quantity": 0.0,
-    "price": 0.0,
-    "order_id": "41373ca2-691c-4ffc-b367-a1901cb33cb0",
-    "pnl_usd": null,
-    "dry_run": false,
-    "fill_status": "CANCELED",
     "venue": "alpaca"
   }
 ]
