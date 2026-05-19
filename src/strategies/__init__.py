@@ -54,6 +54,7 @@ from .gap_trading import GapTrading
 from .internationals_rotation import InternationalsRotation
 from .kalshi_calibration_arb import KalshiCalibrationArb
 from .low_vol_anomaly import LowVolAnomaly
+from .multifactor_equity import MultiFactorEquity
 from .macro_kalshi import MacroKalshi
 from .macro_kalshi_v2 import MacroKalshiV2
 from .pairs_trading import PairsTrading
@@ -92,6 +93,7 @@ __all__ = [
     "GapTrading",
     "InternationalsRotation",
     "LowVolAnomaly",
+    "MultiFactorEquity",
     "TurnOfMonth",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds
     "CrossVenueArb",         # Kalshi vs Polymarket

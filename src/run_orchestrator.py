@@ -45,6 +45,7 @@ from strategies import (
     LowVolAnomaly,
     MacroKalshi,
     MacroKalshiV2,
+    MultiFactorEquity,
     PairsTrading,
     RiskParityETF,
     RSIMeanReversion,
@@ -123,38 +124,38 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="crypto_funding_carry",
         asset_classes=["CRYPTO_PERP"], venue="coinbase",
-        target_alloc_pct=0.12, max_alloc_pct=0.25, min_alloc_pct=0.03,
+        target_alloc_pct=0.12, max_alloc_pct=0.25, min_alloc_pct=0.04,
         description="Long spot / short perp; capture funding rate (P1)",
     ),
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.22, max_alloc_pct=0.30, min_alloc_pct=0.15,
+        target_alloc_pct=0.22, max_alloc_pct=0.32, min_alloc_pct=0.15,
         description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
     ),
     StrategyMeta(
         name="kalshi_calibration_arb",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.02,
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Favorite-longshot bias arb on Kalshi (P1)",
     ),
     # ── Phase 2
     StrategyMeta(
         name="crypto_basis_trade",
         asset_classes=["CRYPTO_FUTURE"], venue="coinbase",
-        target_alloc_pct=0.08, max_alloc_pct=0.20, min_alloc_pct=0.02,
+        target_alloc_pct=0.1, max_alloc_pct=0.2, min_alloc_pct=0.03,
         description="Long spot / short dated future on Coinbase (P2)",
     ),
     StrategyMeta(
         name="tsmom_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.13, max_alloc_pct=0.25, min_alloc_pct=0.05,
+        target_alloc_pct=0.16, max_alloc_pct=0.28, min_alloc_pct=0.06,
         description="12-1m time-series momentum on 7-ETF basket (P2)",
     ),
     StrategyMeta(
         name="commodity_carry",
         asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
-        target_alloc_pct=0.07, max_alloc_pct=0.18, min_alloc_pct=0.03,
+        target_alloc_pct=0.06, max_alloc_pct=0.18, min_alloc_pct=0.02,
         description="Top-N backwardated commodity futures (P2)",
     ),
     # ── Phase 3
@@ -167,13 +168,13 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="macro_kalshi",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.01,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Kalshi macro events vs implied probabilities (P3)",
     ),
     StrategyMeta(
         name="crypto_xsmom",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
-        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.02,
+        target_alloc_pct=0.07, max_alloc_pct=0.15, min_alloc_pct=0.03,
         description="Cross-sectional momentum on top-15 alts (P3)",
     ),
     StrategyMeta(
@@ -182,31 +183,42 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.00, max_alloc_pct=0.00, min_alloc_pct=0.0,
         description="Vol-target multiplier; publishes scaler only, no trades (P3)",
     ),
+    # ── Flagship — institutional multi-factor cross-sectional equity
+    # model (2026-05-19). The highest-sophistication sleeve in the
+    # book: momentum + low-vol + reversal composite, cross-sectionally
+    # z-scored, sector-neutralised, vol-targeted, turnover-controlled.
+    # Sized as a core sleeve alongside risk_parity + tsmom.
+    StrategyMeta(
+        name="multifactor_equity",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.14, max_alloc_pct=0.28, min_alloc_pct=0.06,
+        description="Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)",
+    ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
     StrategyMeta(
         name="rsi_mean_reversion",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Connors-style RSI(2) mean-reversion on 30 large-caps (P4)",
     ),
     StrategyMeta(
         name="sector_rotation",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Top-N SPDR sector ETFs by 90d return (P4)",
     ),
     StrategyMeta(
         name="pairs_trading",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Stat-arb on 6 classic correlated pairs (P4)",
     ),
     StrategyMeta(
         name="bollinger_breakout",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Momentum continuation on 20d Bollinger upper-band breaks (P4)",
     ),
     StrategyMeta(
@@ -215,13 +227,13 @@ ALL_STRATEGIES = [
         # +1% baseline / +3% max ceiling (was 4/15) to absorb the
         # retired pead v1 allocation. Cleaner EPS-surprise signal so
         # this should produce higher Sharpe than v1's gap-only proxy.
-        target_alloc_pct=0.06, max_alloc_pct=0.18, min_alloc_pct=0.02,
+        target_alloc_pct=0.09, max_alloc_pct=0.2, min_alloc_pct=0.03,
         description="Live PEAD via FMP earnings calendar (P4)",
     ),
     StrategyMeta(
         name="dividend_growth",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Quality-dividend ETF rotation by 90d return (P4)",
     ),
     # ── Phase 4b — additional experimental strategies for Alpaca
@@ -231,38 +243,38 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="gap_trading",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Overnight-gap reversion on S&P 100 (P4b)",
     ),
     StrategyMeta(
         name="turn_of_month",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.01,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Calendar seasonal: SPY around month boundaries (P4b)",
     ),
     StrategyMeta(
         name="low_vol_anomaly",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.15, min_alloc_pct=0.01,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Lowest-vol ETFs + stocks with positive trend (P4b)",
     ),
     StrategyMeta(
         name="internationals_rotation",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.12, min_alloc_pct=0.01,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="International country-ETF momentum vs SPY (P4b)",
     ),
     # ── Phase 5 — strategies consuming the new data feeds (Sprint C)
     StrategyMeta(
         name="macro_kalshi_v2",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.01,
+        target_alloc_pct=0.04, max_alloc_pct=0.1, min_alloc_pct=0.01,
         description="Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)",
     ),
     StrategyMeta(
         name="cross_venue_arb",
         asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.01,
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Kalshi vs Polymarket cross-venue arbitrage (P5)",
     ),
     StrategyMeta(
@@ -271,14 +283,14 @@ ALL_STRATEGIES = [
         # Smaller than v1 (12%) until we have paper-P&L data showing
         # the multi-venue gate adds Sharpe rather than just shrinking
         # opportunity. Champion tier auto-promotes if it earns it.
-        target_alloc_pct=0.04, max_alloc_pct=0.15, min_alloc_pct=0.02,
+        target_alloc_pct=0.06, max_alloc_pct=0.15, min_alloc_pct=0.02,
         description="Funding carry gated on Coinbase+Binance consensus (P5)",
     ),
     StrategyMeta(
         name="earnings_news_pead",
         asset_classes=["EQUITY"], venue="alpaca",
         # +2% baseline (was 3%) to absorb part of retired pead v1.
-        target_alloc_pct=0.05, max_alloc_pct=0.15, min_alloc_pct=0.01,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="PEAD gated on RSS news corroboration (P5)",
     ),
     # ── Phase 6 — advanced crypto strategies (2026-05-08).
@@ -287,13 +299,13 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="crypto_pairs_trading",
         asset_classes=["CRYPTO_SPOT", "CRYPTO_PERP"], venue="coinbase",
-        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
+        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)",
     ),
     StrategyMeta(
         name="crypto_breakout",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
-        target_alloc_pct=0.04, max_alloc_pct=0.12, min_alloc_pct=0.02,
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Donchian 30d-high breakout w/ trail-stop (P6)",
     ),
     StrategyMeta(
@@ -342,6 +354,8 @@ def build_strategies(brokers):
         instances["turn_of_month"] = TurnOfMonth(al)
         instances["low_vol_anomaly"] = LowVolAnomaly(al)
         instances["internationals_rotation"] = InternationalsRotation(al)
+        # Flagship — institutional multi-factor cross-sectional model
+        instances["multifactor_equity"] = MultiFactorEquity(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:
