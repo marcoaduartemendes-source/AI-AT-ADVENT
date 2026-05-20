@@ -53,6 +53,7 @@ from .earnings_news_pead import EarningsNewsPEAD
 from .gap_trading import GapTrading
 from .internationals_rotation import InternationalsRotation
 from .kalshi_calibration_arb import KalshiCalibrationArb
+from .leveraged_momentum import LeveragedMomentum
 from .low_vol_anomaly import LowVolAnomaly
 from .multifactor_equity import MultiFactorEquity
 from .macro_kalshi import MacroKalshi
@@ -62,6 +63,7 @@ from .pead import PEAD
 from .risk_parity_etf import RiskParityETF
 from .rsi_mean_reversion import RSIMeanReversion
 from .sector_rotation import SectorRotation
+from .thematic_growth import ThematicGrowth
 from .tsmom_etf import TSMomETF
 from .turn_of_month import TurnOfMonth
 from .vol_managed_overlay import VolManagedOverlay
@@ -95,6 +97,9 @@ __all__ = [
     "LowVolAnomaly",
     "MultiFactorEquity",
     "TurnOfMonth",
+    # New (user-requested): leveraged trend + thematic basket
+    "LeveragedMomentum",
+    "ThematicGrowth",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds
     "CrossVenueArb",         # Kalshi vs Polymarket
     "CryptoFundingCarryV2",  # Coinbase + Binance consensus
