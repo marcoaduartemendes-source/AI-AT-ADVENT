@@ -1,8 +1,10 @@
 name: Daily AI News Digest
 
 on:
+  issues:
+    types: [opened]
   schedule:
-    - cron: "0 9 * * *"   # 9:00 UTC = 5 AM EDT (Mar–Nov) / change to 0 10 for EST (Nov–Mar)
+    - cron: "0 9 * * *"   # 9:00 UTC = 5 AM EDT (Mar-Nov) / change to 0 10 for EST (Nov-Mar)
 
   workflow_dispatch:
     inputs:
@@ -19,16 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"   # match the rest of the project
+          python-version: "3.11"
           cache: pip
-      - run: pip install -r requirements.txt
+      - run: pip install requests
       - name: Send digest
         env:
           SMTP_PASSWORD: ${{ github.event.inputs.smtp_password || secrets.SMTP_PASSWORD }}
-          SMTP_FROM:     ${{ vars.SMTP_FROM }}
         run: python send_digest.py
 
       - name: Notify on workflow failure
@@ -38,6 +39,6 @@ jobs:
         run: |
           if [ -z "${ALERT_WEBHOOK_URL}" ]; then exit 0; fi
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          payload=$(printf '{"text":"\\u274c daily-digest failed: %s"}' "$run_url")
+          payload=$(printf '{"text":"❌ daily-digest failed: %s"}' "$run_url")
           curl -sS -X POST -H 'Content-Type: application/json' \
                -d "$payload" "$ALERT_WEBHOOK_URL" || true
