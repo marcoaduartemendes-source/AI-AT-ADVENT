@@ -128,26 +128,53 @@ logger = logging.getLogger(__name__)
 # ─── Theme definitions ────────────────────────────────────────────────
 
 THEMES: dict[str, list[str]] = {
-    "ai_compute":     ["NVDA", "AMD", "AVGO", "TSM", "ASML",
-                       "AMAT", "KLAC", "LRCX", "MRVL", "ARM", "MU"],
-    "ai_power":       ["CEG", "VST", "NRG", "GEV", "ETN", "PWR"],
-    "cybersecurity":  ["PANW", "CRWD", "ZS", "FTNT", "S"],
-    "defense":        ["LMT", "RTX", "NOC", "GD", "HII"],
-    "obesity_glp1":   ["LLY", "NVO"],
-    "robotics":       ["ISRG", "ROK", "ABBT"],
-    "quantum_spec":   ["IONQ", "RGTI"],
+    "ai_compute":         ["NVDA", "AMD", "AVGO", "TSM", "ASML",
+                            "AMAT", "KLAC", "LRCX", "MRVL", "ARM", "MU"],
+    "ai_power":           ["CEG", "VST", "NRG", "GEV", "ETN", "PWR"],
+    "cybersecurity":      ["PANW", "CRWD", "ZS", "FTNT", "S"],
+    "defense":            ["LMT", "RTX", "NOC", "GD", "HII"],
+    "obesity_glp1":       ["LLY", "NVO"],
+    "robotics":           ["ISRG", "ROK", "ABBT"],
+    "quantum_spec":       ["IONQ", "RGTI"],
+    # ── 2026-05-20 user-requested expansion: more thematic surface
+    # area for alpha. Each added theme has a concrete structural
+    # driver, not just a buzzword:
+    "clean_energy":       ["NEE", "FSLR", "ENPH", "RUN", "ICLN", "BEP"],
+    # Reshoring / CHIPS Act / IRA — overlap with ai_power & defense
+    # but specifically captures the industrial-cap-ex story.
+    "reshoring_chips":    ["TXN", "INTC", "ON", "ENTG", "ROP", "ETN"],
+    # Lithium / EV supply chain — secular EV growth + grid storage
+    # demand. ALB is dominant Western lithium; LIT is the basket ETF.
+    "lithium_ev_supply":  ["ALB", "LIT", "TSLA", "RIVN", "PCRFY"],
+    # Space economy — launch + satcom + defense overlap (RKLB, ASTS,
+    # LMT, BA). Small, speculative, high-beta.
+    "space_economy":      ["RKLB", "ASTS", "LMT", "BA", "IRDM"],
+    # Biotech innovation — gene/cell therapy + GLP-1 distinct names.
+    # Long-cycle, binary-event-heavy; small weight reflects that.
+    "biotech_innovation": ["REGN", "VRTX", "MRNA", "BNTX", "ALNY"],
+    # Water — undercovered but structural (population + climate);
+    # AWK is the largest pure-play US water utility, XYL the
+    # tech/infrastructure exposure.
+    "water":              ["AWK", "XYL", "PHO", "FIW"],
 }
 
-# Cross-theme weights — sum to 0.95 by design (small cash buffer
-# absorbs rounding & let the allocator's overall sleeve cap bind).
+# Cross-theme weights — re-normalised after the expansion. Higher-
+# conviction themes (ai_compute, ai_power) keep their dominance.
+# Weights sum to ~1.0; small residual is the cash buffer.
 THEME_WEIGHT: dict[str, float] = {
-    "ai_compute":     0.30,
-    "ai_power":       0.20,
-    "cybersecurity":  0.12,
-    "defense":        0.10,
-    "obesity_glp1":   0.10,
-    "robotics":       0.08,
-    "quantum_spec":   0.05,
+    "ai_compute":         0.22,   # was 0.30; still largest
+    "ai_power":           0.16,   # was 0.20
+    "cybersecurity":      0.10,
+    "defense":            0.08,
+    "obesity_glp1":       0.08,
+    "robotics":           0.06,
+    "quantum_spec":       0.04,
+    "clean_energy":       0.06,
+    "reshoring_chips":    0.06,
+    "lithium_ev_supply":  0.04,
+    "space_economy":      0.03,
+    "biotech_innovation": 0.04,
+    "water":              0.03,
 }
 
 MOM_LOOKBACK = 126            # ~6 months trading days

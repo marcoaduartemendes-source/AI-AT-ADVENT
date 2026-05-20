@@ -236,6 +236,12 @@ class Orchestrator:
                 run_performance_review()
             except Exception as e:
                 logger.warning(f"run_performance_review failed: {e}")
+            # Daily 0–10 self-grade — accountability layer.
+            try:
+                from common.self_grade import run_self_grade
+                run_self_grade()
+            except Exception as e:
+                logger.warning(f"run_self_grade failed: {e}")
 
     def _write_heartbeat(self, timestamp) -> None:
         """Tiny single-row table the dashboard polls to confirm the

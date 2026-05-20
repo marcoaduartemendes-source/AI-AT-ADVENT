@@ -991,6 +991,150 @@ def _read_benchmark() -> dict | None:
         return None
 
 
+def _read_self_grade() -> dict | None:
+    p = Path("docs/self_grade.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"self_grade.json read failed: {e}")
+        return None
+
+
+def _read_hedge_funds() -> dict | None:
+    p = Path("docs/hedge_fund_13f.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"hedge_fund_13f.json read failed: {e}")
+        return None
+
+
+def _render_grade_hero(g: dict | None) -> str:
+    """Hero card: overall grade + per-axis bars + narrative cards."""
+    if not g:
+        return (
+            '<div class="grade-hero">'
+            '<div class="score"><div class="big">—</div>'
+            '<div class="of">/10</div>'
+            '<div class="target">grade pending first cycle</div></div>'
+            '<div class="right">'
+            '<h3>Self-grade</h3>'
+            '<p style="font-size:12px;color:#cbd5e1;margin:4px 0">'
+            "Will populate after the next orchestrator cycle runs "
+            "<code>run_self_grade()</code>.</p>"
+            "</div></div>"
+        )
+    overall = g.get("overall_grade", 0)
+    target = g.get("target_grade", 9.0)
+    comps = g.get("components") or {}
+    nar = g.get("narrative") or {}
+
+    def _bar_color(s):
+        if s >= 8: return "#22c55e"
+        if s >= 6: return "#84cc16"
+        if s >= 4: return "#facc15"
+        if s >= 2: return "#f97316"
+        return "#ef4444"
+
+    bars = []
+    for k, v in comps.items():
+        s = v.get("score", 0)
+        pct = max(0, min(100, s * 10))
+        col = _bar_color(s)
+        bars.append(
+            f'<div class="bar-row">'
+            f'<div class="label">{html.escape(k.replace("_"," "))}</div>'
+            f'<div class="bar-track"><div class="bar-fill" '
+            f'style="width:{pct}%;background:{col}"></div></div>'
+            f'<div class="score-cell">{s}</div>'
+            f"</div>"
+        )
+
+    def _cards(label, key, color):
+        items = nar.get(key) or []
+        if not items:
+            return ""
+        lis = "".join(f"<li>{html.escape(str(x))}</li>" for x in items[:4])
+        return (
+            f'<div class="card"><h4 style="color:{color}">{label}</h4>'
+            f'<ul>{lis}</ul></div>'
+        )
+
+    score_color = _bar_color(overall)
+    return f"""
+<div class="grade-hero" id="grade">
+  <div class="score">
+    <div class="big" style="color:{score_color}">{overall}</div>
+    <div class="of">/ 10</div>
+    <div class="target">target ≥ {target}</div>
+  </div>
+  <div class="right">
+    <h3>Self-grade — {html.escape((g.get("as_of") or "")[:10])}</h3>
+    <div class="bars">{''.join(bars)}</div>
+    <div class="narrative-grid">
+      {_cards("Tried", "tried", "#a5b4fc")}
+      {_cards("Worked", "worked", "#86efac")}
+      {_cards("Failed", "failed", "#fca5a5")}
+      {_cards("Next", "next", "#fcd34d")}
+    </div>
+  </div>
+</div>"""
+
+
+def _render_hedge_funds(hf: dict | None) -> str:
+    """Hedge-fund 13F panel — most recent filings, link out."""
+    if not hf or not (hf.get("filings") or []):
+        return ""
+    rows = []
+    for f in (hf.get("filings") or [])[:10]:
+        rows.append(
+            f"<tr>"
+            f"<td><strong>{html.escape(f.get('fund',''))}</strong></td>"
+            f"<td>{html.escape(f.get('filed_date',''))}</td>"
+            f"<td>{html.escape(f.get('form',''))}</td>"
+            f'<td><a href="{html.escape(f.get("primary_doc_url",""))}" '
+            f'target="_blank" rel=noopener>open filing</a></td>'
+            f"</tr>"
+        )
+    return f"""
+<h2 id="hedge-funds" style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Top alpha funds — most recent 13F filings
+  <span style="font-weight:400;color:#6b7280;font-size:12px">
+  (as of {html.escape((hf.get("as_of") or "")[:19])} — quarterly,
+  filed 45d after quarter-end)</span>
+</h2>
+<p style="color:#6b7280;font-size:11px;margin:0 0 6px">
+  Renaissance / Two Sigma / Citadel / Millennium / Bridgewater /
+  AQR / DE Shaw. We learn from what they're holding; this scout
+  surfaces filings — actual holdings parsing is a follow-up.
+</p>
+<table style="font-size:12px">
+  <thead><tr><th>Fund</th><th>Filed</th><th>Form</th><th>Filing</th></tr></thead>
+  <tbody>
+{chr(10).join(rows)}
+  </tbody>
+</table>"""
+
+
+def _render_nav() -> str:
+    """Sticky in-page nav so the user can jump to any panel."""
+    return ('<div class="nav">'
+            '<strong style="color:#111827">JUMP →</strong>'
+            '<a href="#grade">Self-grade</a>'
+            '<a href="#improvements">Action queue</a>'
+            '<a href="#validation">Validation</a>'
+            '<a href="#hedge-funds">Hedge funds</a>'
+            '<a href="#strategies">Strategies</a>'
+            '<a href="#trades">Trades</a>'
+            "</div>")
+
+
 def _read_improvements() -> dict | None:
     """docs/improvements.json written by run_performance_review()."""
     p = Path("docs/improvements.json")
@@ -1047,7 +1191,7 @@ def _render_improvements(imp: dict | None) -> str:
             f"<strong>Setup issues (recurring in last 20 cycles):</strong>"
             f"<ul style='margin:4px 0 0 16px'>{items}</ul></div>")
     return f"""
-<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">
+<h2 id="improvements" style="font-size:16px;margin-top:28px;margin-bottom:8px">
   Performance review — autonomous action queue
   <span style="font-weight:400;color:#6b7280;font-size:12px">
   (as of {html.escape((imp.get("as_of") or "")[:19])} —
@@ -1143,7 +1287,7 @@ def _render_validation(val: dict | None) -> str:
         f"positive in ≥ {rub.get('min_positive_windows','?')}/3 windows"
     )
     return f"""
-<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">
+<h2 id="validation" style="font-size:16px;margin-top:28px;margin-bottom:8px">
   Strategy validation — {n_pass}/{n_tot} PASS
   <span style="font-weight:400;color:#6b7280;font-size:12px">
   (backtested 1/2/5y, fee-aware; as of {html.escape((val.get("as_of") or "")[:19])})</span>
@@ -1429,6 +1573,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     benchmark = _read_benchmark()
     validation = _read_validation()
     improvements = _read_improvements()
+    self_grade = _read_self_grade()
+    hedge_funds = _read_hedge_funds()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -1568,15 +1714,76 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
             letter-spacing: 0.03em; }}
   .desc {{ color: #6b7280; font-size: 11px; font-weight: 400; }}
   footer {{ color: #9ca3af; font-size: 12px; margin-top: 16px; text-align: center; }}
+  /* ── 2026-05-20 professional refresh ─────────────────────────── */
+  body {{ max-width: 1180px; }}
+  h1 {{ font-weight: 700; letter-spacing: -0.01em; }}
+  h2 {{ font-weight: 600; letter-spacing: -0.01em; padding-bottom: 4px;
+        border-bottom: 1px solid #e5e7eb; }}
+  .nav {{ position: sticky; top: 0; background: #f9fafb; z-index: 50;
+          padding: 6px 0; margin: 0 -4px 16px; border-bottom: 1px solid #e5e7eb;
+          font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap;
+          backdrop-filter: blur(8px); }}
+  .nav a {{ color: #4b5563; text-decoration: none; padding: 2px 6px;
+            border-radius: 4px; }}
+  .nav a:hover {{ background: #e5e7eb; color: #111827; }}
+  .grade-hero {{ background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                 color: white; border-radius: 12px; padding: 18px 22px;
+                 margin: 0 0 16px; display: grid;
+                 grid-template-columns: 200px 1fr; gap: 22px;
+                 box-shadow: 0 4px 12px rgba(15,23,42,0.10); }}
+  .grade-hero .score {{ display: flex; flex-direction: column;
+                          align-items: center; justify-content: center;
+                          border-right: 1px solid rgba(255,255,255,0.15);
+                          padding-right: 12px; }}
+  .grade-hero .score .big {{ font-size: 56px; font-weight: 700;
+                                line-height: 1; letter-spacing: -0.03em;
+                                font-variant-numeric: tabular-nums; }}
+  .grade-hero .score .of {{ font-size: 14px; color: #94a3b8;
+                              margin-top: 2px; }}
+  .grade-hero .score .target {{ font-size: 11px; color: #cbd5e1;
+                                  margin-top: 8px; text-align: center; }}
+  .grade-hero .right h3 {{ margin: 0 0 8px; font-size: 13px;
+                              font-weight: 600; color: #cbd5e1;
+                              text-transform: uppercase;
+                              letter-spacing: 0.06em; }}
+  .grade-hero .bars {{ display: grid; gap: 5px; }}
+  .grade-hero .bar-row {{ display: grid;
+                             grid-template-columns: 150px 1fr 30px;
+                             gap: 8px; align-items: center;
+                             font-size: 12px; }}
+  .grade-hero .bar-row .label {{ color: #cbd5e1; }}
+  .grade-hero .bar-track {{ background: rgba(255,255,255,0.10);
+                              height: 7px; border-radius: 4px;
+                              overflow: hidden; }}
+  .grade-hero .bar-fill {{ height: 100%; border-radius: 4px; }}
+  .grade-hero .bar-row .score-cell {{ text-align: right;
+                                         font-variant-numeric: tabular-nums;
+                                         font-weight: 600; color: white; }}
+  .narrative-grid {{ display: grid;
+                      grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+                      gap: 10px; margin: 8px 0 0; }}
+  .narrative-grid .card {{ background: rgba(255,255,255,0.06);
+                              border: 1px solid rgba(255,255,255,0.10);
+                              border-radius: 6px; padding: 8px 10px;
+                              font-size: 11px; }}
+  .narrative-grid .card h4 {{ margin: 0 0 4px; font-size: 11px;
+                                font-weight: 600;
+                                text-transform: uppercase;
+                                letter-spacing: 0.06em; color: #94a3b8; }}
+  .narrative-grid .card ul {{ margin: 0; padding-left: 14px;
+                                color: #e2e8f0; }}
+  td.num, th.num, .num-cell {{ font-variant-numeric: tabular-nums; }}
 </style>
 </head>
 <body>
 
-<h1>AI-AT-ADVENT — Strategy Performance</h1>
+<h1>AI-AT-ADVENT — Performance Control</h1>
 <div class="meta">
   Snapshot: <time data-ts="snapshot">{html.escape(snapshot_at)}</time>
   · Updated every 5 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
 </div>
+{_render_nav()}
+{_render_grade_hero(self_grade)}
 {_system_status_line(cycles_recent, heartbeat)}
 
 <div class="ks-banner" style="background:{ks_color}">
@@ -1651,6 +1858,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_render_validation(validation)}
 
 {_render_improvements(improvements)}
+
+{_render_hedge_funds(hedge_funds)}
 
 {_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 

@@ -93,7 +93,47 @@ def build_digest(*, now: datetime | None = None) -> str:
     except Exception as e:    # noqa: BLE001
         logger.warning(f"digest risk section failed: {e}")
 
+    # ── 6) Self-grade — non-optional accountability layer.
+    try:
+        sections.append(_self_grade_section())
+    except Exception as e:    # noqa: BLE001
+        logger.warning(f"digest self-grade section failed: {e}")
+        sections.append(DigestSection(
+            title="Self-grade", body="self-grade unavailable"))
+
     return "\n\n".join(f"== {s.title} ==\n{s.body}" for s in sections)
+
+
+def _self_grade_section() -> DigestSection:
+    """Render docs/self_grade.json — the user-mandated daily honest
+    evaluation. Overall + per-component scores + tried/worked/failed/next."""
+    import json
+    from pathlib import Path
+    p = Path("docs/self_grade.json")
+    if not p.exists():
+        return DigestSection(title="Self-grade",
+                              body="not yet computed (first cycle after deploy)")
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        return DigestSection(title="Self-grade",
+                              body=f"self_grade.json unreadable: {e}")
+    overall = d.get("overall_grade", "?")
+    target = d.get("target_grade", 9.0)
+    comps = d.get("components") or {}
+    nar = d.get("narrative") or {}
+    lines = [f"Overall: {overall}/10  (target {target})", "", "Components:"]
+    for k, v in comps.items():
+        lines.append(f"  {k}: {v.get('score','?')}/10  — {v.get('reason','')}")
+    for label, key in (("Tried", "tried"), ("Worked", "worked"),
+                        ("Failed", "failed"), ("Next", "next")):
+        items = nar.get(key) or []
+        if items:
+            lines.append("")
+            lines.append(f"{label}:")
+            for it in items:
+                lines.append(f"  • {it}")
+    return DigestSection(title="Self-grade", body="\n".join(lines))
 
 
 def send_digest() -> bool:

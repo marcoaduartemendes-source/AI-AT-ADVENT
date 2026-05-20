@@ -131,19 +131,28 @@ def backtest_leveraged_momentum(window_days: int) -> BacktestSummary:
 # ─── thematic_growth ──────────────────────────────────────────────────
 
 _THEMES: dict[str, list[str]] = {
-    "ai_compute":     ["NVDA", "AMD", "AVGO", "TSM", "ASML",
-                       "AMAT", "KLAC", "LRCX", "MRVL", "ARM", "MU"],
-    "ai_power":       ["CEG", "VST", "NRG", "GEV", "ETN", "PWR"],
-    "cybersecurity":  ["PANW", "CRWD", "ZS", "FTNT", "S"],
-    "defense":        ["LMT", "RTX", "NOC", "GD", "HII"],
-    "obesity_glp1":   ["LLY", "NVO"],
-    "robotics":       ["ISRG", "ROK", "ABBT"],
-    "quantum_spec":   ["IONQ", "RGTI"],
+    "ai_compute":         ["NVDA", "AMD", "AVGO", "TSM", "ASML",
+                            "AMAT", "KLAC", "LRCX", "MRVL", "ARM", "MU"],
+    "ai_power":           ["CEG", "VST", "NRG", "GEV", "ETN", "PWR"],
+    "cybersecurity":      ["PANW", "CRWD", "ZS", "FTNT", "S"],
+    "defense":            ["LMT", "RTX", "NOC", "GD", "HII"],
+    "obesity_glp1":       ["LLY", "NVO"],
+    "robotics":           ["ISRG", "ROK", "ABBT"],
+    "quantum_spec":       ["IONQ", "RGTI"],
+    "clean_energy":       ["NEE", "FSLR", "ENPH", "RUN", "ICLN", "BEP"],
+    "reshoring_chips":    ["TXN", "INTC", "ON", "ENTG", "ROP", "ETN"],
+    "lithium_ev_supply":  ["ALB", "LIT", "TSLA", "RIVN", "PCRFY"],
+    "space_economy":      ["RKLB", "ASTS", "LMT", "BA", "IRDM"],
+    "biotech_innovation": ["REGN", "VRTX", "MRNA", "BNTX", "ALNY"],
+    "water":              ["AWK", "XYL", "PHO", "FIW"],
 }
 _THEME_WEIGHT: dict[str, float] = {
-    "ai_compute": 0.30, "ai_power": 0.20, "cybersecurity": 0.12,
-    "defense": 0.10, "obesity_glp1": 0.10, "robotics": 0.08,
-    "quantum_spec": 0.05,
+    "ai_compute": 0.22, "ai_power": 0.16, "cybersecurity": 0.10,
+    "defense": 0.08, "obesity_glp1": 0.08, "robotics": 0.06,
+    "quantum_spec": 0.04, "clean_energy": 0.06,
+    "reshoring_chips": 0.06, "lithium_ev_supply": 0.04,
+    "space_economy": 0.03, "biotech_innovation": 0.04,
+    "water": 0.03,
 }
 _THM_SMA = 200
 _THM_MOM = 126
