@@ -245,6 +245,17 @@ class Orchestrator:
                 run_data_quality()
             except Exception as e:
                 logger.warning(f"run_data_quality failed: {e}")
+            # Auto-demote agent — autonomously freezes strategies that
+            # FAIL validation, OVERFIT in walk-forward, bleed live, or
+            # produce zero proposals 5+ cycles. Reads docs/validation,
+            # walk_forward, trades_recent, cycle_status; writes docs/
+            # auto_overrides.json. The allocator reads that override
+            # next cycle and applies the freeze multiplier — no human.
+            try:
+                from common.auto_demote import run_auto_demote
+                run_auto_demote()
+            except Exception as e:
+                logger.warning(f"run_auto_demote failed: {e}")
             # Daily 0–10 self-grade — accountability layer.
             try:
                 from common.self_grade import run_self_grade
@@ -620,6 +631,20 @@ class Orchestrator:
                 if meta:
                     target_pct = meta.target_alloc_pct
                     target_usd = state.equity_usd * target_pct
+            # Apply auto-demote multiplier (0.0 freezes the strategy
+            # this cycle without any source-code change). Source of
+            # truth: docs/auto_overrides.json written by run_auto_demote.
+            try:
+                from common.auto_demote import get_auto_multiplier
+                mult = get_auto_multiplier(name)
+                if mult < 1.0:
+                    target_pct *= mult
+                    target_usd *= mult
+                    if mult == 0.0:
+                        outcome.skip_reasons.append(
+                            "auto-demoted (see docs/auto_overrides.json)")
+            except Exception as e:
+                logger.debug(f"auto_demote multiplier read failed: {e}")
             outcome.target_alloc_pct = target_pct
             outcome.target_alloc_usd = target_usd
             if target_usd <= 0:

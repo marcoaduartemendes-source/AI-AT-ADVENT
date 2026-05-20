@@ -567,6 +567,75 @@ def _thematic_growth_dispatch(window_days: int) -> BacktestSummary:
     return backtest_thematic_growth(window_days)
 
 
+def _cross_asset_trend_dispatch(window_days: int) -> BacktestSummary:
+    """Reuses the tsmom_etf backtester with the cross-asset universe.
+    Same 12-1m signal and execution model, different ETFs."""
+    universe = ["TLT", "GLD", "DBC", "USO", "UUP"]
+    lookback = 252
+    skip = 21
+    rebalance_every = 21
+    target_alloc_per_leg = 1000.0
+
+    histories = {sym: _yahoo_history(sym, window_days + lookback + 30)
+                 for sym in universe}
+    histories = {s: h for s, h in histories.items() if len(h) >= lookback + 5}
+    if not histories:
+        return BacktestSummary(strategy="cross_asset_trend",
+                                window_days=window_days,
+                                note="No Yahoo data for cross-asset universe")
+
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+    base_idx = max(len(next(iter(histories.values()))) - window_days,
+                    lookback + 1)
+    n_bars = len(next(iter(histories.values())))
+
+    for i in range(base_idx, n_bars):
+        bar_time = datetime.fromtimestamp(
+            histories[list(histories.keys())[0]][i, 0], tz=UTC)
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        for sym, candles in histories.items():
+            if i >= len(candles):
+                continue
+            window = candles[i - lookback:i - skip, 4]
+            if len(window) < 30:
+                continue
+            ret_12_1 = (window[-1] - window[0]) / window[0]
+            current_price = float(candles[i, 4])
+            should_hold = ret_12_1 > 0
+            holding = sym in positions
+            if should_hold and not holding:
+                qty = target_alloc_per_leg / current_price
+                positions[sym] = {"qty": qty, "entry_price": current_price,
+                                    "entry_time": bar_time.isoformat()}
+                entry_volume += target_alloc_per_leg
+                trades.append({
+                    "strategy": "cross_asset_trend", "side": "BUY",
+                    "product_id": sym, "amount_usd": target_alloc_per_leg,
+                    "quantity": qty, "entry_price": current_price,
+                    "open_time": bar_time.isoformat(),
+                    "reason": f"12-1m={ret_12_1*100:+.1f}%",
+                })
+            elif (not should_hold) and holding:
+                pos = positions.pop(sym)
+                exit_price = current_price
+                gross = pos["qty"] * (exit_price - pos["entry_price"])
+                fees = (pos["qty"] * pos["entry_price"]
+                         + pos["qty"] * exit_price) * _FEE_RATE
+                trades.append({
+                    "strategy": "cross_asset_trend", "side": "SELL",
+                    "product_id": sym, "amount_usd": pos["qty"] * exit_price,
+                    "quantity": pos["qty"], "entry_price": pos["entry_price"],
+                    "exit_price": exit_price, "open_time": pos["entry_time"],
+                    "close_time": bar_time.isoformat(),
+                    "pnl_usd": gross - fees, "exit_reason": "signal",
+                })
+    return _equity_curve_to_summary("cross_asset_trend", window_days,
+                                     trades, entry_volume)
+
+
 def _earnings_momentum_dispatch(window_days: int) -> BacktestSummary:
     """earnings_momentum is the live counterpart of `pead` — same data
     source (FMP /historical/earning_calendar), same surprise threshold
@@ -616,6 +685,7 @@ _STRATEGY_BACKTESTS = {
     # backtests them here so the dashboard panel shows their verdict.
     "leveraged_momentum": _leveraged_momentum_dispatch,
     "thematic_growth": _thematic_growth_dispatch,
+    "cross_asset_trend": _cross_asset_trend_dispatch,
     # Reuses pead's FMP-driven backtest with earnings_momentum branding
     "earnings_momentum": _earnings_momentum_dispatch,
 }

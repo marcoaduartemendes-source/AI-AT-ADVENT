@@ -136,8 +136,13 @@ class RiskConfig:
     multiplier_default: float = 1.0
 
     # ── Trade gating -----------------------------------------------------
-    min_trade_usd: float = 5.0
-    """Don't bother sending orders smaller than this — fees would dominate."""
+    min_trade_usd: float = 50.0
+    """Don't bother sending orders smaller than this — fees would
+    dominate. 2026-05-20 raised from 5 → 50: at 10bps round-trip
+    + bid-ask spread, a $5 trade pays ~$0.05+ in friction against
+    expected P&L of ~$0.10 — net negative on average. $50 floor
+    means a 1% move translates to $0.50, comfortably above fee
+    drag. Helps fee_discipline grade."""
 
     max_trade_usd: float = 5000.0
     """Per-order ceiling; prevents one bad signal from blowing up the book.
@@ -205,7 +210,7 @@ class RiskConfig:
             multiplier_min=_envf("MULTIPLIER_MIN", 0.5),
             multiplier_max=_envf("MULTIPLIER_MAX", 2.0),
             multiplier_default=_envf("RISK_MULTIPLIER", 1.0),
-            min_trade_usd=_envf("MIN_TRADE_USD", 5.0),
+            min_trade_usd=_envf("MIN_TRADE_USD", 50.0),
             max_trade_usd=_envf("MAX_TRADE_USD_GLOBAL", 5000.0),
             max_trade_usd_coinbase=_opt_envf("MAX_TRADE_USD_COINBASE"),
             max_trade_usd_alpaca=_opt_envf("MAX_TRADE_USD_ALPACA"),
