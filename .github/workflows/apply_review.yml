@@ -31,7 +31,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Restore review database
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: data/strategic_review.db
           key: strategic-review-readonly-placeholder
