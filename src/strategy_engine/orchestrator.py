@@ -211,6 +211,16 @@ class Orchestrator:
                 write_benchmark_json()
             except Exception as e:
                 logger.warning(f"write_benchmark_json failed: {e}")
+            # Strategy validation gate — backtests every strategy
+            # across 1/2/5y and writes docs/validation.json. Self
+            # rate-limited to once/24h (backtests are slow + hit
+            # external data APIs). Retirement-critical: this is the
+            # evidence layer before any strategy risks real money.
+            try:
+                from common.strategy_validation import run_validation
+                run_validation()
+            except Exception as e:
+                logger.warning(f"run_validation failed: {e}")
 
     def _write_heartbeat(self, timestamp) -> None:
         """Tiny single-row table the dashboard polls to confirm the

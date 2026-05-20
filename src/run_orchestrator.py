@@ -41,7 +41,9 @@ from strategies import (
     EarningsNewsPEAD,
     GapTrading,
     InternationalsRotation,
+    IntradayMeanReversion,
     KalshiCalibrationArb,
+    LeveragedMomentum,
     LowVolAnomaly,
     MacroKalshi,
     MacroKalshiV2,
@@ -50,6 +52,7 @@ from strategies import (
     RiskParityETF,
     RSIMeanReversion,
     SectorRotation,
+    ThematicGrowth,
     TSMomETF,
     TurnOfMonth,
     VolManagedOverlay,
@@ -193,6 +196,37 @@ ALL_STRATEGIES = [
         asset_classes=["EQUITY"], venue="alpaca",
         target_alloc_pct=0.14, max_alloc_pct=0.28, min_alloc_pct=0.06,
         description="Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)",
+    ),
+    # ── User-requested experimental sleeves. Both REGISTER SMALL and
+    # stay DRY until the validation harness (docs/validation.json)
+    # records PASS — see CLAUDE.md + common/strategy_validation.py.
+    # leveraged_momentum: 3x ETFs gated on uptrend + low-vol regime
+    # with a -15% hard stop; deliberately tiny so a wipeout is bounded.
+    StrategyMeta(
+        name="leveraged_momentum",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        description="3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)",
+    ),
+    # thematic_growth: curated 2026 themes (AI compute, AI power,
+    # cybersec, defense, GLP-1, robotics, quantum) — within-theme
+    # 6m-momentum rank picks the winners; cross-theme by conviction.
+    StrategyMeta(
+        name="thematic_growth",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        description="Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)",
+    ),
+    # intraday_mean_reversion: the "HFT" the user requested, honestly
+    # labelled — 5-min-bar mean reversion on SPY/QQQ/IWM. Cannot be
+    # backtested from daily Yahoo data, so the validation panel will
+    # show NO_DATA and it stays paper until 90+ days of paper Sharpe
+    # justify promotion. See strategies/intraday_mean_reversion.py.
+    StrategyMeta(
+        name="intraday_mean_reversion",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.015, max_alloc_pct=0.04, min_alloc_pct=0.0,
+        description="Intraday VWAP fade on liquid ETFs (5-min bars)",
     ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
@@ -356,6 +390,11 @@ def build_strategies(brokers):
         instances["internationals_rotation"] = InternationalsRotation(al)
         # Flagship — institutional multi-factor cross-sectional model
         instances["multifactor_equity"] = MultiFactorEquity(al)
+        # User-requested: leveraged trend + thematic basket. Tiny
+        # DRY allocations until the validation harness PASSes them.
+        instances["leveraged_momentum"] = LeveragedMomentum(al)
+        instances["thematic_growth"] = ThematicGrowth(al)
+        instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:

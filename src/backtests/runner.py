@@ -40,7 +40,17 @@ _FEE_RATE = _FEE_BPS / 10000
 #   - macro_kalshi            → same Kalshi feed + FRED actuals
 #
 # Anything still genuinely un-backtestable goes here.
-UNBACKTESTABLE: dict[str, str] = {}
+UNBACKTESTABLE: dict[str, str] = {
+    # 5-min-bar intraday VWAP fade — Yahoo only exposes daily history,
+    # so an honest backtest is impossible without a paid intraday feed.
+    # The validation panel will show NO_DATA with this reason, so the
+    # strategy stays in DRY until 90+ days of paper Sharpe justify
+    # promotion (see src/strategies/intraday_mean_reversion.py).
+    "intraday_mean_reversion": (
+        "intraday strategy: requires 5-min-bar history; Yahoo daily "
+        "bars cannot honestly backtest it (would be misleading)"
+    ),
+}
 
 
 # ─── Output type ──────────────────────────────────────────────────────────
@@ -547,6 +557,16 @@ def _internationals_rotation_dispatch(window_days: int) -> BacktestSummary:
     return backtest_internationals_rotation(window_days)
 
 
+def _leveraged_momentum_dispatch(window_days: int) -> BacktestSummary:
+    from .leveraged_thematic_backtest import backtest_leveraged_momentum
+    return backtest_leveraged_momentum(window_days)
+
+
+def _thematic_growth_dispatch(window_days: int) -> BacktestSummary:
+    from .leveraged_thematic_backtest import backtest_thematic_growth
+    return backtest_thematic_growth(window_days)
+
+
 def _earnings_momentum_dispatch(window_days: int) -> BacktestSummary:
     """earnings_momentum is the live counterpart of `pead` — same data
     source (FMP /historical/earning_calendar), same surprise threshold
@@ -591,6 +611,11 @@ _STRATEGY_BACKTESTS = {
     "pairs_trading": _pairs_trading_dispatch,
     "dividend_growth": _dividend_growth_dispatch,
     "internationals_rotation": _internationals_rotation_dispatch,
+    # User-requested: leveraged trend (3x) + thematic basket. Both
+    # registered DRY-only in run_orchestrator; the validation harness
+    # backtests them here so the dashboard panel shows their verdict.
+    "leveraged_momentum": _leveraged_momentum_dispatch,
+    "thematic_growth": _thematic_growth_dispatch,
     # Reuses pead's FMP-driven backtest with earnings_momentum branding
     "earnings_momentum": _earnings_momentum_dispatch,
 }

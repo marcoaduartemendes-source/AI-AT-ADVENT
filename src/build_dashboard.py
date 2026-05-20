@@ -991,6 +991,89 @@ def _read_benchmark() -> dict | None:
         return None
 
 
+def _read_validation() -> dict | None:
+    """docs/validation.json written by run_validation(). None if not
+    yet produced."""
+    p = Path("docs/validation.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"validation.json read failed: {e}")
+        return None
+
+
+def _render_validation(val: dict | None) -> str:
+    """Strategy validation gate — PASS/FAIL/UNPROVEN per strategy from
+    1/2/5y fee-aware backtests. The evidence layer the user's
+    retirement-critical mandate demands."""
+    if not val:
+        return (
+            '<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">'
+            "Strategy validation</h2>"
+            '<p style="color:#6b7280;font-size:13px">Not yet run. The '
+            "orchestrator backtests every strategy across 1/2/5y once "
+            "per day; the verdict appears here.</p>"
+        )
+    strategies = val.get("strategies") or {}
+    n_pass = val.get("n_pass", 0)
+    n_tot = val.get("n_strategies", len(strategies))
+    rub = val.get("rubric", {})
+    order = {"PASS": 0, "FAIL": 1, "UNPROVEN": 2, "NO_DATA": 3}
+    rows = []
+    for name in sorted(strategies,
+                        key=lambda n: (order.get(
+                            strategies[n].get("verdict"), 9), n)):
+        v = strategies[name]
+        verdict = v.get("verdict", "?")
+        bg = {"PASS": "#dcfce7", "FAIL": "#fee2e2",
+              "UNPROVEN": "#fef3c7", "NO_DATA": "#f3f4f6"}.get(
+            verdict, "white")
+        fg = {"PASS": "#166534", "FAIL": "#7f1d1d",
+              "UNPROVEN": "#92400e", "NO_DATA": "#6b7280"}.get(
+            verdict, "#111")
+        s5 = v.get("sharpe_5y")
+        s5s = f"{s5:+.2f}" if isinstance(s5, (int, float)) else "—"
+        rows.append(
+            f'<tr style="background:{bg}">'
+            f"<td><strong>{html.escape(name)}</strong></td>"
+            f'<td style="color:{fg};font-weight:700">{verdict}</td>'
+            f'<td style="text-align:right">{s5s}</td>'
+            f'<td style="text-align:right">{v.get("n_trades_5y","—")}</td>'
+            f'<td style="text-align:right">{v.get("return_on_volume_pct","—")}</td>'
+            f'<td style="font-size:11px;color:#4b5563">'
+            f'{html.escape(str(v.get("reason",""))[:140])}</td>'
+            f"</tr>"
+        )
+    rubric_txt = (
+        f"PASS rubric: 5y Sharpe ≥ {rub.get('min_sharpe_5y','?')}, "
+        f"≥ {rub.get('min_trades_5y','?')} trades, "
+        f"return-on-volume > {rub.get('min_return_on_volume_pct','?')}%, "
+        f"positive in ≥ {rub.get('min_positive_windows','?')}/3 windows"
+    )
+    return f"""
+<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Strategy validation — {n_pass}/{n_tot} PASS
+  <span style="font-weight:400;color:#6b7280;font-size:12px">
+  (backtested 1/2/5y, fee-aware; as of {html.escape((val.get("as_of") or "")[:19])})</span>
+</h2>
+<p style="color:#6b7280;font-size:11px;margin:0 0 6px">{html.escape(rubric_txt)}.
+Only PASS strategies are eligible for live promotion; everything
+else stays paper-only until it proves an edge.</p>
+<table style="font-size:12px">
+  <thead><tr><th>Strategy</th><th>Verdict</th>
+      <th style="text-align:right">Sharpe 5y</th>
+      <th style="text-align:right">Trades 5y</th>
+      <th style="text-align:right">RoV %</th>
+      <th>Why</th></tr></thead>
+  <tbody>
+{chr(10).join(rows)}
+  </tbody>
+</table>"""
+
+
 def _render_benchmark(bench: dict | None) -> str:
     """Portfolio trailing return vs SPY / QQQ / BTC over 7/14/30d."""
     if not bench:
@@ -1255,6 +1338,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     cycles_recent = _recent_cycles(5)
     heartbeat = _read_heartbeat()
     benchmark = _read_benchmark()
+    validation = _read_validation()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -1473,6 +1557,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_render_cycle_diagnostics(cycles_recent)}
 
 {_render_benchmark(benchmark)}
+
+{_render_validation(validation)}
 
 {_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 
