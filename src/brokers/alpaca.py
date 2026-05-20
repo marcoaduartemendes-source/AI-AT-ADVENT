@@ -234,6 +234,21 @@ class AlpacaAdapter(BrokerAdapter):
         limit_price: float | None = None,
         client_order_id: str | None = None,
     ) -> Order:
+        # ── 2026-05-20 cancel-loop fix ────────────────────────────
+        # Every order is submitted with TIF=day. When submitted
+        # outside RTH, Alpaca holds it until next session open then
+        # auto-cancels if unfilled. The next cycle re-proposes the
+        # same exit, re-submits, re-cancels — observed in production
+        # as ~76% of recent trades stuck in a CANCELED loop on EFAV
+        # (low_vol_anomaly) + WMT (rsi_mean_reversion). Refuse to
+        # submit when market is closed; the orchestrator will retry
+        # next cycle, and when it lands in-session the order fills.
+        from common.market_hours import is_market_open
+        if not is_market_open("alpaca"):
+            raise BrokerError(
+                "Alpaca market closed — deferring order to next "
+                "in-session cycle (was firing-then-cancelling endlessly)"
+            )
         body: dict = {
             "symbol": symbol,
             "side": side.value.lower(),

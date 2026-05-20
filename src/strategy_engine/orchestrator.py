@@ -236,6 +236,15 @@ class Orchestrator:
                 run_performance_review()
             except Exception as e:
                 logger.warning(f"run_performance_review failed: {e}")
+            # Data-quality agent — audits every JSON the dashboard
+            # reads (staleness, validity, internal consistency).
+            # Must run BEFORE run_self_grade so the data_quality
+            # score is available to fold into the self-grade.
+            try:
+                from common.data_quality import run_data_quality
+                run_data_quality()
+            except Exception as e:
+                logger.warning(f"run_data_quality failed: {e}")
             # Daily 0–10 self-grade — accountability layer.
             try:
                 from common.self_grade import run_self_grade

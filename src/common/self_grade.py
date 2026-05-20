@@ -150,6 +150,37 @@ def _grade_setup_health(cycle_status) -> tuple[float, str]:
     return g, f"{clean}/{len(recent)} clean cycles → {g}/10"
 
 
+def _grade_alpha_vs_benchmark() -> tuple[float, str]:
+    """Excess return vs SPY over the longest window benchmark.json
+    exposes. This is the bottom-line definition of alpha — did the
+    bot beat the index after fees? 0–10 scale: beating SPY by ≥3pp
+    annualised = 10; matching = 6; underperforming by ≥3pp = 0."""
+    b = _read("docs/benchmark.json")
+    if not b:
+        return 5.0, "benchmark.json not yet produced → 5.0/10 (neutral)"
+    # benchmark.json shape varies; try common fields.
+    bot = b.get("bot_return_pct_ann") or b.get("portfolio_return_ann")
+    spy = b.get("spy_return_pct_ann") or b.get("benchmark_return_ann")
+    if bot is None or spy is None:
+        # Fall back to simpler total-return comparison.
+        bot = b.get("bot_return_pct") or b.get("portfolio_return_total")
+        spy = b.get("spy_return_pct") or b.get("benchmark_return_total")
+    if bot is None or spy is None:
+        return 5.0, "benchmark.json lacks comparable fields → 5.0/10"
+    try:
+        excess_pp = float(bot) - float(spy)
+    except Exception:
+        return 5.0, "benchmark fields unparseable → 5.0/10"
+    # Linear interp: -3pp → 0, 0pp → 6, +3pp → 10.
+    if excess_pp <= -3: g = 0.0
+    elif excess_pp <= 0: g = 6.0 + (excess_pp / 3) * 6.0
+    elif excess_pp <= 3: g = 6.0 + (excess_pp / 3) * 4.0
+    else: g = 10.0
+    g = round(max(0.0, min(10.0, g)), 1)
+    return g, (f"bot {bot:+.1f}% vs SPY {spy:+.1f}% → excess "
+                f"{excess_pp:+.1f}pp → {g}/10")
+
+
 def _grade_research_freshness(validation) -> tuple[float, str]:
     """Younger validation = higher. 0h=10, 24h=8, 48h=5, 72h=3, >7d=0."""
     if not validation:
@@ -182,17 +213,33 @@ def run_self_grade(out_path: str = "docs/self_grade.json") -> dict:
     exec_g, exec_r = _grade_execution(cycle_status)
     setup_g, setup_r = _grade_setup_health(cycle_status)
     rsch_g, rsch_r = _grade_research_freshness(validation)
+    # ── 2026-05-20: data-quality axis. User mandate: "rate yourself
+    # across all critical dimensions from 1 to 10". The data layer
+    # IS a critical dimension — a great grade is meaningless if the
+    # underlying JSON is stale, missing, or inconsistent.
+    dq = _read("docs/data_quality.json") or {}
+    dq_g = dq.get("score", 5.0) if dq else 5.0
+    dq_r = (f"data-quality checks {dq.get('counts', {})} → {dq_g}/10"
+             if dq else "no data-quality audit yet → 5.0/10 (neutral)")
+    # ── Alpha-vs-benchmark — explicit excess-return read against SPY
+    # via docs/benchmark.json (the existing benchmark.json carries
+    # the bot's equity curve + SPY's). This is what "alpha" means in
+    # practice: did we beat the index after fees?
+    alpha_vs_g, alpha_vs_r = _grade_alpha_vs_benchmark()
 
-    weights = {"alpha_track": 0.30, "fee_discipline": 0.15,
-                "overfit_resistance": 0.15, "execution_quality": 0.15,
-                "setup_health": 0.10, "research_freshness": 0.15}
+    weights = {"alpha_track": 0.22, "alpha_vs_spy": 0.18,
+                "fee_discipline": 0.12, "overfit_resistance": 0.12,
+                "execution_quality": 0.12, "setup_health": 0.08,
+                "research_freshness": 0.08, "data_quality": 0.08}
     components = {
         "alpha_track":         {"score": alpha_g, "reason": alpha_r},
+        "alpha_vs_spy":        {"score": alpha_vs_g, "reason": alpha_vs_r},
         "fee_discipline":      {"score": fee_g, "reason": fee_r},
         "overfit_resistance":  {"score": ovf_g, "reason": ovf_r},
         "execution_quality":   {"score": exec_g, "reason": exec_r},
         "setup_health":        {"score": setup_g, "reason": setup_r},
         "research_freshness":  {"score": rsch_g, "reason": rsch_r},
+        "data_quality":        {"score": dq_g, "reason": dq_r},
     }
     overall = round(sum(components[k]["score"] * weights[k]
                           for k in components), 2)
