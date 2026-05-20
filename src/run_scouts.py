@@ -19,6 +19,7 @@ from scouts.base import ScoutAgent
 from scouts.commodities_scout import CommoditiesScout
 from scouts.crypto_scout import CryptoScout
 from scouts.equities_scout import EquitiesScout
+from scouts.hedge_fund_13f_scout import HedgeFund13FScout
 from scouts.macro_scout import MacroScout
 from scouts.prediction_scout import PredictionScout
 from scouts.signal_bus import SignalBus
@@ -40,6 +41,8 @@ def init_scouts(bus: SignalBus) -> list[ScoutAgent]:
         PredictionScout(bus=bus),
         EquitiesScout(bus=bus),
         CommoditiesScout(bus=bus),
+        # Research scout — daily check of top-alpha hedge fund 13Fs
+        HedgeFund13FScout(bus=bus),
     ]
 
 

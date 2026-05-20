@@ -233,7 +233,7 @@ jobs:
           # the same cycle. These are the belt-and-suspenders path
           # that bypasses actions/cache entirely. cycle_status holds
           # diagnostics; trades_recent holds the raw trade ledger.
-          git add docs/index.html docs/.dashboard-content-hash docs/cycle_status.json docs/trades_recent.json docs/benchmark.json docs/validation.json docs/walk_forward.json docs/improvements.json 2>/dev/null || true
+          git add docs/index.html docs/.dashboard-content-hash docs/cycle_status.json docs/trades_recent.json docs/benchmark.json docs/validation.json docs/walk_forward.json docs/improvements.json docs/self_grade.json docs/hedge_fund_13f.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No dashboard changes."
             exit 0
