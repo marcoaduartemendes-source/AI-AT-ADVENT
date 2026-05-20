@@ -64,10 +64,32 @@ class CoinbaseAdapter(BrokerAdapter):
             accts = self.client.get_accounts()
         except Exception as e:
             raise BrokerError(f"Coinbase get_accounts: {e}") from e
-        usd = [a for a in accts if a.get("currency") == "USD"]
-        cash = float(usd[0]["available_balance"]["value"]) if usd else 0.0
+
+        # ── Cash detection (2026-05-20 fix) ───────────────────────────
+        # The original code only read the USD wallet. Production cycles
+        # were rejecting every BUY with "Coinbase USD wallet too low:
+        # $0.00 available" because users routinely fund with USDC
+        # (the bridge from exchanges/DeFi), not raw USD — and Coinbase
+        # Advanced treats USD and USDC as fully fungible at 1:1 for
+        # spot trading (USD-* and USDC-* pairs deliver the same coin).
+        # We now sum USD + USDC into cash_usd so the wallet check
+        # reflects what the user actually has available to deploy.
+        def _bal(ccy: str) -> float:
+            for a in accts:
+                if a.get("currency") == ccy:
+                    try:
+                        return float(a.get("available_balance",
+                                             {}).get("value", 0))
+                    except Exception:
+                        return 0.0
+            return 0.0
+
+        usd_bal = _bal("USD")
+        usdc_bal = _bal("USDC")
+        cash = usd_bal + usdc_bal
+
         # Equity = cash + sum of crypto holdings * mark price.
-        # We approximate with cash here; positions endpoint fills the rest.
+        # USD/USDC already counted in `cash`; skip both here.
         equity = cash
         for a in accts:
             ccy = a.get("currency")
@@ -75,7 +97,7 @@ class CoinbaseAdapter(BrokerAdapter):
                 bal = float(a.get("available_balance", {}).get("value", 0))
             except Exception:
                 bal = 0.0
-            if ccy and ccy != "USD" and bal > 0:
+            if ccy and ccy not in ("USD", "USDC") and bal > 0:
                 pid = f"{ccy}-USD"
                 px = self._safe_price(pid)
                 if px:
@@ -86,7 +108,9 @@ class CoinbaseAdapter(BrokerAdapter):
             buying_power_usd=cash,  # spot only; futures margin handled separately
             equity_usd=equity,
             is_paper=self.is_paper,
-            raw={"accounts": accts},
+            raw={"accounts": accts,
+                 "usd_balance": usd_bal,
+                 "usdc_balance": usdc_bal},
         )
 
     def get_positions(self) -> list[Position]:
@@ -190,10 +214,20 @@ class CoinbaseAdapter(BrokerAdapter):
                 # default; 5% buffer covers fee + 4% drift.
                 spendable = max(cash * 0.95, 0.0)
                 if spendable < 1.0:
+                    # Show the USD/USDC split so the user can see if
+                    # the funds are sitting in a non-spot wallet or
+                    # different portfolio (Coinbase Advanced supports
+                    # multiple portfolios; we read whichever the API
+                    # key is scoped to).
+                    raw = acct.raw or {}
+                    usd_b = float(raw.get("usd_balance", 0) or 0)
+                    usdc_b = float(raw.get("usdc_balance", 0) or 0)
                     raise BrokerError(
-                        f"Coinbase USD wallet too low: ${cash:.2f} "
-                        f"available (need >$1 after 5% buffer). "
-                        f"Fund the spot USD wallet to enable trading."
+                        f"Coinbase spot cash too low: ${cash:.2f} "
+                        f"(USD ${usd_b:.2f} + USDC ${usdc_b:.2f}). "
+                        f"Need >$1 after 5% buffer. If your funds are "
+                        f"in a different Coinbase portfolio, move them "
+                        f"to the one the API key is scoped to."
                     )
                 if notional_usd > spendable:
                     logger.info(

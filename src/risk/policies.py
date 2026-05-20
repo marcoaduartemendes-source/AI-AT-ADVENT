@@ -100,8 +100,20 @@ class RiskConfig:
         # into equity-beta-1 names (SPY, QQQ, NVDA, AAPL) and a
         # single bad SPX day drains the book before per-strategy
         # freezes engage.
-        "EQUITY":           0.45,
-        "ETF":              0.45,    # shared bucket with EQUITY
+        #
+        # 2026-05-20: bumped EQUITY and ETF 0.45 → 0.60 each. With
+        # the user's additions of multifactor_equity (flagship),
+        # leveraged_momentum, thematic_growth, and intraday_mean_
+        # reversion on top of the existing ~10 equity/ETF sleeves,
+        # the 0.45 cap was binding so hard that every new entry got
+        # rejected with "no headroom" — the production cycle log
+        # showed thematic_growth proposing 12 names and ALL 12
+        # rejected at the cap, leveraged/sector/tsmom likewise.
+        # 0.60 still bounds the worst case (60% ETF + 60% EQUITY =
+        # 120% gross US-beta — capped further by leverage_cap) and
+        # restores headroom for the strategies the user funded.
+        "EQUITY":           0.60,
+        "ETF":              0.60,    # shared bucket with EQUITY
                                      # (same beta exposure)
         "CRYPTO_SPOT":      0.25,
         "CRYPTO_PERP":      0.20,
