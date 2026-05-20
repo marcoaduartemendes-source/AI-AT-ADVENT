@@ -991,6 +991,57 @@ def _read_benchmark() -> dict | None:
         return None
 
 
+def _read_data_quality() -> dict | None:
+    p = Path("docs/data_quality.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"data_quality.json read failed: {e}")
+        return None
+
+
+def _render_data_quality(dq: dict | None) -> str:
+    if not dq:
+        return ""
+    rows = []
+    for r in (dq.get("rows") or []):
+        status = r.get("status", "?")
+        bg = {"OK": "#dcfce7", "STALE": "#fef3c7",
+              "MISSING": "#fee2e2", "INVALID": "#fee2e2",
+              "INCONSISTENT": "#fee2e2", "EMPTY": "#f3f4f6"
+              }.get(status, "white")
+        key = r.get("file") or r.get("check") or "?"
+        rows.append(
+            f'<tr style="background:{bg}">'
+            f"<td><code>{html.escape(str(key))}</code></td>"
+            f"<td>{html.escape(status)}</td>"
+            f'<td style="text-align:right">'
+            f'{r.get("age_hours","—")}</td>'
+            f'<td style="font-size:11px;color:#4b5563">'
+            f'{html.escape(str(r.get("reason",""))[:160])}</td>'
+            "</tr>"
+        )
+    score = dq.get("score", "?")
+    return f"""
+<h2 id="data-quality" style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Data quality — {score}/10
+  <span style="font-weight:400;color:#6b7280;font-size:12px">
+  (as of {html.escape((dq.get("as_of") or "")[:19])} —
+  audits every JSON the dashboard reads each cycle)</span>
+</h2>
+<table style="font-size:12px">
+  <thead><tr><th>File / Check</th><th>Status</th>
+      <th style="text-align:right">Age (h)</th>
+      <th>Notes</th></tr></thead>
+  <tbody>
+{chr(10).join(rows)}
+  </tbody>
+</table>"""
+
+
 def _read_self_grade() -> dict | None:
     p = Path("docs/self_grade.json")
     if not p.exists():
@@ -1130,6 +1181,7 @@ def _render_nav() -> str:
             '<a href="#improvements">Action queue</a>'
             '<a href="#validation">Validation</a>'
             '<a href="#hedge-funds">Hedge funds</a>'
+            '<a href="#data-quality">Data quality</a>'
             '<a href="#strategies">Strategies</a>'
             '<a href="#trades">Trades</a>'
             "</div>")
@@ -1575,6 +1627,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     improvements = _read_improvements()
     self_grade = _read_self_grade()
     hedge_funds = _read_hedge_funds()
+    data_quality = _read_data_quality()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -1860,6 +1913,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_render_improvements(improvements)}
 
 {_render_hedge_funds(hedge_funds)}
+
+{_render_data_quality(data_quality)}
 
 {_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 
