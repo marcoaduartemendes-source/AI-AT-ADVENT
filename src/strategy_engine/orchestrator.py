@@ -221,6 +221,21 @@ class Orchestrator:
                 run_validation()
             except Exception as e:
                 logger.warning(f"run_validation failed: {e}")
+            # Walk-forward (IS vs OOS) — catches overfit Sharpes the
+            # single-window validation can't. Rate-limited to 24h.
+            try:
+                from common.walk_forward import run_walk_forward
+                run_walk_forward()
+            except Exception as e:
+                logger.warning(f"run_walk_forward failed: {e}")
+            # Autonomous performance review — synthesises backtest +
+            # walk-forward + live trades into a ranked action queue.
+            # Runs every cycle (cheap; reads cached JSON only).
+            try:
+                from common.performance_review import run_performance_review
+                run_performance_review()
+            except Exception as e:
+                logger.warning(f"run_performance_review failed: {e}")
 
     def _write_heartbeat(self, timestamp) -> None:
         """Tiny single-row table the dashboard polls to confirm the

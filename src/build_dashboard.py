@@ -991,6 +991,95 @@ def _read_benchmark() -> dict | None:
         return None
 
 
+def _read_improvements() -> dict | None:
+    """docs/improvements.json written by run_performance_review()."""
+    p = Path("docs/improvements.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"improvements.json read failed: {e}")
+        return None
+
+
+def _render_improvements(imp: dict | None) -> str:
+    """Performance-review action queue — what to fix next, ranked."""
+    if not imp:
+        return ""
+    rows = imp.get("strategies") or []
+    pri_color = {1: "#fee2e2", 2: "#fde68a", 3: "#fef3c7",
+                  4: "#dbeafe", 5: "#dcfce7", 6: "#f3f4f6", 9: "white"}
+    pri_label = {1: "P1 LIVE BLEED", 2: "P2 OVERFIT", 3: "P3 FAIL",
+                  4: "P4 GATHERING", 5: "P5 OK", 6: "P6 UNPROVEN"}
+    body = []
+    for r in rows[:30]:
+        bg = pri_color.get(r["priority"], "white")
+        live_s = r.get("live_sharpe_30d")
+        live_str = (f"{live_s:+.2f}" if isinstance(live_s, (int, float))
+                     else "—")
+        bt_s = r.get("backtest_sharpe_5y")
+        bt_str = (f"{bt_s:+.2f}" if isinstance(bt_s, (int, float))
+                   else "—")
+        body.append(
+            f'<tr style="background:{bg}">'
+            f'<td><strong>{html.escape(r["strategy"])}</strong></td>'
+            f"<td>{pri_label.get(r['priority'],'?')}</td>"
+            f"<td>{html.escape(r.get('backtest_verdict',''))}</td>"
+            f"<td>{html.escape(r.get('walk_forward_verdict',''))}</td>"
+            f'<td style="text-align:right">{bt_str}</td>'
+            f'<td style="text-align:right">{live_str}</td>'
+            f'<td style="text-align:right">{r.get("live_n_trades_30d","—")}</td>'
+            f'<td style="text-align:right">${r.get("live_pnl_30d",0):+.2f}</td>'
+            f'<td style="font-size:11px;color:#4b5563">'
+            f'{html.escape(r.get("action_reason","")[:130])}</td>'
+            "</tr>"
+        )
+    pc = imp.get("priority_counts") or {}
+    setup = imp.get("setup_issues") or []
+    setup_html = ""
+    if setup:
+        items = "".join(f"<li>{html.escape(s)}</li>" for s in setup)
+        setup_html = (
+            '<div style="background:#fee2e2;padding:8px 12px;'
+            'margin:6px 0;border-radius:4px;font-size:12px">'
+            f"<strong>Setup issues (recurring in last 20 cycles):</strong>"
+            f"<ul style='margin:4px 0 0 16px'>{items}</ul></div>")
+    return f"""
+<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Performance review — autonomous action queue
+  <span style="font-weight:400;color:#6b7280;font-size:12px">
+  (as of {html.escape((imp.get("as_of") or "")[:19])} —
+  P1:{pc.get('p1',0)} bleed,
+  P2:{pc.get('p2',0)} overfit,
+  P3:{pc.get('p3',0)} fail,
+  P5:{pc.get('p5',0)} ok)</span>
+</h2>
+<p style="color:#6b7280;font-size:11px;margin:0 0 6px">
+  Ranks every strategy by what to do next. P1 (red) =
+  live capital being eroded NOW (PASS in backtest but UNDER live).
+  P2 (amber) = backtest is suspect (walk-forward says overfit).
+  P3 (yellow) = validation FAIL, freeze or retire.
+  {html.escape(imp.get("method_notes") or "")}
+</p>
+{setup_html}
+<table style="font-size:12px">
+  <thead><tr>
+    <th>Strategy</th><th>Action</th>
+    <th>Backtest</th><th>Walk-Fwd</th>
+    <th style="text-align:right">Sharpe BT</th>
+    <th style="text-align:right">Sharpe 30d</th>
+    <th style="text-align:right">N 30d</th>
+    <th style="text-align:right">P&L 30d</th>
+    <th>Why</th>
+  </tr></thead>
+  <tbody>
+{chr(10).join(body)}
+  </tbody>
+</table>"""
+
+
 def _read_validation() -> dict | None:
     """docs/validation.json written by run_validation(). None if not
     yet produced."""
@@ -1339,6 +1428,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     heartbeat = _read_heartbeat()
     benchmark = _read_benchmark()
     validation = _read_validation()
+    improvements = _read_improvements()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -1559,6 +1649,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_render_benchmark(benchmark)}
 
 {_render_validation(validation)}
+
+{_render_improvements(improvements)}
 
 {_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 
