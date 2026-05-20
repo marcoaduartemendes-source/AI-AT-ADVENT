@@ -52,6 +52,7 @@ from .earnings_momentum import EarningsMomentum
 from .earnings_news_pead import EarningsNewsPEAD
 from .gap_trading import GapTrading
 from .internationals_rotation import InternationalsRotation
+from .intraday_mean_reversion import IntradayMeanReversion
 from .kalshi_calibration_arb import KalshiCalibrationArb
 from .leveraged_momentum import LeveragedMomentum
 from .low_vol_anomaly import LowVolAnomaly
@@ -97,7 +98,8 @@ __all__ = [
     "LowVolAnomaly",
     "MultiFactorEquity",
     "TurnOfMonth",
-    # New (user-requested): leveraged trend + thematic basket
+    # New (user-requested): leveraged trend + thematic basket + intraday MR
+    "IntradayMeanReversion",
     "LeveragedMomentum",
     "ThematicGrowth",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds

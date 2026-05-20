@@ -40,7 +40,17 @@ _FEE_RATE = _FEE_BPS / 10000
 #   - macro_kalshi            → same Kalshi feed + FRED actuals
 #
 # Anything still genuinely un-backtestable goes here.
-UNBACKTESTABLE: dict[str, str] = {}
+UNBACKTESTABLE: dict[str, str] = {
+    # 5-min-bar intraday VWAP fade — Yahoo only exposes daily history,
+    # so an honest backtest is impossible without a paid intraday feed.
+    # The validation panel will show NO_DATA with this reason, so the
+    # strategy stays in DRY until 90+ days of paper Sharpe justify
+    # promotion (see src/strategies/intraday_mean_reversion.py).
+    "intraday_mean_reversion": (
+        "intraday strategy: requires 5-min-bar history; Yahoo daily "
+        "bars cannot honestly backtest it (would be misleading)"
+    ),
+}
 
 
 # ─── Output type ──────────────────────────────────────────────────────────

@@ -41,6 +41,7 @@ from strategies import (
     EarningsNewsPEAD,
     GapTrading,
     InternationalsRotation,
+    IntradayMeanReversion,
     KalshiCalibrationArb,
     LeveragedMomentum,
     LowVolAnomaly,
@@ -216,6 +217,17 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
         description="Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)",
     ),
+    # intraday_mean_reversion: the "HFT" the user requested, honestly
+    # labelled — 5-min-bar mean reversion on SPY/QQQ/IWM. Cannot be
+    # backtested from daily Yahoo data, so the validation panel will
+    # show NO_DATA and it stays paper until 90+ days of paper Sharpe
+    # justify promotion. See strategies/intraday_mean_reversion.py.
+    StrategyMeta(
+        name="intraday_mean_reversion",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.015, max_alloc_pct=0.04, min_alloc_pct=0.0,
+        description="Intraday VWAP fade on liquid ETFs (5-min bars)",
+    ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
@@ -382,6 +394,7 @@ def build_strategies(brokers):
         # DRY allocations until the validation harness PASSes them.
         instances["leveraged_momentum"] = LeveragedMomentum(al)
         instances["thematic_growth"] = ThematicGrowth(al)
+        instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:
