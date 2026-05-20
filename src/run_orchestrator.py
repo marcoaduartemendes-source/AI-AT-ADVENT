@@ -174,11 +174,14 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Kalshi macro events vs implied probabilities (P3)",
     ),
+    # FROZEN 2026-05-20 — validation FAIL (positive in only 1/3
+    # windows; overfit risk). Kept registered so historical fills
+    # remain attributable; allocator gives $0 so no new exposure.
     StrategyMeta(
         name="crypto_xsmom",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
-        target_alloc_pct=0.07, max_alloc_pct=0.15, min_alloc_pct=0.03,
-        description="Cross-sectional momentum on top-15 alts (P3)",
+        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
+        description="Cross-sectional momentum on top-15 alts (FROZEN — validation FAIL)",
     ),
     StrategyMeta(
         name="vol_managed_overlay",
@@ -231,11 +234,13 @@ ALL_STRATEGIES = [
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
+    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe 0.49 < 0.50,
+    # 1304 trades = classic high-turnover fee bleed).
     StrategyMeta(
         name="rsi_mean_reversion",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Connors-style RSI(2) mean-reversion on 30 large-caps (P4)",
+        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
+        description="Connors-style RSI(2) mean-reversion (FROZEN — validation FAIL)",
     ),
     StrategyMeta(
         name="sector_rotation",
@@ -243,11 +248,13 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Top-N SPDR sector ETFs by 90d return (P4)",
     ),
+    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe -0.50,
+    # positive in only 1/3 windows, fee-negative).
     StrategyMeta(
         name="pairs_trading",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Stat-arb on 6 classic correlated pairs (P4)",
+        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
+        description="Stat-arb on 6 classic correlated pairs (FROZEN — validation FAIL)",
     ),
     StrategyMeta(
         name="bollinger_breakout",
@@ -274,23 +281,28 @@ ALL_STRATEGIES = [
     # paper $100k (audit recommendation: experiment more, identify
     # winners, double down). Each starts at 3% baseline; champion
     # tier kicks in at Sharpe ≥ 1.0 + 10 trades.
+    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe -0.28,
+    # 1235 trades, fee-negative RoV -0.06%).
     StrategyMeta(
         name="gap_trading",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Overnight-gap reversion on S&P 100 (P4b)",
+        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
+        description="Overnight-gap reversion (FROZEN — validation FAIL)",
     ),
+    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe 0.26 < 0.50).
     StrategyMeta(
         name="turn_of_month",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Calendar seasonal: SPY around month boundaries (P4b)",
+        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
+        description="Calendar seasonal: SPY (FROZEN — validation FAIL)",
     ),
+    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe -0.38,
+    # fee-negative RoV -0.12%).
     StrategyMeta(
         name="low_vol_anomaly",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Lowest-vol ETFs + stocks with positive trend (P4b)",
+        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
+        description="Lowest-vol ETFs + stocks (FROZEN — validation FAIL)",
     ),
     StrategyMeta(
         name="internationals_rotation",
