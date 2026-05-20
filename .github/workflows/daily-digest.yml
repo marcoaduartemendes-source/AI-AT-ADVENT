@@ -1,6 +1,8 @@
 name: Daily AI News Digest
 
 on:
+  issues:
+    types: [opened]
   schedule:
     - cron: "0 9 * * *"   # 9:00 UTC = 5 AM EDT daily
 
