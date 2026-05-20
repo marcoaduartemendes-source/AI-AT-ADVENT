@@ -39,6 +39,7 @@ boost) reallocate capital to winners.
 """
 from .bollinger_breakout import BollingerBreakout
 from .commodity_carry import CommodityCarry
+from .cross_asset_trend import CrossAssetTrend
 from .cross_venue_arb import CrossVenueArb
 from .crypto_basis_trade import CryptoBasisTrade
 from .crypto_breakout import CryptoBreakout
@@ -102,6 +103,8 @@ __all__ = [
     "IntradayMeanReversion",
     "LeveragedMomentum",
     "ThematicGrowth",
+    # Cross-asset diversification — first non-equity-beta strategy
+    "CrossAssetTrend",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds
     "CrossVenueArb",         # Kalshi vs Polymarket
     "CryptoFundingCarryV2",  # Coinbase + Binance consensus

@@ -28,6 +28,7 @@ from risk.manager import RiskManager
 from strategies import (
     BollingerBreakout,
     CommodityCarry,
+    CrossAssetTrend,
     CrossVenueArb,
     CryptoBasisTrade,
     CryptoBreakout,
@@ -231,6 +232,16 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.015, max_alloc_pct=0.04, min_alloc_pct=0.0,
         description="Intraday VWAP fade on liquid ETFs (5-min bars)",
     ),
+    # cross_asset_trend: CTA-style 12-1m trend on bonds / gold /
+    # commodities / oil / USD. First non-equity-beta strategy in
+    # the book — historical correlation to SPX is ~0. Modest Sharpe,
+    # huge diversification value.
+    StrategyMeta(
+        name="cross_asset_trend",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.06, min_alloc_pct=0.005,
+        description="CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)",
+    ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
@@ -407,6 +418,7 @@ def build_strategies(brokers):
         instances["leveraged_momentum"] = LeveragedMomentum(al)
         instances["thematic_growth"] = ThematicGrowth(al)
         instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
+        instances["cross_asset_trend"] = CrossAssetTrend(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:
