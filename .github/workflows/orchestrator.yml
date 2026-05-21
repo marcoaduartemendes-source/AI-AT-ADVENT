@@ -9,6 +9,13 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+  # On-demand trigger: open an issue titled "run:orchestrator" to
+  # fire a cycle immediately (the job guard below ignores all other
+  # issues). Lets a cycle be kicked without the Actions UI — useful
+  # when the schedule is throttled (GH free-tier deprioritises
+  # scheduled runs, observed delaying this repo's runs by hours).
+  issues:
+    types: [opened]
 
 permissions:
   contents: read
@@ -20,6 +27,12 @@ concurrency:
 jobs:
   cycle:
     runs-on: ubuntu-latest
+    # Only run for schedule / manual dispatch, OR an issue whose
+    # title is exactly "run:orchestrator" — so random issues don't
+    # fire trading cycles.
+    if: >-
+      github.event_name != 'issues' ||
+      github.event.issue.title == 'run:orchestrator'
     # Hard-cap so a stuck cycle (broker timeout, retry loop) gets
     # killed before the next 5-min cron tick — without this, runs
     # queue up under cancel-in-progress: false and can race the
