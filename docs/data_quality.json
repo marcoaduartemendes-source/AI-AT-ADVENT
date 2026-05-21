@@ -1,0 +1,69 @@
+{
+  "as_of": "2026-05-21T16:13:42.450958+00:00",
+  "score": 4.5,
+  "counts": {
+    "OK": 5,
+    "MISSING": 3,
+    "STALE": 1,
+    "INCONSISTENT": 2
+  },
+  "n_checks": 11,
+  "rows": [
+    {
+      "file": "docs/cycle_status.json",
+      "status": "OK",
+      "age_hours": 0.4
+    },
+    {
+      "file": "docs/trades_recent.json",
+      "status": "OK",
+      "age_hours": 0.4
+    },
+    {
+      "file": "docs/benchmark.json",
+      "status": "OK",
+      "age_hours": 0.4
+    },
+    {
+      "file": "docs/validation.json",
+      "status": "OK",
+      "age_hours": 22.4
+    },
+    {
+      "file": "docs/walk_forward.json",
+      "status": "MISSING",
+      "reason": "file does not exist"
+    },
+    {
+      "file": "docs/improvements.json",
+      "status": "OK",
+      "age_hours": 0.0
+    },
+    {
+      "file": "docs/self_grade.json",
+      "status": "MISSING",
+      "reason": "file does not exist"
+    },
+    {
+      "file": "docs/hedge_fund_13f.json",
+      "status": "MISSING",
+      "reason": "file does not exist"
+    },
+    {
+      "file": "docs/index.html",
+      "status": "STALE",
+      "reason": "1.0h old (expected refresh every 1h)",
+      "age_hours": 1.0
+    },
+    {
+      "check": "trade-orphans",
+      "status": "INCONSISTENT",
+      "reason": "trades exist for strategies not in validation: ['multifactor_equity']"
+    },
+    {
+      "check": "cancel-rate",
+      "status": "INCONSISTENT",
+      "reason": "38/50 recent trades CANCELED (76%) \u2014 likely out-of-RTH submission loop"
+    }
+  ]
+}

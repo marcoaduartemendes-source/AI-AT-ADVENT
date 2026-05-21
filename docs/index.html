@@ -111,15 +111,32 @@
 
 <h1>AI-AT-ADVENT — Performance Control</h1>
 <div class="meta">
-  Snapshot: <time data-ts="snapshot">2026-05-04 09:06 ET</time>
+  Snapshot: <time data-ts="snapshot">—</time>
   · Updated every 5 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
 </div>
 <div class="nav"><strong style="color:#111827">JUMP →</strong><a href="#grade">Self-grade</a><a href="#improvements">Action queue</a><a href="#validation">Validation</a><a href="#hedge-funds">Hedge funds</a><a href="#data-quality">Data quality</a><a href="#strategies">Strategies</a><a href="#trades">Trades</a></div>
-<div class="grade-hero"><div class="score"><div class="big">—</div><div class="of">/10</div><div class="target">grade pending first cycle</div></div><div class="right"><h3>Self-grade</h3><p style="font-size:12px;color:#cbd5e1;margin:4px 0">Will populate after the next orchestrator cycle runs <code>run_self_grade()</code>.</p></div></div>
-<div style="background:white;border:2px solid #7f1d1d;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;display:flex;flex-wrap:wrap;gap:18px;align-items:center"><span style="font-size:18px">🔴</span><span><strong>Last cycle:</strong> 22h ago (20.1s)</span><span><strong>Today:</strong> 0 cycles · 0 proposed · 0 submitted · 0 errors</span></div>
 
-<div class="ks-banner" style="background:#166534">
-  <span>✅ Kill switch: NORMAL</span>
+<div class="grade-hero" id="grade">
+  <div class="score">
+    <div class="big" style="color:#facc15">4.96</div>
+    <div class="of">/ 10</div>
+    <div class="target">target ≥ 9.0</div>
+  </div>
+  <div class="right">
+    <h3>Self-grade — 2026-05-21</h3>
+    <div class="bars"><div class="bar-row"><div class="label">alpha track</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#22c55e"></div></div><div class="score-cell">10.0</div></div><div class="bar-row"><div class="label">alpha vs spy</div><div class="bar-track"><div class="bar-fill" style="width:50.0%;background:#facc15"></div></div><div class="score-cell">5.0</div></div><div class="bar-row"><div class="label">fee discipline</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#ef4444"></div></div><div class="score-cell">0.0</div></div><div class="bar-row"><div class="label">overfit resistance</div><div class="bar-track"><div class="bar-fill" style="width:50.0%;background:#facc15"></div></div><div class="score-cell">5.0</div></div><div class="bar-row"><div class="label">execution quality</div><div class="bar-track"><div class="bar-fill" style="width:22.0%;background:#f97316"></div></div><div class="score-cell">2.2</div></div><div class="bar-row"><div class="label">setup health</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#ef4444"></div></div><div class="score-cell">0.0</div></div><div class="bar-row"><div class="label">research freshness</div><div class="bar-track"><div class="bar-fill" style="width:80.0%;background:#22c55e"></div></div><div class="score-cell">8.0</div></div><div class="bar-row"><div class="label">data quality</div><div class="bar-track"><div class="bar-fill" style="width:45.0%;background:#facc15"></div></div><div class="score-cell">4.5</div></div></div>
+    <div class="narrative-grid">
+      <div class="card"><h4 style="color:#a5b4fc">Tried</h4><ul><li>Backtested 22 strategies across 1y/2y/5y under a strict fee-aware rubric.</li></ul></div>
+      <div class="card"><h4 style="color:#86efac">Worked</h4><ul><li>9/22 strategies cleared the validation gate (PASS).</li></ul></div>
+      <div class="card"><h4 style="color:#fca5a5">Failed</h4><ul><li>13/22 strategies did NOT pass — fee-bleeders or overfit.</li></ul></div>
+      <div class="card"><h4 style="color:#fcd34d">Next</h4><ul><li>Submit ratio submit ratio 54/245 — investigate why proposals are being rejected.</li><li>Current grade 4.96/10 &lt; target 9.0 — focus on the lowest-scoring axis next (fee_discipline).</li></ul></div>
+    </div>
+  </div>
+</div>
+<div style="background:white;border:2px solid #7f1d1d;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;display:flex;flex-wrap:wrap;gap:18px;align-items:center"><span style="font-size:18px">🔴</span><span><strong>Last cycle:</strong> 24h ago (20.1s)</span><span><strong>Today:</strong> 0 cycles · 0 proposed · 0 submitted · 0 errors</span></div>
+
+<div class="ks-banner" style="background:#4b5563">
+  <span>❓ Kill switch: NO-DATA</span>
   <small><time data-ts="kill-switch"></time></small>
   <span class="ks-actions">
     <a class="ks-btn ks-arm" target="_blank"
@@ -135,19 +152,19 @@
 <div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;
             padding:10px 14px;margin-bottom:14px;font-size:13px;">
   <strong>Mode by venue</strong>
-  <table style="margin-top:6px;font-size:12px;"><tr><td><strong>coinbase</strong></td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td></tr>
-<tr><td><strong>alpaca</strong></td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td></tr>
-<tr><td><strong>kalshi</strong></td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td></tr></table>
+  <table style="margin-top:6px;font-size:12px;"><tr><td><strong>coinbase</strong></td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td></tr>
+<tr><td><strong>alpaca</strong></td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td></tr>
+<tr><td><strong>kalshi</strong></td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td></tr></table>
   
   <details style="margin-top:6px">
     <summary style="cursor:pointer;color:#6b7280;font-size:11px">
       Why these modes? (click to expand env-var state)
     </summary>
-    <table style="margin-top:6px;font-size:11px;"><tr><td><code>DRY_RUN</code></td><td><code>true</code></td></tr>
-<tr><td><code>DRY_RUN_COINBASE</code></td><td><code>False</code></td></tr>
-<tr><td><code>DRY_RUN_ALPACA</code></td><td><code>false</code></td></tr>
-<tr><td><code>ALLOW_LIVE_TRADING</code></td><td><code>1</code></td></tr>
-<tr><td><code>LIVE_STRATEGIES</code></td><td><code>crypto_funding_carry,crypto_basis_trade,commodity_carry,crypto_xsmom,crypto_pairs_trading,crypto_breakout</code></td></tr></table>
+    <table style="margin-top:6px;font-size:11px;"><tr><td><code>DRY_RUN</code></td><td><code>(unset → defaults true)</code></td></tr>
+<tr><td><code>DRY_RUN_COINBASE</code></td><td><code>(unset → falls back to DRY_RUN)</code></td></tr>
+<tr><td><code>DRY_RUN_ALPACA</code></td><td><code>(unset → falls back to DRY_RUN)</code></td></tr>
+<tr><td><code>ALLOW_LIVE_TRADING</code></td><td><code>(unset → blocks LIVE_STRATEGIES)</code></td></tr>
+<tr><td><code>LIVE_STRATEGIES</code></td><td><code>(unset → no per-strategy override)</code></td></tr></table>
     <p style="font-size:11px;color:#6b7280;margin:6px 0 0">
       Set repo Variables at
       <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/settings/variables/actions" target=_blank>
@@ -159,9 +176,9 @@
 
 
 <div class="totals">
-  <div class="stat" style="grid-column: span 2; border: 2px solid #7f1d1d;">
+  <div class="stat" style="grid-column: span 2; border: 2px solid #4b5563;">
     <div class="label">Total P&amp;L (realized + unrealized)</div>
-    <div class="value" style="color:#7f1d1d; font-size: 28px;">-$390.68</div>
+    <div class="value" style="color:#4b5563; font-size: 28px;">$0.00</div>
   </div>
   <div class="stat">
     <div class="label">Realized P&amp;L</div>
@@ -169,11 +186,11 @@
   </div>
   <div class="stat">
     <div class="label">Unrealized P&amp;L</div>
-    <div class="value" style="color:#7f1d1d">-$390.68</div>
+    <div class="value" style="color:#4b5563">$0.00</div>
   </div>
   <div class="stat">
     <div class="label">Portfolio equity</div>
-    <div class="value">$101,708.92</div>
+    <div class="value">$0.00</div>
   </div>
   <div class="stat">
     <div class="label">Closed trades</div>
@@ -185,7 +202,7 @@
   </div>
   <div class="stat">
     <div class="label">Drawdown from peak</div>
-    <div class="value">0.1%</div>
+    <div class="value">0.0%</div>
   </div>
 </div>
 
@@ -204,38 +221,37 @@
     </tr>
   </thead>
   <tbody>
-<tr><td><strong>&lt;unattributed&gt;</strong></td><td>—</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#7f1d1d">-$390.68</td><td class=num style="color:#7f1d1d;font-weight:600">-$390.68</td><td>never</td></tr>
-<tr><td><strong>bollinger_breakout</strong><br><span class=desc>Momentum continuation on 20d Bollinger upper-band breaks (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>commodity_carry</strong><br><span class=desc>Top-N backwardated commodity futures (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>cross_asset_trend</strong><br><span class=desc>CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>cross_venue_arb</strong><br><span class=desc>Kalshi vs Polymarket cross-venue arbitrage (P5)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>crypto_basis_trade</strong><br><span class=desc>Long spot / short dated future on Coinbase (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>17d ago</td></tr>
-<tr><td><strong>crypto_breakout</strong><br><span class=desc>Donchian 30d-high breakout w/ trail-stop (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>crypto_funding_carry</strong><br><span class=desc>Long spot / short perp; capture funding rate (P1)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>crypto_funding_carry_v2</strong><br><span class=desc>Funding carry gated on Coinbase+Binance consensus (P5)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>crypto_pairs_trading</strong><br><span class=desc>Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>crypto_vol_regime_overlay</strong><br><span class=desc>Publishes crypto vol-regime scaler; no trades (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>crypto_xsmom</strong><br><span class=desc>Cross-sectional momentum on top-15 alts (FROZEN — validation FAIL)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>17d ago</td></tr>
-<tr><td><strong>dividend_growth</strong><br><span class=desc>Quality-dividend ETF rotation by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>earnings_momentum</strong><br><span class=desc>Live PEAD via FMP earnings calendar (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>earnings_news_pead</strong><br><span class=desc>PEAD gated on RSS news corroboration (P5)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>gap_trading</strong><br><span class=desc>Overnight-gap reversion (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>internationals_rotation</strong><br><span class=desc>International country-ETF momentum vs SPY (P4b)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>intraday_mean_reversion</strong><br><span class=desc>Intraday VWAP fade on liquid ETFs (5-min bars)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>kalshi_calibration_arb</strong><br><span class=desc>Favorite-longshot bias arb on Kalshi (P1)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>leveraged_momentum</strong><br><span class=desc>3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>low_vol_anomaly</strong><br><span class=desc>Lowest-vol ETFs + stocks (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>macro_kalshi</strong><br><span class=desc>Kalshi macro events vs implied probabilities (P3)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>macro_kalshi_v2</strong><br><span class=desc>Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>multifactor_equity</strong><br><span class=desc>Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>pairs_trading</strong><br><span class=desc>Stat-arb on 6 classic correlated pairs (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>risk_parity_etf</strong><br><span class=desc>Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>18.6d ago</td></tr>
-<tr><td><strong>rsi_mean_reversion</strong><br><span class=desc>Connors-style RSI(2) mean-reversion (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>sector_rotation</strong><br><span class=desc>Top-N SPDR sector ETFs by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>thematic_growth</strong><br><span class=desc>Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>tsmom_etf</strong><br><span class=desc>12-1m time-series momentum on 7-ETF basket (P2)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>18.6d ago</td></tr>
-<tr><td><strong>turn_of_month</strong><br><span class=desc>Calendar seasonal: SPY (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td><strong>vol_managed_overlay</strong><br><span class=desc>Vol-target multiplier; publishes scaler only, no trades (P3)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>bollinger_breakout</strong><br><span class=desc>Momentum continuation on 20d Bollinger upper-band breaks (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>commodity_carry</strong><br><span class=desc>Top-N backwardated commodity futures (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>cross_asset_trend</strong><br><span class=desc>CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>cross_venue_arb</strong><br><span class=desc>Kalshi vs Polymarket cross-venue arbitrage (P5)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_basis_trade</strong><br><span class=desc>Long spot / short dated future on Coinbase (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_breakout</strong><br><span class=desc>Donchian 30d-high breakout w/ trail-stop (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_funding_carry</strong><br><span class=desc>Long spot / short perp; capture funding rate (P1)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_funding_carry_v2</strong><br><span class=desc>Funding carry gated on Coinbase+Binance consensus (P5)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_pairs_trading</strong><br><span class=desc>Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_vol_regime_overlay</strong><br><span class=desc>Publishes crypto vol-regime scaler; no trades (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>crypto_xsmom</strong><br><span class=desc>Cross-sectional momentum on top-15 alts (FROZEN — validation FAIL)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>dividend_growth</strong><br><span class=desc>Quality-dividend ETF rotation by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>earnings_momentum</strong><br><span class=desc>Live PEAD via FMP earnings calendar (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>earnings_news_pead</strong><br><span class=desc>PEAD gated on RSS news corroboration (P5)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>gap_trading</strong><br><span class=desc>Overnight-gap reversion (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>internationals_rotation</strong><br><span class=desc>International country-ETF momentum vs SPY (P4b)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>intraday_mean_reversion</strong><br><span class=desc>Intraday VWAP fade on liquid ETFs (5-min bars)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>kalshi_calibration_arb</strong><br><span class=desc>Favorite-longshot bias arb on Kalshi (P1)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>leveraged_momentum</strong><br><span class=desc>3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>low_vol_anomaly</strong><br><span class=desc>Lowest-vol ETFs + stocks (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>macro_kalshi</strong><br><span class=desc>Kalshi macro events vs implied probabilities (P3)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>macro_kalshi_v2</strong><br><span class=desc>Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>multifactor_equity</strong><br><span class=desc>Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>pairs_trading</strong><br><span class=desc>Stat-arb on 6 classic correlated pairs (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>risk_parity_etf</strong><br><span class=desc>Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>rsi_mean_reversion</strong><br><span class=desc>Connors-style RSI(2) mean-reversion (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>sector_rotation</strong><br><span class=desc>Top-N SPDR sector ETFs by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>thematic_growth</strong><br><span class=desc>Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>tsmom_etf</strong><br><span class=desc>12-1m time-series momentum on 7-ETF basket (P2)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>turn_of_month</strong><br><span class=desc>Calendar seasonal: SPY (FROZEN — validation FAIL)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td><strong>vol_managed_overlay</strong><br><span class=desc>Vol-target multiplier; publishes scaler only, no trades (P3)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
   </tbody>
 </table>
 
@@ -359,10 +375,86 @@ else stays paper-only until it proves an edge.</p>
 </table>
 
 
+<h2 id="improvements" style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Performance review — autonomous action queue
+  <span style="font-weight:400;color:#6b7280;font-size:12px">
+  (as of 2026-05-21T16:13:42 —
+  P1:0 bleed,
+  P2:0 overfit,
+  P3:7 fail,
+  P5:0 ok)</span>
+</h2>
+<p style="color:#6b7280;font-size:11px;margin:0 0 6px">
+  Ranks every strategy by what to do next. P1 (red) =
+  live capital being eroded NOW (PASS in backtest but UNDER live).
+  P2 (amber) = backtest is suspect (walk-forward says overfit).
+  P3 (yellow) = validation FAIL, freeze or retire.
+  live_sharpe approximated from realized P&amp;L per trade, annualised by sqrt(252); UNDER = live &lt; 40% of backtest; OVER = live &gt; 150%. Insufficient data when &lt; 5 live trades in 30d.
+</p>
+<div style="background:#fee2e2;padding:8px 12px;margin:6px 0;border-radius:4px;font-size:12px"><strong>Setup issues (recurring in last 20 cycles):</strong><ul style='margin:4px 0 0 16px'><li>recurring (18/20): [crypto_xsmom] execution failed</li></ul></div>
+<table style="font-size:12px">
+  <thead><tr>
+    <th>Strategy</th><th>Action</th>
+    <th>Backtest</th><th>Walk-Fwd</th>
+    <th style="text-align:right">Sharpe BT</th>
+    <th style="text-align:right">Sharpe 30d</th>
+    <th style="text-align:right">N 30d</th>
+    <th style="text-align:right">P&L 30d</th>
+    <th>Why</th>
+  </tr></thead>
+  <tbody>
+<tr style="background:#fef3c7"><td><strong>crypto_xsmom</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">+1.64</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#fef3c7"><td><strong>gap_trading</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">-0.28</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#fef3c7"><td><strong>low_vol_anomaly</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">-0.38</td><td style="text-align:right">+5.34</td><td style="text-align:right">14</td><td style="text-align:right">$+0.38</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#fef3c7"><td><strong>pairs_trading</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">-0.50</td><td style="text-align:right">—</td><td style="text-align:right">8</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#fef3c7"><td><strong>rsi_mean_reversion</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">+0.49</td><td style="text-align:right">+3.18</td><td style="text-align:right">25</td><td style="text-align:right">$+0.13</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#fef3c7"><td><strong>turn_of_month</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">+0.26</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#fef3c7"><td><strong>vol_managed_overlay</strong></td><td>P3 FAIL</td><td>FAIL</td><td>?</td><td style="text-align:right">-0.08</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">validation FAIL — freeze or retire</td></tr>
+<tr style="background:#dbeafe"><td><strong>bollinger_breakout</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+3.47</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>commodity_carry</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+0.95</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>dividend_growth</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+4.88</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>earnings_momentum</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+1.84</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>internationals_rotation</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+2.02</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>pead</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+1.84</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>risk_parity_etf</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+9.43</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>sector_rotation</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+4.63</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>thematic_growth</strong></td><td>P4 GATHERING</td><td>PASS</td><td>?</td><td style="text-align:right">+4.17</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#f3f4f6"><td><strong>leveraged_momentum</strong></td><td>P6 UNPROVEN</td><td>UNPROVEN</td><td>?</td><td style="text-align:right">+14.19</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">UNPROVEN — gate gate too strict or universe too narrow</td></tr>
+<tr style="background:#f3f4f6"><td><strong>tsmom_etf</strong></td><td>P6 UNPROVEN</td><td>UNPROVEN</td><td>?</td><td style="text-align:right">-3.96</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">UNPROVEN — gate gate too strict or universe too narrow</td></tr>
+<tr style="background:white"><td><strong>crypto_basis_trade</strong></td><td>?</td><td>NO_DATA</td><td>?</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">no action</td></tr>
+<tr style="background:white"><td><strong>crypto_funding_carry</strong></td><td>?</td><td>NO_DATA</td><td>?</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">no action</td></tr>
+<tr style="background:white"><td><strong>kalshi_calibration_arb</strong></td><td>?</td><td>NO_DATA</td><td>?</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">no action</td></tr>
+<tr style="background:white"><td><strong>macro_kalshi</strong></td><td>?</td><td>NO_DATA</td><td>?</td><td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">no action</td></tr>
+  </tbody>
+</table>
 
 
 
 
+<h2 id="data-quality" style="font-size:16px;margin-top:28px;margin-bottom:8px">
+  Data quality — 4.5/10
+  <span style="font-weight:400;color:#6b7280;font-size:12px">
+  (as of 2026-05-21T16:13:42 —
+  audits every JSON the dashboard reads each cycle)</span>
+</h2>
+<table style="font-size:12px">
+  <thead><tr><th>File / Check</th><th>Status</th>
+      <th style="text-align:right">Age (h)</th>
+      <th>Notes</th></tr></thead>
+  <tbody>
+<tr style="background:#dcfce7"><td><code>docs/cycle_status.json</code></td><td>OK</td><td style="text-align:right">0.4</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/trades_recent.json</code></td><td>OK</td><td style="text-align:right">0.4</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/benchmark.json</code></td><td>OK</td><td style="text-align:right">0.4</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/validation.json</code></td><td>OK</td><td style="text-align:right">22.4</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#fee2e2"><td><code>docs/walk_forward.json</code></td><td>MISSING</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">file does not exist</td></tr>
+<tr style="background:#dcfce7"><td><code>docs/improvements.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#fee2e2"><td><code>docs/self_grade.json</code></td><td>MISSING</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">file does not exist</td></tr>
+<tr style="background:#fee2e2"><td><code>docs/hedge_fund_13f.json</code></td><td>MISSING</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">file does not exist</td></tr>
+<tr style="background:#fef3c7"><td><code>docs/index.html</code></td><td>STALE</td><td style="text-align:right">1.0</td><td style="font-size:11px;color:#4b5563">1.0h old (expected refresh every 1h)</td></tr>
+<tr style="background:#fee2e2"><td><code>trade-orphans</code></td><td>INCONSISTENT</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">trades exist for strategies not in validation: [&#x27;multifactor_equity&#x27;]</td></tr>
+<tr style="background:#fee2e2"><td><code>cancel-rate</code></td><td>INCONSISTENT</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">38/50 recent trades CANCELED (76%) — likely out-of-RTH submission loop</td></tr>
+  </tbody>
+</table>
 
 
 <h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
@@ -438,8 +530,159 @@ else stays paper-only until it proves an edge.</p>
 </table>
 
 
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Recent errors (10)
+</h2>
+<table>
+  <thead>
+    <tr><th>When</th><th>Scope</th><th>Strategy</th>
+        <th>Venue</th><th>Exception</th></tr>
+  </thead>
+  <tbody>
+<tr><td><time data-ts='error'>2026-05-21T15:10:12.763000+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 470, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-21T15:10:12.327484+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 470, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T20:20:38.021474+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 477, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T20:20:37.546330+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 477, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T17:50:59.412971+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 466, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T17:50:59.331615+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 466, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T17:49:04.918017+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 466, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T17:49:04.830203+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 466, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T17:42:12.716887+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 457, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-20T17:42:12.642138+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 457, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+  </tbody>
+</table>
 
-<footer>Generated <time data-ts="generated">2026-05-21 10:13 ET</time></footer>
+<footer>Generated <time data-ts="generated">2026-05-21 12:14 ET</time></footer>
 
 </body>
 </html>

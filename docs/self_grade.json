@@ -1,0 +1,64 @@
+{
+  "as_of": "2026-05-21T16:13:42.461723+00:00",
+  "overall_grade": 4.96,
+  "target_grade": 9.0,
+  "weights": {
+    "alpha_track": 0.22,
+    "alpha_vs_spy": 0.18,
+    "fee_discipline": 0.12,
+    "overfit_resistance": 0.12,
+    "execution_quality": 0.12,
+    "setup_health": 0.08,
+    "research_freshness": 0.08,
+    "data_quality": 0.08
+  },
+  "components": {
+    "alpha_track": {
+      "score": 10.0,
+      "reason": "live 30d Sharpe +3.39 across 50 trades \u2192 10.0/10"
+    },
+    "alpha_vs_spy": {
+      "score": 5.0,
+      "reason": "benchmark.json lacks comparable fields \u2192 5.0/10"
+    },
+    "fee_discipline": {
+      "score": 0.0,
+      "reason": "0/50 trades from PASS strategies \u2192 0.0/10"
+    },
+    "overfit_resistance": {
+      "score": 5.0,
+      "reason": "walk-forward not yet computed \u2192 5/10 (neutral)"
+    },
+    "execution_quality": {
+      "score": 2.2,
+      "reason": "submit ratio 54/245 = 22% \u2192 2.2/10 (\u226580% target)"
+    },
+    "setup_health": {
+      "score": 0.0,
+      "reason": "0/20 clean cycles \u2192 0.0/10"
+    },
+    "research_freshness": {
+      "score": 8.0,
+      "reason": "validation 24.2h old \u2192 8.0/10"
+    },
+    "data_quality": {
+      "score": 4.5,
+      "reason": "data-quality checks {'OK': 5, 'MISSING': 3, 'STALE': 1, 'INCONSISTENT': 2} \u2192 4.5/10"
+    }
+  },
+  "narrative": {
+    "tried": [
+      "Backtested 22 strategies across 1y/2y/5y under a strict fee-aware rubric."
+    ],
+    "worked": [
+      "9/22 strategies cleared the validation gate (PASS)."
+    ],
+    "failed": [
+      "13/22 strategies did NOT pass \u2014 fee-bleeders or overfit."
+    ],
+    "next": [
+      "Submit ratio submit ratio 54/245 \u2014 investigate why proposals are being rejected.",
+      "Current grade 4.96/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (fee_discipline)."
+    ]
+  }
+}
