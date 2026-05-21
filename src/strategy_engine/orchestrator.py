@@ -211,26 +211,19 @@ class Orchestrator:
                 write_benchmark_json()
             except Exception as e:
                 logger.warning(f"write_benchmark_json failed: {e}")
-            # Strategy validation gate — backtests every strategy
-            # across 1/2/5y and writes docs/validation.json. Self
-            # rate-limited to once/24h (backtests are slow + hit
-            # external data APIs). Retirement-critical: this is the
-            # evidence layer before any strategy risks real money.
-            try:
-                from common.strategy_validation import run_validation
-                run_validation()
-            except Exception as e:
-                logger.warning(f"run_validation failed: {e}")
-            # Walk-forward (IS vs OOS) — catches overfit Sharpes the
-            # single-window validation can't. Rate-limited to 24h.
-            try:
-                from common.walk_forward import run_walk_forward
-                run_walk_forward()
-            except Exception as e:
-                logger.warning(f"run_walk_forward failed: {e}")
+            # NOTE 2026-05-21 — the heavy backtests (run_validation +
+            # run_walk_forward, ~200s EACH) used to run HERE every
+            # cycle. That blew past the workflow's 8-min timeout and
+            # KILLED the orchestrator process before the git-commit
+            # step ran — so cycle_status froze at 2026-05-20T15:58 for
+            # ~22h while the dashboard kept rebuilding stale data.
+            # They now run in a SEPARATE daily workflow
+            # (.github/workflows/research.yml → src/run_research.py).
+            # The light agents below only READ the JSON those produce,
+            # so they stay in the cycle (each is milliseconds).
+            #
             # Autonomous performance review — synthesises backtest +
             # walk-forward + live trades into a ranked action queue.
-            # Runs every cycle (cheap; reads cached JSON only).
             try:
                 from common.performance_review import run_performance_review
                 run_performance_review()
