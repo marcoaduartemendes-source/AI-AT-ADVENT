@@ -1,0 +1,59 @@
+name: Daily Research (validation + walk-forward)
+
+# The HEAVY backtests (strategy_validation + walk_forward, ~200s each)
+# run here on a daily cadence — NOT in the 5-minute orchestrator cycle,
+# where they blew past the 8-min timeout and froze cycle_status for
+# ~22h (observed 2026-05-20→21). Verdicts barely move intraday.
+
+on:
+  schedule:
+    - cron: "30 6 * * *"      # 06:30 UTC daily, before US market open
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: research
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20        # generous — two full backtest sweeps
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: Run daily research
+        env:
+          FMP_API_KEY:     ${{ secrets.FMP_API_KEY }}
+          FRED_API_KEY:    ${{ secrets.FRED_API_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: |
+          set -o pipefail
+          python -u src/run_research.py --force 2>&1 | tee /tmp/research.log
+
+      - name: Commit research outputs
+        if: always()
+        continue-on-error: true
+        run: |
+          set -e
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/validation.json docs/walk_forward.json docs/improvements.json docs/self_grade.json docs/data_quality.json docs/auto_overrides.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No research changes."
+            exit 0
+          fi
+          git commit -m "chore: daily research refresh (validation + walk-forward)"
+          for i in 1 2 3; do
+            git pull --rebase origin "$(git rev-parse --abbrev-ref HEAD)" 2>/dev/null || true
+            if git push; then echo "pushed"; exit 0; fi
+            sleep $((i * 2))
+          done
+          echo "push failed after retries (non-fatal)"
