@@ -9,7 +9,12 @@ that meet ANY of:
   • Validation verdict FAIL on the most recent run
   • Walk-forward OVERFIT_SUSPECT
   • Live 30d Sharpe < -0.5 with ≥ 10 trades (real bleed)
-  • Persistent zero proposals for 5+ consecutive cycles (broken)
+
+(2026-05-21: the "zero proposals for N cycles" rule was REMOVED —
+after the 30h orchestrator outage it froze 22/31 strategies,
+including PASS ones, because every strategy had zero proposals
+during the downtime. Freezing now keys ONLY on evidence of a bad
+EDGE, never on operational state.)
 
 This is the "thinks like an obsessed hedge fund manager" layer
 the user asked for: nothing keeps a sleeve allocated to a losing
@@ -38,7 +43,6 @@ logger = logging.getLogger(__name__)
 # Live-bleed threshold: 30d Sharpe below this with enough trades → freeze.
 LIVE_BLEED_SHARPE = -0.5
 LIVE_BLEED_MIN_TRADES = 10
-ZERO_PROPOSAL_CYCLES = 5     # consecutive cycles with 0 proposals → freeze
 
 
 def _read(path: str):
@@ -80,23 +84,6 @@ def _live_sharpe_30d(trades: list[dict], strategy: str
         return None, len(pnls)
 
 
-def _zero_proposal_streak(cycle_status: list[dict],
-                            strategy: str) -> int:
-    """Count consecutive most-recent cycles where this strategy
-    produced 0 proposals (broken strategy detector)."""
-    if not isinstance(cycle_status, list) or not cycle_status:
-        return 0
-    recent = sorted(cycle_status, key=lambda c: c.get("timestamp", ""),
-                     reverse=True)[:20]
-    streak = 0
-    for cyc in recent:
-        out = (cyc.get("strategy_outcomes") or {}).get(strategy) or {}
-        if (out.get("proposed", 0) or 0) > 0:
-            break
-        streak += 1
-    return streak
-
-
 def run_auto_demote(
         out_path: str = "docs/auto_overrides.json") -> dict:
     """Produce docs/auto_overrides.json — a strategy → allocation-
@@ -106,7 +93,6 @@ def run_auto_demote(
     validation = _read("docs/validation.json") or {}
     walk_forward = _read("docs/walk_forward.json") or {}
     trades = _read("docs/trades_recent.json") or []
-    cycle_status = _read("docs/cycle_status.json") or []
 
     val_strats = validation.get("strategies") or {}
     wf_strats = walk_forward.get("strategies") or {}
@@ -131,13 +117,16 @@ def run_auto_demote(
             reasons.append(
                 f"live 30d Sharpe {live_s:+.2f} < "
                 f"{LIVE_BLEED_SHARPE} ({n_live} trades)")
-        # Rule 4 — broken (zero proposals for many cycles).
-        streak = _zero_proposal_streak(cycle_status, name)
-        if streak >= ZERO_PROPOSAL_CYCLES:
-            reasons.append(
-                f"zero proposals {streak} cycles in a row — "
-                f"strategy may be misconfigured or its signal "
-                f"source is dead")
+        # Rule 4 (REMOVED 2026-05-21) — "zero proposals for N cycles"
+        # was catastrophically wrong: after the 30h orchestrator
+        # outage EVERY strategy had a long zero-proposal streak, so
+        # auto-demote froze 22 of 31 strategies — including PASS
+        # ones (dividend_growth, bollinger_breakout, earnings_
+        # momentum, commodity_carry). Zero proposals is entangled
+        # with operational state (outages, market-closed, signal
+        # gaps) and is NOT a reliable signal of a broken strategy.
+        # Freezing now keys ONLY on evidence of a bad EDGE:
+        # validation FAIL, walk-forward OVERFIT, or live bleed.
         if reasons:
             overrides[name] = {
                 "multiplier": 0.0,
@@ -154,8 +143,6 @@ def run_auto_demote(
             "walk_forward_overfit_suspect": "OOS Sharpe << IS Sharpe",
             "live_bleed": (f"30d live Sharpe < {LIVE_BLEED_SHARPE} "
                             f"with ≥ {LIVE_BLEED_MIN_TRADES} trades"),
-            "zero_proposals": (f"{ZERO_PROPOSAL_CYCLES}+ "
-                                f"consecutive cycles with 0 proposals"),
         },
     }
     try:
