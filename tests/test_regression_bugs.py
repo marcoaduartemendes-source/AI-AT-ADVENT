@@ -417,3 +417,38 @@ class TestAlphaVsSpyReadsRealBenchmarkShape:
         monkeypatch.chdir(tmp_path)   # no docs/benchmark.json
         g, _ = sg._grade_alpha_vs_benchmark()
         assert g == 5.0
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bug #7 — walk_forward read a non-existent "equity" key from the
+# backtest equity_curve (points are {"t","pnl_cumulative"}), so every
+# bar delta was 0, every Sharpe was None, and ALL strategies came back
+# NO_DATA — pinning self-grade's overfit_resistance axis to 0 forever
+# (observed 2026-05-22: "0 ROBUST / 0 OVERFIT_SUSPECT / 18 NO_DATA").
+# ─────────────────────────────────────────────────────────────────────
+class TestWalkForwardReadsCumulativePnL:
+    def test_split_sharpe_uses_pnl_cumulative(self):
+        from common.walk_forward import _split_sharpe, _verdict
+        # A realistic rising-then-mixed cumulative-P&L curve with enough
+        # points for both halves and ≥5 non-zero deltas each.
+        cum = 0.0
+        curve = []
+        for i, step in enumerate([10, 12, -4, 8, 15, 9, -3, 11, 7, 13,
+                                  6, -2, 9, 14, 8, 10, -5, 12, 9, 7]):
+            cum += step
+            curve.append({"t": f"2026-01-{i+1:02d}", "pnl_cumulative": cum})
+        is_s, oos_s, is_t, oos_t = _split_sharpe(curve)
+        assert is_s is not None and oos_s is not None, \
+            "Sharpe must be computed from pnl_cumulative, not a missing key"
+        assert is_t >= 5 and oos_t >= 5
+        verdict, _ = _verdict(is_s, oos_s, is_t, oos_t)
+        assert verdict != "NO_DATA", \
+            f"a populated curve must yield a real verdict, got {verdict}"
+
+    def test_legacy_equity_key_still_supported(self):
+        from common.walk_forward import _split_sharpe
+        curve = [{"t": f"d{i}", "equity": float(i * 5)} for i in range(20)]
+        is_s, oos_s, is_t, oos_t = _split_sharpe(curve)
+        # Monotonic curve → zero-variance deltas → Sharpe None, but the
+        # key must be READ (non-zero trade counts prove it parsed).
+        assert is_t > 0 and oos_t > 0

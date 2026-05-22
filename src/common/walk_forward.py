@@ -67,9 +67,19 @@ def _split_sharpe(equity_curve: list[dict]) -> tuple[float | None,
         if len(pts) < 3:
             return None, 0
         pnls = []
-        prev = pts[0].get("equity", 0.0)
+        # equity_curve points are {"t", "pnl_cumulative"} (see
+        # runner._equity_curve_to_summary). The old code read a
+        # non-existent "equity" key, so every delta was 0 → Sharpe None
+        # → walk_forward returned NO_DATA for ALL strategies and the
+        # overfit_resistance grade axis was permanently 0. Read the
+        # cumulative-P&L series and difference it back to per-trade P&L
+        # (fall back to "equity" for any future curve shape).
+        def _val(pt):
+            v = pt.get("pnl_cumulative")
+            return v if v is not None else pt.get("equity", 0.0)
+        prev = _val(pts[0])
         for p in pts[1:]:
-            cur = p.get("equity", 0.0)
+            cur = _val(p)
             pnls.append(cur - prev)
             prev = cur
         if not pnls:
