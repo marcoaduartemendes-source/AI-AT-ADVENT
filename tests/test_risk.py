@@ -393,3 +393,26 @@ class TestUnfreezeStrategies:
         reg, St = self._reg(tmp_path)
         assert unfreeze_strategies("active_one", reg, set()) == []
         assert reg.get_state("active_one") == St.ACTIVE
+
+
+class TestUnfreezeBareRegistry:
+    """Regression: the CLI builds a bare StrategyRegistry() with no metas
+    registered. all_states() filters by _meta (empty) → returned nothing,
+    so `--unfreeze risk_parity_etf` reported 'nothing eligible'. The named
+    path must read state straight from the DB via get_state()."""
+
+    def test_named_unfreeze_works_without_registering_metas(self, tmp_path):
+        from allocator.lifecycle import StrategyRegistry, StrategyState, StrategyMeta
+        from run_orchestrator import unfreeze_strategies
+        db = str(tmp_path / "alloc.db")
+        # Seed: register + freeze in one registry instance.
+        seed = StrategyRegistry(db)
+        seed.register(StrategyMeta(name="risk_parity_etf", asset_classes=["ETF"],
+                                   venue="alpaca", target_alloc_pct=0.2,
+                                   min_alloc_pct=0.0, max_alloc_pct=0.3))
+        seed.set_state("risk_parity_etf", StrategyState.FROZEN, "auto-freeze")
+        # Fresh BARE registry on the same DB — mimics the CLI (no metas).
+        bare = StrategyRegistry(db)
+        out = unfreeze_strategies("risk_parity_etf", bare, {"risk_parity_etf"})
+        assert out == [("risk_parity_etf", "PASS")]
+        assert bare.get_state("risk_parity_etf") == StrategyState.ACTIVE

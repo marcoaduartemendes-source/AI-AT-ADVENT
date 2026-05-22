@@ -372,14 +372,17 @@ def unfreeze_strategies(spec, registry, passing):
     (a deliberate human decision); only FROZEN is reversible here.
     """
     from allocator.lifecycle import StrategyState
-    states = registry.all_states()
     if str(spec).strip().lower() == "all":
+        # all_states() only returns registered metas, so callers wanting
+        # "all" must register first (the CLI does). Named targets below
+        # use get_state(), which reads the DB directly.
+        states = registry.all_states()
         targets = [n for n, s in states.items() if s == StrategyState.FROZEN]
     else:
         targets = [n.strip() for n in str(spec).split(",") if n.strip()]
     out: list[tuple[str, str]] = []
     for name in targets:
-        if states.get(name) != StrategyState.FROZEN:
+        if registry.get_state(name) != StrategyState.FROZEN:
             continue
         verdict = "PASS" if name in (passing or set()) else "NOT-PASS"
         registry.set_state(name, StrategyState.ACTIVE,
@@ -558,8 +561,13 @@ def main():
     # asymmetry for strategies that have re-validated. No brokers needed.
     if args.unfreeze:
         from common.strategy_validation import passing_strategies
+        reg = StrategyRegistry()
+        # Register metas so all_states() (used by the "all" path) sees the
+        # roster; register() preserves any existing FROZEN state.
+        for _m in ALL_STRATEGIES:
+            reg.register(_m)
         unfrozen = unfreeze_strategies(
-            args.unfreeze, StrategyRegistry(), passing_strategies())
+            args.unfreeze, reg, passing_strategies())
         if not unfrozen:
             logger.warning("--unfreeze: nothing eligible to unfreeze")
         for name, verdict in unfrozen:
