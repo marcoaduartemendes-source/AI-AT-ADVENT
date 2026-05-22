@@ -56,8 +56,31 @@ fi
 # the commit we revert to.
 sudo -u "$SERVICE_USER" git tag --force "deploy/last-good" "$CURRENT" 2>/dev/null || true
 
+# 2026-05-22: preserve runtime-written docs across the reset. The
+# orchestrator writes live state into docs/*.json (cycle_status,
+# trades_recent, self_grade, …) which are ALSO git-tracked (for the
+# GH-Pages path). A bare `git reset --hard` clobbers the live data
+# back to whatever stale snapshot is committed — observed reverting
+# the droplet's fresh cycles to a 32h-old state on every deploy.
+# Snapshot the live docs, reset code, then restore the live docs so
+# the running system's data always wins over the committed copy.
+_docs_bak="$(mktemp -d)"
+cp -a "$INSTALL_DIR/docs/." "$_docs_bak/" 2>/dev/null || true
+
 sudo -u "$SERVICE_USER" git reset --hard "origin/$BRANCH" --quiet
 NEW="$(sudo -u "$SERVICE_USER" git rev-parse HEAD)"
+
+# Restore live runtime JSON (NOT index.html — that's rebuilt fresh
+# by dashboard.service from these inputs).
+for f in cycle_status trades_recent benchmark validation walk_forward \
+         improvements self_grade data_quality auto_overrides \
+         hedge_fund_13f; do
+    if [[ -f "$_docs_bak/$f.json" ]]; then
+        cp -a "$_docs_bak/$f.json" "$INSTALL_DIR/docs/$f.json" 2>/dev/null || true
+        chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/docs/$f.json" 2>/dev/null || true
+    fi
+done
+rm -rf "$_docs_bak"
 
 if [[ "$CURRENT" == "$NEW" ]]; then
     echo "  already at $CURRENT — nothing to do"
