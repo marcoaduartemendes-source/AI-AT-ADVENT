@@ -306,6 +306,39 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
     return out
 
 
+def _portfolio_leverage(equity_usd: float) -> float | None:
+    """Gross leverage = Σ|market_value| across every live broker
+    position ÷ equity. None when no brokers/creds or zero equity.
+
+    Surfaced so the user can answer "how levered am I right now?" — the
+    3x ETF sleeve (leveraged_momentum) and any margin show up here.
+    Mirrors the risk engine's notional sum (risk/manager.compute_state).
+    """
+    if not equity_usd or equity_usd <= 0:
+        return None
+    try:
+        from brokers.registry import build_brokers
+        brokers = build_brokers()
+    except Exception:
+        return None
+    if not brokers:
+        return None
+    gross = 0.0
+    saw_position = False
+    for venue, adapter in brokers.items():
+        try:
+            for p in adapter.get_positions():
+                gross += abs(float(p.market_price or 0.0)
+                             * float(p.quantity or 0.0))
+                saw_position = True
+        except Exception as e:
+            logger.debug(f"[{venue}] get_positions for leverage: {e}")
+            continue
+    if not saw_position:
+        return 0.0
+    return gross / equity_usd
+
+
 def _recent_trades(limit: int = 50) -> list[dict]:
     """Last N trades, newest first.
 
@@ -1679,6 +1712,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
+    # Gross leverage (Σ|notional| ÷ equity) — live from broker positions.
+    portfolio_leverage = _portfolio_leverage(risk.get("equity_usd", 0.0))
     # Fold the unrealized into the per-strategy view so the table can
     # show it alongside realized.
     for s, u in unrealized_by_strategy.items():
@@ -1764,6 +1799,21 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
             '<div style="font-size:11px;color:#15803d;margin-top:4px">'
             '✓ FIFO-reconciled</div>'
         )
+
+    # Gross-leverage cell. Threshold off the configured cap when we can
+    # read it, else a sane 2.0x. >cap = red, >1.25x = amber, else green.
+    try:
+        from risk.policies import RiskConfig
+        _lev_cap = RiskConfig.from_env().leverage_cap or 2.0
+    except Exception:
+        _lev_cap = 2.0
+    if portfolio_leverage is None:
+        lev_value, lev_color = "—", "#4b5563"
+    else:
+        lev_value = f"{portfolio_leverage:.2f}×"
+        lev_color = ("#7f1d1d" if portfolio_leverage > _lev_cap
+                     else "#b45309" if portfolio_leverage > 1.25
+                     else "#166534")
 
     ks = (risk.get("kill_switch") or "UNKNOWN").upper()
     ks_color, ks_emoji = _KS_COLOR.get(ks, _KS_COLOR["UNKNOWN"])
@@ -1957,6 +2007,10 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   <div class="stat">
     <div class="label">Drawdown from peak</div>
     <div class="value">{_fmt_pct(risk.get('drawdown_pct', 0.0))}</div>
+  </div>
+  <div class="stat" title="Gross notional / equity across all live broker positions. Cap {_lev_cap:.1f}×.">
+    <div class="label">Gross leverage</div>
+    <div class="value" style="color:{lev_color}">{lev_value}</div>
   </div>
 </div>
 
