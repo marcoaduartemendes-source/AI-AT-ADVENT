@@ -532,7 +532,7 @@ def _fmt_pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
 
-def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
+def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = None) -> str:
     venue = meta.get("venue", "—") if meta else "—"
     mode_color, mode_label = _MODE_BADGE.get(mode, ("#4b5563", mode))
     realized = pnl.get("realized_pnl_usd", 0.0)
@@ -545,8 +545,11 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
         last_label = f"{pnl['days_since']:g}d ago"
     else:
         last_label = "never"
+    # Only rank strategies that have actually traded; idle ones show "—".
+    rank_label = str(rank) if (rank is not None and pnl.get("n_closed", 0)) else "—"
     return (
         f"<tr>"
+        f"<td class=num style=\"color:#6b7280\">{rank_label}</td>"
         f"<td><strong>{html.escape(name)}</strong>"
         + (f"<br><span class=desc>{html.escape(meta.get('description',''))}</span>" if meta else "")
         + f"</td>"
@@ -1703,11 +1706,14 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
         mode = _strategy_mode(n, venue, live_strategies)
         rows.append((n, m, pnl.get(n, {}), mode))
 
-    # Sort by realized P&L desc; strategies with no closed trades go to
-    # the bottom alphabetically.
+    # Rank by TOTAL P&L (realized + unrealized) desc — the bottom-line
+    # performance the user asked to rank on. Strategies with no closed
+    # trades sink to the bottom alphabetically (they're unranked).
+    def _total_pnl(p: dict) -> float:
+        return p.get("realized_pnl_usd", 0.0) + p.get("unrealized_pnl_usd", 0.0)
     rows.sort(key=lambda r: (
         -1 if r[2].get("n_closed", 0) else 0,
-        -(r[2].get("realized_pnl_usd", 0.0)),
+        -_total_pnl(r[2]),
         r[0],
     ))
 
@@ -1762,10 +1768,13 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     ks = (risk.get("kill_switch") or "UNKNOWN").upper()
     ks_color, ks_emoji = _KS_COLOR.get(ks, _KS_COLOR["UNKNOWN"])
 
-    body_rows = "\n".join(_row_html(n, m, p, md) for n, m, p, md in rows)
+    body_rows = "\n".join(
+        _row_html(n, m, p, md, rank=i + 1)
+        for i, (n, m, p, md) in enumerate(rows)
+    )
     if not rows:
         body_rows = (
-            "<tr><td colspan=9 style='text-align:center;color:#6b7280;"
+            "<tr><td colspan=10 style='text-align:center;color:#6b7280;"
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
@@ -1954,6 +1963,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 <table>
   <thead>
     <tr>
+      <th class=num title="Rank by total P&amp;L (traded strategies only)">#</th>
       <th>Strategy</th>
       <th>Venue</th>
       <th>Mode</th>
