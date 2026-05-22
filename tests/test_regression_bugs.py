@@ -452,3 +452,29 @@ class TestWalkForwardReadsCumulativePnL:
         # Monotonic curve → zero-variance deltas → Sharpe None, but the
         # key must be READ (non-zero trade counts prove it parsed).
         assert is_t > 0 and oos_t > 0
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bug #8 — Kalshi backtests read m["yes_close"], a field the API never
+# returns, so yes_close_price was 0 for every market and all 1000
+# settled candidates were rejected ("no_yes_close") — the Kalshi
+# strategies could never validate or trade. The live adapter reads
+# "last_price" (cents); the history parser must too.
+# ─────────────────────────────────────────────────────────────────────
+class TestKalshiSettledMarketParsing:
+    def test_last_price_is_read_as_yes_close(self):
+        from backtests.data.kalshi_history import _parse_yes_close
+        # cents → 0-1
+        assert _parse_yes_close({"last_price": 63}) == pytest.approx(0.63)
+        # already-normalised fallback
+        assert _parse_yes_close({"yes_close": 0.42}) == pytest.approx(0.42)
+        # the old bug: no usable price → 0 (skipped downstream)
+        assert _parse_yes_close({"ticker": "X"}) == 0.0
+
+    def test_settlement_from_value_or_result(self):
+        from backtests.data.kalshi_history import _parse_settlement
+        assert _parse_settlement({"settlement_value": 100}) == 1.0
+        assert _parse_settlement({"settlement_value": 0}) == 0.0
+        assert _parse_settlement({"result": "yes"}) == 1.0
+        assert _parse_settlement({"result": "no"}) == 0.0
+        assert _parse_settlement({}) == 0.5   # unknown → void → skipped

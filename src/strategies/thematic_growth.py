@@ -97,7 +97,7 @@ structural demand; ADRs are noted.
      similar structural drivers.
         ISRG — surgical robotics (da Vinci installed base moat)
         ROK  — factory automation
-        ABBT — Abbott; lab/medtech automation (proxy)
+        ABT  — Abbott; lab/medtech automation (proxy)
 
   7. Quantum computing (SPECULATIVE) (THEME_WEIGHT = 0.05)
      Lottery-ticket sleeve. If error-corrected qubits cross a
@@ -134,7 +134,7 @@ THEMES: dict[str, list[str]] = {
     "cybersecurity":      ["PANW", "CRWD", "ZS", "FTNT", "S"],
     "defense":            ["LMT", "RTX", "NOC", "GD", "HII"],
     "obesity_glp1":       ["LLY", "NVO"],
-    "robotics":           ["ISRG", "ROK", "ABBT"],
+    "robotics":           ["ISRG", "ROK", "ABT"],
     "quantum_spec":       ["IONQ", "RGTI"],
     # ── 2026-05-20 user-requested expansion: more thematic surface
     # area for alpha. Each added theme has a concrete structural
@@ -145,7 +145,7 @@ THEMES: dict[str, list[str]] = {
     "reshoring_chips":    ["TXN", "INTC", "ON", "ENTG", "ROP", "ETN"],
     # Lithium / EV supply chain — secular EV growth + grid storage
     # demand. ALB is dominant Western lithium; LIT is the basket ETF.
-    "lithium_ev_supply":  ["ALB", "LIT", "TSLA", "RIVN", "PCRFY"],
+    "lithium_ev_supply":  ["ALB", "LIT", "TSLA", "RIVN", "LAC"],
     # Space economy — launch + satcom + defense overlap (RKLB, ASTS,
     # LMT, BA). Small, speculative, high-beta.
     "space_economy":      ["RKLB", "ASTS", "LMT", "BA", "IRDM"],

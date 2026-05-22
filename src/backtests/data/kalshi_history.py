@@ -54,6 +54,46 @@ class MarketSnapshot:
     volume_24h: int
 
 
+# ─── Field parsing ────────────────────────────────────────────────────
+# 2026-05-22 audit: settled_markets read m["yes_close"], a field Kalshi's
+# /markets API does NOT return — so yes_close_price was 0 for EVERY market
+# and both Kalshi backtests rejected all 1000 candidates ("no_yes_close"),
+# leaving the strategies permanently NO_DATA / never traded. The live
+# adapter (brokers/kalshi.py) reads "last_price" (cents); use that as the
+# settled YES price, with legacy fallbacks. Settlement comes from the
+# numeric "settlement_value" when present, else the "result" string.
+
+
+def _parse_yes_close(m: dict) -> float:
+    """Last YES price (0-1) for a settled market. Kalshi prices are in
+    cents (1-99); accept several field names for forward-compat."""
+    for key in ("last_price", "close_price", "yes_close", "previous_yes_price"):
+        v = m.get(key)
+        if v:
+            px = float(v)
+            return px / 100 if px > 1 else px
+    return 0.0
+
+
+def _parse_settlement(m: dict) -> float:
+    """Settlement as 0.0 (NO won) / 1.0 (YES won) / 0.5 (void/unknown,
+    skipped downstream). Prefer numeric settlement_value; fall back to
+    the 'result' string ('yes'/'no')."""
+    sv = m.get("settlement_value")
+    if sv is not None and sv != "":
+        try:
+            s = float(sv)
+            return s / 100 if s > 1 else s
+        except (ValueError, TypeError):
+            pass
+    res = str(m.get("result") or "").strip().lower()
+    if res == "yes":
+        return 1.0
+    if res == "no":
+        return 0.0
+    return 0.5   # unknown/void → downstream skips it
+
+
 # ─── Client ───────────────────────────────────────────────────────────
 
 
@@ -158,13 +198,8 @@ class KalshiHistoryClient:
                 title = m.get("title") or ticker
                 open_ts = datetime.fromtimestamp(m.get("open_ts") or 0, tz=UTC)
                 close_ts = datetime.fromtimestamp(m.get("close_ts") or 0, tz=UTC)
-                settlement = float(m.get("settlement_value", 0))
-                # Settlement value is 0 or 100 cents on Kalshi; normalize to 0-1
-                if settlement > 1:
-                    settlement = settlement / 100
-                yes_close = float(m.get("yes_close") or 0)
-                if yes_close > 1:
-                    yes_close = yes_close / 100
+                settlement = _parse_settlement(m)
+                yes_close = _parse_yes_close(m)
             except (KeyError, ValueError, TypeError):
                 continue
             out.append(ResolvedMarket(
@@ -185,12 +220,8 @@ class KalshiHistoryClient:
         if not m:
             return None
         try:
-            settlement = float(m.get("settlement_value", 0))
-            if settlement > 1:
-                settlement = settlement / 100
-            yes_close = float(m.get("yes_close") or 0)
-            if yes_close > 1:
-                yes_close = yes_close / 100
+            settlement = _parse_settlement(m)
+            yes_close = _parse_yes_close(m)
             return ResolvedMarket(
                 ticker=ticker,
                 title=m.get("title") or ticker,
