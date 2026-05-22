@@ -479,11 +479,34 @@ class RiskManager:
             vix=vix_now,
         )
 
-        ks_state = self.config.state_for_drawdown(dd_pct)
+        drawdown_state = self.config.state_for_drawdown(dd_pct)
+        # ── Kill-switch LATCH (2026-05-22). Previously the state was a
+        # pure function of current drawdown, so a KILL auto-cleared the
+        # instant equity recovered — re-enabling trading right after a
+        # 15% loss with no human review — and a manual ARM was silently
+        # overridden on the next cycle (the dashboard's ARM KILL button
+        # was effectively decorative). A kill switch must be sticky:
+        # once KILL fires (drawdown OR manual arm) it stays KILL until an
+        # explicit operator reset. reset_kill_switch() writes a NORMAL
+        # event that supersedes the latch; arm_kill_switch() writes a
+        # KILL event that engages it. Drawdown can still ESCALATE into
+        # KILL on its own — only a human de-escalates out of it.
+        last_event = self.db.last_kill_switch_event()
+        latched_kill = bool(
+            last_event
+            and last_event.get("state") == KillSwitchState.KILL.value
+        )
+        if latched_kill or drawdown_state == KillSwitchState.KILL:
+            ks_state = KillSwitchState.KILL
+        else:
+            ks_state = drawdown_state
         if ks_state == KillSwitchState.KILL:
+            held = latched_kill and drawdown_state != KillSwitchState.KILL
             self.db.record_kill_switch(
                 ks_state, dd_pct,
-                note=f"equity=${equity:.2f} peak=${peak:.2f}",
+                note=(f"equity=${equity:.2f} peak=${peak:.2f}"
+                      + (" (latched — awaiting --reset-kill-switch)"
+                         if held else "")),
                 cooldown_seconds=self.config.kill_switch_cooldown_seconds,
             )
 

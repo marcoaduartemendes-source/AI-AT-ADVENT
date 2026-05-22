@@ -184,6 +184,83 @@ class TestRiskStateFromCycle:
         assert state.kill_switch == KillSwitchState.KILL
 
 
+class TestKillSwitchLatch:
+    """2026-05-22 safety fix: the kill switch was a pure function of
+    current drawdown, so a KILL auto-cleared the instant equity recovered
+    (re-enabling trading right after a 15% loss with no human review) and
+    a manual ARM was silently overridden on the next cycle. The switch
+    must now LATCH: once KILL fires it stays KILL until an explicit
+    operator reset.
+    """
+
+    def _cfg(self):
+        return RiskConfig(warning_dd_pct=0.05, critical_dd_pct=0.10,
+                          kill_dd_pct=0.15)
+
+    def test_latched_kill_persists_after_equity_recovers(self, tmp_path):
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        db.record_snapshot(100_000, note="peak")
+        cfg = self._cfg()
+        # Cycle 1: equity $84k → 16% drawdown → KILL (records the event).
+        rm1 = RiskManager(
+            brokers={"alpaca": MockBroker(
+                venue="alpaca", cash_usd=84_000, equity_usd=84_000)},
+            config=cfg, db=db)
+        assert rm1.compute_state(persist=True).kill_switch == \
+            KillSwitchState.KILL
+        # Cycle 2: equity fully recovers to $100k → 0% drawdown. Pre-fix
+        # this returned NORMAL; the latch must keep it KILL.
+        rm2 = RiskManager(
+            brokers={"alpaca": MockBroker(
+                venue="alpaca", cash_usd=100_000, equity_usd=100_000)},
+            config=cfg, db=db)
+        assert rm2.compute_state(persist=True).kill_switch == \
+            KillSwitchState.KILL
+
+    def test_manual_arm_durably_holds_at_zero_drawdown(self, tmp_path):
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        db.record_snapshot(100_000, note="peak")
+        cfg = self._cfg()
+        rm = RiskManager(
+            brokers={"alpaca": MockBroker(
+                venue="alpaca", cash_usd=100_000, equity_usd=100_000)},
+            config=cfg, db=db)
+        # Healthy equity (0% drawdown) but operator arms the switch.
+        rm.arm_kill_switch(note="manual halt")
+        assert rm.compute_state(persist=True).kill_switch == \
+            KillSwitchState.KILL
+
+    def test_reset_clears_the_latch(self, tmp_path):
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        db.record_snapshot(100_000, note="peak")
+        cfg = self._cfg()
+        # Trip + latch a KILL.
+        rm = RiskManager(
+            brokers={"alpaca": MockBroker(
+                venue="alpaca", cash_usd=84_000, equity_usd=84_000)},
+            config=cfg, db=db)
+        assert rm.compute_state(persist=True).kill_switch == \
+            KillSwitchState.KILL
+        # Operator resets, equity is healthy again → state follows
+        # drawdown once more (NORMAL).
+        rm.reset_kill_switch()
+        rm2 = RiskManager(
+            brokers={"alpaca": MockBroker(
+                venue="alpaca", cash_usd=100_000, equity_usd=100_000)},
+            config=cfg, db=db)
+        assert rm2.compute_state(persist=True).kill_switch == \
+            KillSwitchState.NORMAL
+
+
 class TestAssetClassExposureCap:
     """Audit fix #5: per-asset-class concentration cap. Without this,
     five strategies could pile into equity-beta-1 names; one bad SPX
