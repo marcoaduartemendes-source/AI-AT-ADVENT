@@ -643,16 +643,17 @@ class Orchestrator:
             if target_usd <= 0:
                 outcome.skip_reasons.append("target_alloc_usd=0")
 
-            # Skip compute when venue is closed AND the broker is not
-            # in paper mode. Alpaca PAPER accounts accept orders 24/7
-            # and queue them until market open — gating those wastes
-            # activity. Live Alpaca still gets gated because the broker
-            # cancels day orders submitted outside the regular session.
-            # User feedback 2026-05-10: "many of the alpaca strategies
-            # have never transacted fix that" — paper queue lets them.
-            adapter = self.brokers.get(strategy.venue)
-            venue_is_paper = bool(adapter and getattr(adapter, "is_paper", False))
-            if not is_market_open(strategy.venue) and not venue_is_paper:
+            # Skip compute when the venue's market is closed — paper AND
+            # live. The earlier "let paper queue 24/7" carve-out
+            # backfired: place_order refuses off-RTH (day orders
+            # auto-cancel at the open), so every off-hours paper proposal
+            # raised "market closed", was logged as an EXECUTION ERROR,
+            # and dragged setup_health to 0/0 clean cycles (observed
+            # 2026-05-22: earnings_momentum erroring every night). Gating
+            # before compute means no off-hours churn, no spurious errors,
+            # and the strategy still trades in-session (where it fills).
+            # 24/7 venues (coinbase/kalshi) are always "open" here.
+            if not is_market_open(strategy.venue):
                 outcome.skip_reasons.append(
                     f"venue_closed ({venue_window_str(strategy.venue)})"
                 )
@@ -1350,6 +1351,18 @@ class Orchestrator:
             self._mark_pending_intracycle(proposal, order, decision)
             self._record_trade(proposal, order, decision, report)
         except Exception as e:
+            # Market-closed is an EXPECTED defer, not a failure. The
+            # pre-compute venue-closed gate normally prevents reaching
+            # here, but a cycle straddling the 09:30/16:00 ET boundary
+            # (clock skew between our check and Alpaca's) can still trip
+            # it. Recording it in report.errors would tank setup_health
+            # for a non-event, so surface it as a soft defer instead.
+            if "market closed" in str(e).lower():
+                logger.info(f"[{proposal.strategy}] deferred {proposal.symbol}"
+                            f": market closed (will retry in-session)")
+                self._cycle_reject_reasons.setdefault(
+                    proposal.strategy, []).append("market closed — deferred")
+                return
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
             self._cycle_execute_errors.setdefault(
