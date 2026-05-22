@@ -362,6 +362,32 @@ ALL_STRATEGIES = [
 PHASE_1_STRATEGIES = ALL_STRATEGIES
 
 
+def unfreeze_strategies(spec, registry, passing):
+    """Return FROZEN strategies named by `spec` ('all' or comma-list) to
+    ACTIVE. Returns [(name, verdict_label), …] for those actually flipped.
+
+    Fixes the lifecycle latch-asymmetry: the allocator auto-FREEZES on
+    past underperformance but never auto-recovers, so a strategy that has
+    since re-validated stays benched forever. RETIRED is left untouched
+    (a deliberate human decision); only FROZEN is reversible here.
+    """
+    from allocator.lifecycle import StrategyState
+    states = registry.all_states()
+    if str(spec).strip().lower() == "all":
+        targets = [n for n, s in states.items() if s == StrategyState.FROZEN]
+    else:
+        targets = [n.strip() for n in str(spec).split(",") if n.strip()]
+    out: list[tuple[str, str]] = []
+    for name in targets:
+        if states.get(name) != StrategyState.FROZEN:
+            continue
+        verdict = "PASS" if name in (passing or set()) else "NOT-PASS"
+        registry.set_state(name, StrategyState.ACTIVE,
+                           f"manual unfreeze ({verdict})")
+        out.append((name, verdict))
+    return out
+
+
 def build_strategies(brokers):
     instances = {}
     if "coinbase" in brokers:
@@ -498,6 +524,15 @@ def main():
                           "force-closes every position. Use as the "
                           "panic button when you need to halt trading "
                           "immediately.")
+    ap.add_argument("--unfreeze", metavar="NAMES", default=None,
+                     help="Return FROZEN strategies to ACTIVE (comma-list, "
+                          "or 'all'). The allocator auto-freezes on past "
+                          "underperformance but never auto-recovers, so a "
+                          "strategy that has since re-validated (PASS + "
+                          "walk-forward ROBUST) stays benched forever. Use "
+                          "this after confirming the verdict; it gets a "
+                          "baseline allocation again next cycle (and will "
+                          "re-freeze automatically if it bleeds live).")
     args = ap.parse_args()
 
     # Manual KILL reset path. Done before anything else so the operator
@@ -517,6 +552,18 @@ def main():
             "Kill-switch ARMED. Next orchestrator cycle will close "
             "all positions. Run with --reset-kill-switch to recover."
         )
+        return 0
+
+    # Manual unfreeze path — fixes the auto-freeze-never-recovers
+    # asymmetry for strategies that have re-validated. No brokers needed.
+    if args.unfreeze:
+        from common.strategy_validation import passing_strategies
+        unfrozen = unfreeze_strategies(
+            args.unfreeze, StrategyRegistry(), passing_strategies())
+        if not unfrozen:
+            logger.warning("--unfreeze: nothing eligible to unfreeze")
+        for name, verdict in unfrozen:
+            logger.warning(f"--unfreeze: {name} FROZEN → ACTIVE [{verdict}]")
         return 0
 
     # Two-key guard: even with DRY_RUN=false the orchestrator refuses to
