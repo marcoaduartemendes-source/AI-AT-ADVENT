@@ -85,7 +85,10 @@ def backtest_crypto_basis_trade(
     universe: list[str] | None = None,
     bybit: BybitClient | None = None,
 ) -> BacktestSummary:
-    client = bybit or BybitClient()
+    # OKX→Bybit fallback chain (Bybit is geo-blocked from the droplet).
+    # Tests still inject their own stub via `bybit=`.
+    from .data.okx import crypto_data_client
+    client = bybit or crypto_data_client()
     universe = universe or CARRY_UNIVERSE
 
     today = date.today()
