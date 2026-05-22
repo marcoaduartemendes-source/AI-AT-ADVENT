@@ -760,7 +760,6 @@ _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "dual_momentum": backtest_dual_momentum,
     "risk_parity_etf": backtest_risk_parity_etf,
-    "crypto_xsmom": backtest_crypto_xsmom,
     "vol_managed_overlay": backtest_vol_managed_overlay,
     "pead": _pead_dispatch,
     "commodity_carry": _commodity_carry_dispatch,
@@ -768,14 +767,13 @@ _STRATEGY_BACKTESTS = {
     "crypto_basis_trade": _crypto_basis_trade_dispatch,
     "kalshi_calibration_arb": _kalshi_calibration_arb_dispatch,
     "macro_kalshi": _macro_kalshi_dispatch,
-    # Sprint B3 — 9 of the 14 unbacktested strategies, all Yahoo-fed.
-    "rsi_mean_reversion": _rsi_mean_reversion_dispatch,
+    # ELIMINATED 2026-05-22 (validation FAIL, un-wired from the live
+    # roster): crypto_xsmom, rsi_mean_reversion, gap_trading,
+    # low_vol_anomaly, turn_of_month, pairs_trading. Their backtest
+    # functions remain defined (imported by tests / available for
+    # revival) but are no longer in the active validation set.
     "bollinger_breakout": _bollinger_breakout_dispatch,
-    "gap_trading": _gap_trading_dispatch,
-    "low_vol_anomaly": _low_vol_anomaly_dispatch,
-    "turn_of_month": _turn_of_month_dispatch,
     "sector_rotation": _sector_rotation_dispatch,
-    "pairs_trading": _pairs_trading_dispatch,
     "dividend_growth": _dividend_growth_dispatch,
     "internationals_rotation": _internationals_rotation_dispatch,
     # User-requested: leveraged trend (3x) + thematic basket. Both
