@@ -121,7 +121,13 @@ class StrategyPerformance:
             dd = peak - cum
             if dd > max_dd:
                 max_dd = dd
-        dd_pct = (max_dd / peak) if peak > 0 else 0.0
+        # Drawdown as a fraction of peak cumulative P&L EXPLODES when peak
+        # is tiny: a strategy that went +$1 then -$577 yields 577/1 = 577
+        # = 57,700%, which then spuriously trips the allocator's freeze_dd
+        # gate (observed 2026-05-22: risk_parity_etf "DD=57758.2%"). A
+        # drawdown can't exceed 100% in any meaningful sense for this gate,
+        # so clamp it; the absolute drawdown_usd stays exact.
+        dd_pct = min(max_dd / peak, 1.0) if peak > 1e-9 else 0.0
 
         return StrategyMetrics(
             name=name,

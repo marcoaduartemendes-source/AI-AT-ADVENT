@@ -112,6 +112,19 @@ class MetaAllocator:
         primary = self.perf.metrics_bulk(names, window_days=self.cfg.primary_window_days)
         secondary = self.perf.metrics_bulk(names, window_days=self.cfg.secondary_window_days)
 
+        # Validation-PASS strategies are never auto-FROZEN (permanent,
+        # manual-only recovery) on live weakness — the worst they get is
+        # WATCH (de-risked 0.5x, auto-recoverable). A 5-year-proven edge
+        # warrants de-risking on a bad live stretch, not permanent
+        # benching. (2026-05-22: risk_parity_etf was bouncing
+        # FROZEN↔ACTIVE because the allocator re-froze it every cycle on
+        # a corrupt 60d metric — DD 57758% — despite a PASS verdict.)
+        try:
+            from common.strategy_validation import passing_strategies
+            self._passing = passing_strategies()
+        except Exception:
+            self._passing = set()
+
         # 1) Lifecycle transitions
         for name in names:
             self._maybe_transition(name, primary[name], secondary[name])
@@ -273,12 +286,20 @@ class MetaAllocator:
         if state in (StrategyState.FROZEN, StrategyState.RETIRED):
             return
 
-        # ACTIVE → FROZEN on severe underperformance
+        is_passing = name in getattr(self, "_passing", set())
+
+        # ACTIVE → FROZEN on severe underperformance (WATCH if PASS).
         if state == StrategyState.ACTIVE and primary.n_trades >= 10:
             if primary.shrunk_sharpe < cfg.freeze_sharpe or \
                primary.drawdown_pct >= cfg.freeze_dd_pct:
+                target = (StrategyState.WATCH if is_passing
+                          else StrategyState.FROZEN)
                 self.registry.set_state(
-                    name, StrategyState.FROZEN,
+                    name, target,
+                    f"auto-{'watch' if is_passing else 'freeze'} "
+                    f"(PASS protected): 60d Sharpe={primary.shrunk_sharpe:.2f}, "
+                    f"DD={primary.drawdown_pct * 100:.1f}%"
+                    if is_passing else
                     f"auto-freeze: 60d Sharpe={primary.shrunk_sharpe:.2f}, "
                     f"DD={primary.drawdown_pct * 100:.1f}%"
                 )
@@ -305,8 +326,12 @@ class MetaAllocator:
                 )
                 return
 
-        # WATCH → FROZEN if continued underperformance
-        if state == StrategyState.WATCH and primary.n_trades >= 15:
+        # WATCH → FROZEN if continued underperformance. PASS strategies
+        # are exempt — they stay on WATCH (de-risked) rather than being
+        # permanently benched on live metrics that may be transient or
+        # corrupt; only a manual --unfreeze or RETIRE moves them.
+        if (state == StrategyState.WATCH and primary.n_trades >= 15
+                and not is_passing):
             if primary.shrunk_sharpe < cfg.freeze_sharpe or \
                primary.drawdown_pct >= cfg.freeze_dd_pct:
                 self.registry.set_state(
