@@ -372,3 +372,48 @@ class TestRealizedPnLDriftSurfacedOnDashboard:
     def test_missing_db_returns_none(self, tmp_path):
         import build_dashboard as bd
         assert bd._realized_pnl_drift(str(tmp_path / "nope.db")) is None
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bug #6 — self-grade's alpha-vs-SPY axis was pinned to a fake 5.0.
+# _grade_alpha_vs_benchmark() read flat fields (bot_return_pct_ann, …)
+# that build_benchmark never writes. The real file nests returns under
+# portfolio.windows / benchmarks.SPY.windows, so the reader always hit
+# the "lacks comparable fields → 5.0" placeholder — inflating the grade
+# and hiding a real -6pp/30d underperformance vs SPY. The user mandate
+# is HONEST grading, so a flattering placeholder is itself the bug.
+# ─────────────────────────────────────────────────────────────────────
+class TestAlphaVsSpyReadsRealBenchmarkShape:
+    def test_underperformance_scores_low(self, tmp_path, monkeypatch):
+        import json
+        import common.self_grade as sg
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "benchmark.json").write_text(json.dumps({
+            "portfolio": {"windows": {"7": -0.1, "14": -1.3, "30": -1.65}},
+            "benchmarks": {"SPY": {"windows": {"7": -0.2, "14": 0.9, "30": 4.52}}},
+        }))
+        monkeypatch.chdir(tmp_path)
+        g, r = sg._grade_alpha_vs_benchmark()
+        # -1.65 vs +4.52 → -6.17pp excess → bottom of the scale, NOT 5.0.
+        assert g == 0.0
+        assert "30d" in r and "excess" in r
+
+    def test_outperformance_scores_high(self, tmp_path, monkeypatch):
+        import json
+        import common.self_grade as sg
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "benchmark.json").write_text(json.dumps({
+            "portfolio": {"windows": {"30": 9.0}},
+            "benchmarks": {"SPY": {"windows": {"30": 4.5}}},
+        }))
+        monkeypatch.chdir(tmp_path)
+        g, _ = sg._grade_alpha_vs_benchmark()
+        assert g == 10.0   # +4.5pp excess → capped top
+
+    def test_missing_file_stays_neutral(self, tmp_path, monkeypatch):
+        import common.self_grade as sg
+        monkeypatch.chdir(tmp_path)   # no docs/benchmark.json
+        g, _ = sg._grade_alpha_vs_benchmark()
+        assert g == 5.0

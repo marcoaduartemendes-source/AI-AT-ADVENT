@@ -158,13 +158,31 @@ def _grade_alpha_vs_benchmark() -> tuple[float, str]:
     b = _read("docs/benchmark.json")
     if not b:
         return 5.0, "benchmark.json not yet produced → 5.0/10 (neutral)"
-    # benchmark.json shape varies; try common fields.
-    bot = b.get("bot_return_pct_ann") or b.get("portfolio_return_ann")
-    spy = b.get("spy_return_pct_ann") or b.get("benchmark_return_ann")
+    bot = spy = None
+    window_label = ""
+    # Primary shape (what build_benchmark actually writes): nested
+    # portfolio.windows / benchmarks.SPY.windows keyed by lookback days.
+    # The old reader looked for flat *_return_pct_ann fields that never
+    # existed, so this axis was silently pinned to the 5.0 placeholder —
+    # masking a real -6pp/30d underperformance vs SPY. Read the longest
+    # common window so the grade reflects the truth.
+    try:
+        pf_win = (b.get("portfolio") or {}).get("windows") or {}
+        spy_win = ((b.get("benchmarks") or {}).get("SPY") or {}).get("windows") or {}
+        common = set(pf_win) & set(spy_win)
+        if common:
+            longest = max(common, key=lambda k: int(k))
+            bot = float(pf_win[longest])
+            spy = float(spy_win[longest])
+            window_label = f"{longest}d "
+    except Exception:
+        bot = spy = None
+    # Forward-compat fallbacks for a future flat shape.
     if bot is None or spy is None:
-        # Fall back to simpler total-return comparison.
-        bot = b.get("bot_return_pct") or b.get("portfolio_return_total")
-        spy = b.get("spy_return_pct") or b.get("benchmark_return_total")
+        bot = b.get("bot_return_pct_ann") or b.get("portfolio_return_ann") \
+            or b.get("bot_return_pct") or b.get("portfolio_return_total")
+        spy = b.get("spy_return_pct_ann") or b.get("benchmark_return_ann") \
+            or b.get("spy_return_pct") or b.get("benchmark_return_total")
     if bot is None or spy is None:
         return 5.0, "benchmark.json lacks comparable fields → 5.0/10"
     try:
@@ -177,7 +195,7 @@ def _grade_alpha_vs_benchmark() -> tuple[float, str]:
     elif excess_pp <= 3: g = 6.0 + (excess_pp / 3) * 4.0
     else: g = 10.0
     g = round(max(0.0, min(10.0, g)), 1)
-    return g, (f"bot {bot:+.1f}% vs SPY {spy:+.1f}% → excess "
+    return g, (f"bot {window_label}{bot:+.1f}% vs SPY {spy:+.1f}% → excess "
                 f"{excess_pp:+.1f}pp → {g}/10")
 
 
