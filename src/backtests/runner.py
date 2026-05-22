@@ -557,6 +557,11 @@ def _internationals_rotation_dispatch(window_days: int) -> BacktestSummary:
     return backtest_internationals_rotation(window_days)
 
 
+def _multifactor_equity_dispatch(window_days: int) -> BacktestSummary:
+    from .equity_strategies_backtest import backtest_multifactor_equity
+    return backtest_multifactor_equity(window_days)
+
+
 def _leveraged_momentum_dispatch(window_days: int) -> BacktestSummary:
     from .leveraged_thematic_backtest import backtest_leveraged_momentum
     return backtest_leveraged_momentum(window_days)
@@ -776,6 +781,9 @@ _STRATEGY_BACKTESTS = {
     "sector_rotation": _sector_rotation_dispatch,
     "dividend_growth": _dividend_growth_dispatch,
     "internationals_rotation": _internationals_rotation_dispatch,
+    # Flagship cross-sectional factor model — was trading unvalidated
+    # (a data_quality trade-orphan); now backtested point-in-time.
+    "multifactor_equity": _multifactor_equity_dispatch,
     # User-requested: leveraged trend (3x) + thematic basket. Both
     # registered DRY-only in run_orchestrator; the validation harness
     # backtests them here so the dashboard panel shows their verdict.

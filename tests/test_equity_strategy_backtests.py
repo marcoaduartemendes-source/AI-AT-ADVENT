@@ -331,3 +331,41 @@ def test_eliminated_strategies_unwired_but_functions_kept():
     for fn in ("backtest_gap_trading", "backtest_low_vol_anomaly",
                "backtest_rsi_mean_reversion", "backtest_turn_of_month"):
         assert hasattr(eb, fn), f"{fn} should remain defined for revival"
+
+
+# ─── multifactor_equity (flagship) ────────────────────────────────────
+
+
+def test_multifactor_equity_backtest_runs_and_closes_trades():
+    """The flagship was trading unvalidated (a data_quality orphan).
+    Its backtest must run point-in-time and produce both entries and
+    hysteresis exits on churning data so it can earn a real verdict."""
+    import math
+    import backtests.equity_strategies_backtest as eb
+    from backtests.equity_strategies_backtest import backtest_multifactor_equity
+    from strategies.multifactor_equity import UNIVERSE
+    syms = list(UNIVERSE)
+
+    def churning_hist(sym, days):
+        rank = syms.index(sym)
+        phase = rank * 0.5
+        t0 = 1_600_000_000
+        px = 100.0
+        rows = []
+        for i in range(days):
+            drift = 0.0006 + 0.0008 * math.sin(i / 40.0 + phase)
+            px *= (1 + drift)
+            rows.append([t0 + i * 86400, px, px, px, px, 1000.0])
+        return np.array(rows)
+
+    with patch.object(eb, "_yahoo_history", churning_hist):
+        s = backtest_multifactor_equity(504)
+    assert s.strategy == "multifactor_equity"
+    assert s.n_trades > 0, "rotating ranks must yield closed trades"
+    assert s.entry_volume_usd > 0
+
+
+def test_multifactor_equity_is_dispatchable():
+    from backtests.runner import _STRATEGY_BACKTESTS
+    assert "multifactor_equity" in _STRATEGY_BACKTESTS, \
+        "flagship must be in the active validation dispatch (no longer an orphan)"

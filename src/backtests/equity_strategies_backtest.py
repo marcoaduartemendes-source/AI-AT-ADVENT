@@ -914,6 +914,143 @@ def backtest_internationals_rotation(window_days: int) -> BacktestSummary:
     )
 
 
+# ─── multifactor_equity (flagship) ────────────────────────────────────
+
+
+def backtest_multifactor_equity(window_days: int) -> BacktestSummary:
+    """Cross-sectional multi-factor composite — mirrors the live
+    src/strategies/multifactor_equity.py point-in-time so the flagship
+    sleeve (largest live allocation) finally gets a validation verdict
+    instead of trading unvalidated.
+
+    Per rebalance (monthly): for every name with ≥ MOM history that is
+    above its 200d SMA, compute 12-1 momentum, −120d realised vol, and
+    −5d reversal; cross-sectionally z-score each; composite =
+    0.45·z(mom)+0.35·z(lowvol)+0.20·z(rev); long the top decile
+    (sector-capped at 2 per bucket), equal-weight. A held name is only
+    sold once it decays out of the top third (hysteresis), matching the
+    live turnover control."""
+    from strategies.multifactor_equity import (
+        EXIT_RANK_FRAC, MAX_PER_SECTOR, MIN_NAMES, MOM_LOOKBACK, MOM_SKIP,
+        REVERSAL_LOOKBACK, TOP_DECILE_FRAC, TREND_SMA, UNIVERSE, VOL_LOOKBACK,
+        W_LOWVOL, W_MOM, W_REVERSAL,
+    )
+
+    rebalance_every = 21
+    need = MOM_LOOKBACK + MOM_SKIP + 5
+    book_usd = 10_000.0     # nominal sleeve for per-trade attribution
+
+    histories = _load_universe(list(UNIVERSE), window_days + need + 10)
+    if len(histories) < MIN_NAMES:
+        return BacktestSummary(
+            strategy="multifactor_equity", window_days=window_days,
+            note="Insufficient Yahoo data",
+        )
+
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, need + 1)
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+
+    def _z(a: np.ndarray) -> np.ndarray:
+        sd = a.std()
+        return (a - a.mean()) / sd if sd > 1e-12 else np.zeros_like(a)
+
+    for i in range(base_idx, n_bars):
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        bar_time = datetime.fromtimestamp(
+            next(iter(histories.values()))[i, 0], tz=UTC,
+        ).isoformat()
+
+        rows: list[dict] = []
+        for sym, candles in histories.items():
+            if i >= len(candles) or i - need < 0:
+                continue
+            closes = candles[:i + 1, 4].astype(float)   # point-in-time
+            if len(closes) < need or closes[-1] <= 0:
+                continue
+            if closes[-1] < closes[-TREND_SMA:].mean():   # 200d SMA gate
+                continue
+            p_start = closes[-(MOM_LOOKBACK + MOM_SKIP)]
+            p_end = closes[-(MOM_SKIP + 1)]
+            if p_start <= 0:
+                continue
+            mom = (p_end / p_start) - 1.0
+            rets = np.diff(closes[-VOL_LOOKBACK:]) / closes[-VOL_LOOKBACK:-1]
+            lowvol = -(float(rets.std()) if len(rets) else 1.0)
+            p_rev = closes[-(REVERSAL_LOOKBACK + 1)]
+            rev = -((closes[-1] / p_rev) - 1.0) if p_rev > 0 else 0.0
+            rows.append({"symbol": sym, "mom": mom, "lowvol": lowvol,
+                         "rev": rev, "price": float(closes[-1])})
+        if len(rows) < MIN_NAMES:
+            continue
+
+        composite = (W_MOM * _z(np.array([r["mom"] for r in rows]))
+                     + W_LOWVOL * _z(np.array([r["lowvol"] for r in rows]))
+                     + W_REVERSAL * _z(np.array([r["rev"] for r in rows])))
+        order = np.argsort(-composite)
+        n = len(rows)
+        top_k = max(MIN_NAMES, int(round(n * TOP_DECILE_FRAC)))
+        exit_k = max(top_k, int(round(n * EXIT_RANK_FRAC)))
+        ranked = [rows[idx]["symbol"] for idx in order]
+        price_by = {r["symbol"]: r["price"] for r in rows}
+
+        target_set: list[str] = []
+        sector_count: dict[str, int] = {}
+        for sym in ranked:
+            if len(target_set) >= top_k:
+                break
+            sec = UNIVERSE.get(sym, "OTHER")
+            if sector_count.get(sec, 0) >= MAX_PER_SECTOR:
+                continue
+            target_set.append(sym)
+            sector_count[sec] = sector_count.get(sec, 0) + 1
+        keep_band = set(ranked[:exit_k])
+
+        # Exits — held names that decayed out of the hysteresis band.
+        for sym in list(positions.keys()):
+            if sym in keep_band or i >= len(histories[sym]):
+                continue
+            pos = positions.pop(sym)
+            close = float(histories[sym][i, 4])
+            gross = pos["qty"] * (close - pos["entry_price"])
+            fees = (pos["qty"] * pos["entry_price"]
+                    + pos["qty"] * close) * _FEE_RATE
+            trades.append({
+                "strategy": "multifactor_equity", "side": "SELL",
+                "product_id": sym, "amount_usd": pos["qty"] * close,
+                "quantity": pos["qty"], "entry_price": pos["entry_price"],
+                "exit_price": close, "open_time": pos["entry_time"],
+                "close_time": bar_time, "pnl_usd": gross - fees,
+                "exit_reason": f"out of top {exit_k}/{n}",
+            })
+
+        # Entries — target names not already held.
+        per_name_usd = book_usd / max(len(target_set), 1)
+        for sym in target_set:
+            if sym in positions:
+                continue
+            price = price_by.get(sym)
+            if not price or price <= 0:
+                continue
+            qty = per_name_usd / price
+            positions[sym] = {"qty": qty, "entry_price": price,
+                              "entry_time": bar_time}
+            entry_volume += per_name_usd
+            trades.append({
+                "strategy": "multifactor_equity", "side": "BUY",
+                "product_id": sym, "amount_usd": per_name_usd,
+                "quantity": qty, "entry_price": price,
+                "open_time": bar_time, "reason": f"top {top_k}/{n} composite",
+            })
+
+    return _equity_curve_to_summary(
+        "multifactor_equity", window_days, trades, entry_volume,
+    )
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────
 
 
