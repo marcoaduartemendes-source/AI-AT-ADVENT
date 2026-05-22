@@ -285,3 +285,49 @@ class TestAllocatorBaselineFallback:
         weights = {d.name: d.target_pct for d in result.decisions}
         assert all(w > 0 for w in weights.values())
         assert weights["b"] > weights["a"] > weights["c"]
+
+
+class TestDrawdownPctClamp:
+    """metrics._compute: dd_pct = max_dd/peak EXPLODES when peak is tiny
+    (a +$1-then-$578 series gave 57,800%), spuriously tripping the
+    allocator freeze_dd gate. It must be clamped to ≤ 1.0."""
+
+    def test_tiny_peak_does_not_explode(self):
+        from allocator.metrics import StrategyPerformance
+        m = StrategyPerformance(db_path=":memory:")._compute(
+            "x", 60, [1.0, -578.0])   # peak $1, cum -$577 → drawdown $578
+        assert m.drawdown_pct <= 1.0     # was 578.0 (57,800%) before clamp
+        assert m.drawdown_usd == 578.0   # absolute stays exact
+
+    def test_normal_drawdown_pct_unaffected(self):
+        from allocator.metrics import StrategyPerformance
+        m = StrategyPerformance(db_path=":memory:")._compute(
+            "x", 60, [100.0, 50.0, -30.0])  # peak 150, dd 30 → 0.20
+        assert abs(m.drawdown_pct - 0.20) < 1e-9
+
+
+class TestPassStrategiesGoToWatchNotFreeze:
+    """A validation-PASS strategy underperforming live must go to WATCH
+    (de-risked, auto-recoverable), never permanent FROZEN — otherwise a
+    5y-proven edge gets benched forever on a transient/corrupt live
+    metric (the risk_parity_etf FROZEN↔ACTIVE bounce, 2026-05-22)."""
+
+    def _run(self, tmp_path, monkeypatch, passing):
+        from allocator.allocator import MetaAllocator, AllocatorConfig
+        from allocator.lifecycle import StrategyState
+        import common.strategy_validation as sv
+        monkeypatch.setattr(sv, "passing_strategies", lambda *a, **k: passing)
+        reg = _make_registry(tmp_path, [("rp", 0.2, 0.0, 0.3)])
+        # Bad live metrics that trip the freeze gate.
+        perf = _stub_perf({"rp": {"shrunk_sharpe": -5.6, "n_trades": 30,
+                                   "dd": 1.0}})
+        MetaAllocator(reg, perf, AllocatorConfig()).rebalance(100_000)
+        return reg.get_state("rp"), StrategyState
+
+    def test_passing_strategy_goes_to_watch(self, tmp_path, monkeypatch):
+        state, St = self._run(tmp_path, monkeypatch, {"rp"})
+        assert state == St.WATCH
+
+    def test_nonpassing_strategy_still_freezes(self, tmp_path, monkeypatch):
+        state, St = self._run(tmp_path, monkeypatch, set())
+        assert state == St.FROZEN
