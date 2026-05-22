@@ -1,0 +1,179 @@
+{
+  "as_of": "2026-05-22T09:56:41.541469+00:00",
+  "window_days": 1260,
+  "is_frac": 0.6,
+  "min_oos_ratio_pass": 0.5,
+  "counts": {
+    "ROBUST": 0,
+    "OVERFIT_SUSPECT": 0,
+    "WEAK": 0,
+    "UNPROVEN": 0,
+    "FAIL": 0,
+    "NO_DATA": 18
+  },
+  "n_strategies": 18,
+  "strategies": {
+    "tsmom_etf": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "dual_momentum": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "risk_parity_etf": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "vol_managed_overlay": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "pead": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "commodity_carry": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "crypto_funding_carry": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "crypto_basis_trade": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "kalshi_calibration_arb": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "macro_kalshi": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "bollinger_breakout": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "sector_rotation": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "dividend_growth": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "internationals_rotation": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "leveraged_momentum": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "thematic_growth": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "cross_asset_trend": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    },
+    "earnings_momentum": {
+      "verdict": "NO_DATA",
+      "is_sharpe": null,
+      "oos_sharpe": null,
+      "is_trades": 0,
+      "oos_trades": 0,
+      "ratio": null,
+      "reason": "insufficient equity-curve points"
+    }
+  }
+}

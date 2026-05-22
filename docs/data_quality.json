@@ -1,10 +1,9 @@
 {
-  "as_of": "2026-05-21T16:13:42.450958+00:00",
-  "score": 4.5,
+  "as_of": "2026-05-22T09:56:41.560129+00:00",
+  "score": 7.3,
   "counts": {
-    "OK": 5,
-    "MISSING": 3,
-    "STALE": 1,
+    "OK": 8,
+    "MISSING": 1,
     "INCONSISTENT": 2
   },
   "n_checks": 11,
@@ -12,27 +11,27 @@
     {
       "file": "docs/cycle_status.json",
       "status": "OK",
-      "age_hours": 0.4
+      "age_hours": 0.0
     },
     {
       "file": "docs/trades_recent.json",
       "status": "OK",
-      "age_hours": 0.4
+      "age_hours": 0.0
     },
     {
       "file": "docs/benchmark.json",
       "status": "OK",
-      "age_hours": 0.4
+      "age_hours": 0.0
     },
     {
       "file": "docs/validation.json",
       "status": "OK",
-      "age_hours": 22.4
+      "age_hours": 0.0
     },
     {
       "file": "docs/walk_forward.json",
-      "status": "MISSING",
-      "reason": "file does not exist"
+      "status": "OK",
+      "age_hours": 0.0
     },
     {
       "file": "docs/improvements.json",
@@ -41,8 +40,8 @@
     },
     {
       "file": "docs/self_grade.json",
-      "status": "MISSING",
-      "reason": "file does not exist"
+      "status": "OK",
+      "age_hours": 0.0
     },
     {
       "file": "docs/hedge_fund_13f.json",
@@ -51,14 +50,13 @@
     },
     {
       "file": "docs/index.html",
-      "status": "STALE",
-      "reason": "1.0h old (expected refresh every 1h)",
-      "age_hours": 1.0
+      "status": "OK",
+      "age_hours": 0.0
     },
     {
       "check": "trade-orphans",
       "status": "INCONSISTENT",
-      "reason": "trades exist for strategies not in validation: ['multifactor_equity']"
+      "reason": "trades exist for strategies not in validation: ['low_vol_anomaly', 'multifactor_equity', 'pairs_trading', 'rsi_mean_reversion']"
     },
     {
       "check": "cancel-rate",
