@@ -47,27 +47,22 @@ from .crypto_funding_carry import CryptoFundingCarry
 from .crypto_funding_carry_v2 import CryptoFundingCarryV2
 from .crypto_pairs_trading import CryptoPairsTrading
 from .crypto_vol_regime_overlay import CryptoVolRegimeOverlay
-from .crypto_xsmom import CryptoXSMom
 from .dividend_growth import DividendGrowth
+from .dual_momentum import DualMomentum
 from .earnings_momentum import EarningsMomentum
 from .earnings_news_pead import EarningsNewsPEAD
-from .gap_trading import GapTrading
 from .internationals_rotation import InternationalsRotation
 from .intraday_mean_reversion import IntradayMeanReversion
 from .kalshi_calibration_arb import KalshiCalibrationArb
 from .leveraged_momentum import LeveragedMomentum
-from .low_vol_anomaly import LowVolAnomaly
 from .multifactor_equity import MultiFactorEquity
 from .macro_kalshi import MacroKalshi
 from .macro_kalshi_v2 import MacroKalshiV2
-from .pairs_trading import PairsTrading
 from .pead import PEAD
 from .risk_parity_etf import RiskParityETF
-from .rsi_mean_reversion import RSIMeanReversion
 from .sector_rotation import SectorRotation
 from .thematic_growth import ThematicGrowth
 from .tsmom_etf import TSMomETF
-from .turn_of_month import TurnOfMonth
 from .vol_managed_overlay import VolManagedOverlay
 
 __all__ = [
@@ -78,7 +73,6 @@ __all__ = [
     "CryptoFundingCarry",
     "CryptoPairsTrading",
     "CryptoVolRegimeOverlay",
-    "CryptoXSMom",
     "KalshiCalibrationArb",
     "MacroKalshi",
     "MacroKalshiV2",
@@ -90,21 +84,18 @@ __all__ = [
     "BollingerBreakout",
     "DividendGrowth",
     "EarningsMomentum",
-    "PairsTrading",
-    "RSIMeanReversion",
     "SectorRotation",
     # Phase 4b — more experimental sleeve (Alpaca paper)
-    "GapTrading",
     "InternationalsRotation",
-    "LowVolAnomaly",
     "MultiFactorEquity",
-    "TurnOfMonth",
     # New (user-requested): leveraged trend + thematic basket + intraday MR
     "IntradayMeanReversion",
     "LeveragedMomentum",
     "ThematicGrowth",
     # Cross-asset diversification — first non-equity-beta strategy
     "CrossAssetTrend",
+    # Dual momentum — crisis-alpha diversifier (rotates to bonds risk-off)
+    "DualMomentum",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds
     "CrossVenueArb",         # Kalshi vs Polymarket
     "CryptoFundingCarryV2",  # Coinbase + Binance consensus

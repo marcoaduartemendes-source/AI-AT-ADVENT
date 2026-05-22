@@ -130,6 +130,14 @@ if [[ -f "/etc/systemd/system/daily-digest.timer" ]]; then
     systemctl enable --now daily-digest.timer 2>/dev/null || true
 fi
 
+# 2026-05-22 — Enable research timer so the droplet refreshes the heavy
+# validation + walk-forward backtests itself (GH Actions is throttled).
+# Without this, research_freshness / overfit_resistance stay stale and
+# new strategies never get a verdict.
+if [[ -f "/etc/systemd/system/research.timer" ]]; then
+    systemctl enable --now research.timer 2>/dev/null || true
+fi
+
 echo "[5/6] Restarting orchestrator timer"
 systemctl start orchestrator.timer
 

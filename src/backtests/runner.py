@@ -659,10 +659,107 @@ def _earnings_momentum_dispatch(window_days: int) -> BacktestSummary:
     return summary
 
 
+def backtest_dual_momentum(window_days: int) -> BacktestSummary:
+    """Antonacci dual momentum: top-3 of 6 risk ETFs by 12-1m momentum,
+    each gated by positive absolute momentum; failed slots rotate to IEF
+    (Treasuries). Monthly rebalance, equal-weight across the 3 slots.
+
+    Mirrors the live strategies/dual_momentum.py selection so the verdict
+    reflects the deployed logic, not an idealised variant."""
+    risk_universe = ["SPY", "QQQ", "EFA", "EEM", "VNQ", "GLD"]
+    safe = "IEF"
+    universe = risk_universe + [safe]
+    lookback, skip, top_k, rebalance_every = 252, 21, 3, 21
+    book_usd = 3000.0
+    per_slot = book_usd / top_k
+
+    histories = {sym: _yahoo_history(sym, window_days + lookback + 30)
+                 for sym in universe}
+    histories = {s: h for s, h in histories.items() if len(h) >= lookback + 5}
+    if safe not in histories or \
+       sum(1 for s in risk_universe if s in histories) < top_k:
+        return BacktestSummary(strategy="dual_momentum",
+                               window_days=window_days,
+                               note="No Yahoo data available")
+
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, lookback + 1)
+
+    for i in range(base_idx, n_bars):
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        bar_time = datetime.fromtimestamp(histories[safe][i, 0], tz=UTC).isoformat()
+        mom = {}
+        for sym in risk_universe:
+            h = histories.get(sym)
+            if h is None or i >= len(h):
+                continue
+            window = h[i - lookback:i - skip, 4]
+            if len(window) < 30:
+                continue
+            mom[sym] = (window[-1] - window[0]) / window[0]
+        if len(mom) < top_k:
+            continue
+        ranked = sorted(mom, key=lambda s: mom[s], reverse=True)[:top_k]
+        target_usd = {s: 0.0 for s in universe}
+        for s in ranked:
+            if mom[s] > 0:
+                target_usd[s] += per_slot
+            else:
+                target_usd[safe] += per_slot
+
+        for sym in universe:
+            h = histories.get(sym)
+            if h is None or i >= len(h):
+                continue
+            price = float(h[i, 4])
+            if price <= 0:
+                continue
+            cur_qty = positions.get(sym, {}).get("qty", 0.0)
+            delta_usd = target_usd[sym] - cur_qty * price
+            if abs(delta_usd) < book_usd * 0.02:
+                continue
+            if delta_usd > 0:
+                add_qty = delta_usd / price
+                new_qty = cur_qty + add_qty
+                entry_p = (positions[sym]["entry_price"] * cur_qty + price * add_qty) / new_qty \
+                    if cur_qty > 0 else price
+                positions[sym] = {"qty": new_qty, "entry_price": entry_p,
+                                  "entry_time": bar_time}
+                entry_volume += abs(delta_usd)
+                trades.append({
+                    "strategy": "dual_momentum", "side": "BUY", "product_id": sym,
+                    "amount_usd": abs(delta_usd), "quantity": add_qty,
+                    "entry_price": price, "open_time": bar_time,
+                    "reason": f"target ${target_usd[sym]:.0f}",
+                })
+            else:
+                sell_qty = min(cur_qty, abs(delta_usd) / price)
+                if sell_qty <= 0:
+                    continue
+                gross = sell_qty * (price - positions[sym]["entry_price"])
+                fees = (sell_qty * positions[sym]["entry_price"]
+                        + sell_qty * price) * _FEE_RATE
+                positions[sym]["qty"] -= sell_qty
+                trades.append({
+                    "strategy": "dual_momentum", "side": "SELL", "product_id": sym,
+                    "amount_usd": sell_qty * price, "quantity": sell_qty,
+                    "entry_price": positions[sym]["entry_price"], "exit_price": price,
+                    "open_time": positions[sym]["entry_time"], "close_time": bar_time,
+                    "pnl_usd": gross - fees, "exit_reason": "rebalance",
+                })
+                if positions[sym]["qty"] <= 1e-9:
+                    positions.pop(sym, None)
+    return _equity_curve_to_summary("dual_momentum", window_days, trades, entry_volume)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
+    "dual_momentum": backtest_dual_momentum,
     "risk_parity_etf": backtest_risk_parity_etf,
-    "crypto_xsmom": backtest_crypto_xsmom,
     "vol_managed_overlay": backtest_vol_managed_overlay,
     "pead": _pead_dispatch,
     "commodity_carry": _commodity_carry_dispatch,
@@ -670,14 +767,13 @@ _STRATEGY_BACKTESTS = {
     "crypto_basis_trade": _crypto_basis_trade_dispatch,
     "kalshi_calibration_arb": _kalshi_calibration_arb_dispatch,
     "macro_kalshi": _macro_kalshi_dispatch,
-    # Sprint B3 — 9 of the 14 unbacktested strategies, all Yahoo-fed.
-    "rsi_mean_reversion": _rsi_mean_reversion_dispatch,
+    # ELIMINATED 2026-05-22 (validation FAIL, un-wired from the live
+    # roster): crypto_xsmom, rsi_mean_reversion, gap_trading,
+    # low_vol_anomaly, turn_of_month, pairs_trading. Their backtest
+    # functions remain defined (imported by tests / available for
+    # revival) but are no longer in the active validation set.
     "bollinger_breakout": _bollinger_breakout_dispatch,
-    "gap_trading": _gap_trading_dispatch,
-    "low_vol_anomaly": _low_vol_anomaly_dispatch,
-    "turn_of_month": _turn_of_month_dispatch,
     "sector_rotation": _sector_rotation_dispatch,
-    "pairs_trading": _pairs_trading_dispatch,
     "dividend_growth": _dividend_growth_dispatch,
     "internationals_rotation": _internationals_rotation_dispatch,
     # User-requested: leveraged trend (3x) + thematic basket. Both

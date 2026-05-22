@@ -36,26 +36,21 @@ from strategies import (
     CryptoPairsTrading,
     CryptoVolRegimeOverlay,
     CryptoFundingCarryV2,
-    CryptoXSMom,
     DividendGrowth,
+    DualMomentum,
     EarningsMomentum,
     EarningsNewsPEAD,
-    GapTrading,
     InternationalsRotation,
     IntradayMeanReversion,
     KalshiCalibrationArb,
     LeveragedMomentum,
-    LowVolAnomaly,
     MacroKalshi,
     MacroKalshiV2,
     MultiFactorEquity,
-    PairsTrading,
     RiskParityETF,
-    RSIMeanReversion,
     SectorRotation,
     ThematicGrowth,
     TSMomETF,
-    TurnOfMonth,
     VolManagedOverlay,
 )
 from strategy_engine.orchestrator import Orchestrator, OrchestratorConfig
@@ -175,15 +170,13 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Kalshi macro events vs implied probabilities (P3)",
     ),
-    # FROZEN 2026-05-20 — validation FAIL (positive in only 1/3
-    # windows; overfit risk). Kept registered so historical fills
-    # remain attributable; allocator gives $0 so no new exposure.
-    StrategyMeta(
-        name="crypto_xsmom",
-        asset_classes=["CRYPTO_SPOT"], venue="coinbase",
-        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
-        description="Cross-sectional momentum on top-15 alts (FROZEN — validation FAIL)",
-    ),
+    # ELIMINATED 2026-05-22 (user mandate "eliminate strategies that
+    # aren't working"): crypto_xsmom, gap_trading, low_vol_anomaly,
+    # pairs_trading, rsi_mean_reversion, turn_of_month all FAILed the
+    # 5y validation gate (negative or sub-0.5 Sharpe, fee-negative, or
+    # overfit). Un-wired from the live roster + build_strategies; their
+    # source files and backtest functions stay in-tree for reference /
+    # revival, but they no longer register, allocate, or trade.
     StrategyMeta(
         name="vol_managed_overlay",
         asset_classes=["ETF"], venue="alpaca",
@@ -242,31 +235,29 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.03, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)",
     ),
+    # dual_momentum: Antonacci dual momentum — top-3 of 6 risk ETFs by
+    # 12-1m momentum, gated by absolute momentum, rotating to IEF
+    # (Treasuries) when risk-off. The crisis-alpha diversifier the bench
+    # lacked: uncorrelated to the bull-market equity beta the other
+    # momentum sleeves all carry. Registers SMALL and stays DRY until
+    # docs/validation.json records PASS (5y Sharpe ≥ 0.5, fee-positive).
+    StrategyMeta(
+        name="dual_momentum",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
+        description="Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier",
+    ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
-    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe 0.49 < 0.50,
-    # 1304 trades = classic high-turnover fee bleed).
-    StrategyMeta(
-        name="rsi_mean_reversion",
-        asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
-        description="Connors-style RSI(2) mean-reversion (FROZEN — validation FAIL)",
-    ),
+    # (rsi_mean_reversion ELIMINATED 2026-05-22 — validation FAIL.)
     StrategyMeta(
         name="sector_rotation",
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Top-N SPDR sector ETFs by 90d return (P4)",
     ),
-    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe -0.50,
-    # positive in only 1/3 windows, fee-negative).
-    StrategyMeta(
-        name="pairs_trading",
-        asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
-        description="Stat-arb on 6 classic correlated pairs (FROZEN — validation FAIL)",
-    ),
+    # (pairs_trading ELIMINATED 2026-05-22 — validation FAIL.)
     StrategyMeta(
         name="bollinger_breakout",
         asset_classes=["EQUITY"], venue="alpaca",
@@ -289,32 +280,9 @@ ALL_STRATEGIES = [
         description="Quality-dividend ETF rotation by 90d return (P4)",
     ),
     # ── Phase 4b — additional experimental strategies for Alpaca
-    # paper $100k (audit recommendation: experiment more, identify
-    # winners, double down). Each starts at 3% baseline; champion
-    # tier kicks in at Sharpe ≥ 1.0 + 10 trades.
-    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe -0.28,
-    # 1235 trades, fee-negative RoV -0.06%).
-    StrategyMeta(
-        name="gap_trading",
-        asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
-        description="Overnight-gap reversion (FROZEN — validation FAIL)",
-    ),
-    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe 0.26 < 0.50).
-    StrategyMeta(
-        name="turn_of_month",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
-        description="Calendar seasonal: SPY (FROZEN — validation FAIL)",
-    ),
-    # FROZEN 2026-05-20 — validation FAIL (5y Sharpe -0.38,
-    # fee-negative RoV -0.12%).
-    StrategyMeta(
-        name="low_vol_anomaly",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.0, max_alloc_pct=0.0, min_alloc_pct=0.0,
-        description="Lowest-vol ETFs + stocks (FROZEN — validation FAIL)",
-    ),
+    # paper $100k. (gap_trading, turn_of_month, low_vol_anomaly all
+    # ELIMINATED 2026-05-22 — validation FAIL: fee-negative / sub-0.5
+    # Sharpe over 5y.)
     StrategyMeta(
         name="internationals_rotation",
         asset_classes=["ETF"], venue="alpaca",
@@ -384,7 +352,7 @@ def build_strategies(brokers):
         instances["crypto_funding_carry"] = CryptoFundingCarry(cb)
         instances["crypto_basis_trade"] = CryptoBasisTrade(cb)
         instances["commodity_carry"] = CommodityCarry(cb)
-        instances["crypto_xsmom"] = CryptoXSMom(cb)
+        # crypto_xsmom ELIMINATED 2026-05-22 (validation FAIL).
         # Phase 5 — multi-venue consensus version
         instances["crypto_funding_carry_v2"] = CryptoFundingCarryV2(cb)
         # Phase 6 — advanced crypto strategies
@@ -399,17 +367,14 @@ def build_strategies(brokers):
         # Module still imported so existing trade rows remain readable
         # in the dashboard / FIFO recompute, but no instance is wired.
         instances["vol_managed_overlay"] = VolManagedOverlay(al)
-        # Phase 4 — experimental sleeve
-        instances["rsi_mean_reversion"] = RSIMeanReversion(al)
+        # Phase 4 — experimental sleeve. (rsi_mean_reversion,
+        # pairs_trading ELIMINATED 2026-05-22 — validation FAIL.)
         instances["sector_rotation"] = SectorRotation(al)
-        instances["pairs_trading"] = PairsTrading(al)
         instances["bollinger_breakout"] = BollingerBreakout(al)
         instances["earnings_momentum"] = EarningsMomentum(al)
         instances["dividend_growth"] = DividendGrowth(al)
-        # Phase 4b — additional experimental sleeve
-        instances["gap_trading"] = GapTrading(al)
-        instances["turn_of_month"] = TurnOfMonth(al)
-        instances["low_vol_anomaly"] = LowVolAnomaly(al)
+        # Phase 4b — additional experimental sleeve. (gap_trading,
+        # turn_of_month, low_vol_anomaly ELIMINATED 2026-05-22 — FAIL.)
         instances["internationals_rotation"] = InternationalsRotation(al)
         # Flagship — institutional multi-factor cross-sectional model
         instances["multifactor_equity"] = MultiFactorEquity(al)
@@ -419,6 +384,8 @@ def build_strategies(brokers):
         instances["thematic_growth"] = ThematicGrowth(al)
         instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
         instances["cross_asset_trend"] = CrossAssetTrend(al)
+        # Crisis-alpha diversifier — dual momentum w/ Treasury risk-off.
+        instances["dual_momentum"] = DualMomentum(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:

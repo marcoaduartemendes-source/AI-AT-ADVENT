@@ -208,6 +208,47 @@ def _per_strategy_pnl(db_path: str) -> dict[str, dict]:
     return out
 
 
+# Headline-drift threshold: below this the DB↔FIFO difference is float
+# rounding noise, not a real bookkeeping bug. The recompute module flags
+# per-strategy drift at $0.50; the headline aggregates many strategies so
+# we use a slightly looser $1.00 before painting the scary banner.
+PNL_DRIFT_THRESHOLD_USD = 1.00
+
+
+def _realized_pnl_drift(db_path: str) -> dict | None:
+    """Cross-check the stored realized P&L against an independent FIFO
+    recompute over the raw trade ledger.
+
+    The headline "Realized P&L" comes from the stored ``pnl_usd`` column,
+    which is written at fill time from the broker's avg-entry basis. When
+    the broker re-cost-bases a position, or an orphan SELL slips in, that
+    stored number drifts from a clean FIFO walk. We surfaced the $718
+    droplet drift (DB $+2.26 vs FIFO $+720.64) only in the orchestrator
+    log — invisible to anyone reading the dashboard. Surface it here so a
+    diverging headline is obviously flagged instead of silently trusted.
+
+    Returns {db_total, fifo_total, drift, per_strategy, diverged} or None
+    if the recompute can't run (missing DB / import). Never raises — a
+    dashboard build must not die on a diagnostic.
+    """
+    if not Path(db_path).exists():
+        return None
+    try:
+        from trading.recompute import recompute_realized_pnl_fifo
+        db_total, fifo_total, per_strategy = recompute_realized_pnl_fifo(db_path)
+    except Exception as e:  # pragma: no cover - diagnostic must never break build
+        logger.warning(f"realized_pnl_drift recompute failed: {e}")
+        return None
+    drift = round(db_total - fifo_total, 2)
+    return {
+        "db_total": db_total,
+        "fifo_total": fifo_total,
+        "drift": drift,
+        "per_strategy": per_strategy,
+        "diverged": abs(drift) > PNL_DRIFT_THRESHOLD_USD,
+    }
+
+
 def _live_unrealized_by_strategy() -> dict[str, float]:
     """Return per-strategy unrealized P&L by querying live broker
     positions and attributing each symbol to the strategy that
@@ -491,7 +532,7 @@ def _fmt_pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
 
-def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
+def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = None) -> str:
     venue = meta.get("venue", "—") if meta else "—"
     mode_color, mode_label = _MODE_BADGE.get(mode, ("#4b5563", mode))
     realized = pnl.get("realized_pnl_usd", 0.0)
@@ -504,8 +545,11 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str) -> str:
         last_label = f"{pnl['days_since']:g}d ago"
     else:
         last_label = "never"
+    # Only rank strategies that have actually traded; idle ones show "—".
+    rank_label = str(rank) if (rank is not None and pnl.get("n_closed", 0)) else "—"
     return (
         f"<tr>"
+        f"<td class=num style=\"color:#6b7280\">{rank_label}</td>"
         f"<td><strong>{html.escape(name)}</strong>"
         + (f"<br><span class=desc>{html.escape(meta.get('description',''))}</span>" if meta else "")
         + f"</td>"
@@ -1605,6 +1649,10 @@ def _recent_errors(limit: int = 10, valid_strategies: set | None = None
 def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
     pnl = _per_strategy_pnl(db_path)
+    # Independent FIFO cross-check of the stored realized P&L. None when
+    # there's no ledger to walk; surfaced on the headline card so a
+    # diverging number is flagged, not silently trusted.
+    pnl_drift = _realized_pnl_drift(db_path)
     risk = _risk_snapshot()
     metas = _strategy_meta()
     # Gate the errors panel on the live strategy registry so a dev's
@@ -1658,11 +1706,14 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
         mode = _strategy_mode(n, venue, live_strategies)
         rows.append((n, m, pnl.get(n, {}), mode))
 
-    # Sort by realized P&L desc; strategies with no closed trades go to
-    # the bottom alphabetically.
+    # Rank by TOTAL P&L (realized + unrealized) desc — the bottom-line
+    # performance the user asked to rank on. Strategies with no closed
+    # trades sink to the bottom alphabetically (they're unranked).
+    def _total_pnl(p: dict) -> float:
+        return p.get("realized_pnl_usd", 0.0) + p.get("unrealized_pnl_usd", 0.0)
     rows.sort(key=lambda r: (
         -1 if r[2].get("n_closed", 0) else 0,
-        -(r[2].get("realized_pnl_usd", 0.0)),
+        -_total_pnl(r[2]),
         r[0],
     ))
 
@@ -1694,13 +1745,36 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     realized_color = _color_for(total_realized)
     unrealized_color = _color_for(total_unrealized)
 
+    # Realized-P&L trust badge: when the stored ledger total disagrees with
+    # the independent FIFO recompute by more than $1, the headline number is
+    # NOT trustworthy — show both and flag it loudly so nobody reports a
+    # bogus figure (this is the $718 droplet drift made visible).
+    realized_badge = ""
+    if pnl_drift and pnl_drift["diverged"]:
+        realized_color = "#b45309"  # amber — number is in dispute
+        realized_badge = (
+            f'<div style="font-size:11px;color:#b45309;margin-top:4px;'
+            f'line-height:1.3">⚠ FIFO recompute disagrees by '
+            f'{_fmt_money(pnl_drift["drift"])}<br>'
+            f'(ledger {_fmt_money(pnl_drift["db_total"])} vs FIFO '
+            f'{_fmt_money(pnl_drift["fifo_total"])})</div>'
+        )
+    elif pnl_drift:
+        realized_badge = (
+            '<div style="font-size:11px;color:#15803d;margin-top:4px">'
+            '✓ FIFO-reconciled</div>'
+        )
+
     ks = (risk.get("kill_switch") or "UNKNOWN").upper()
     ks_color, ks_emoji = _KS_COLOR.get(ks, _KS_COLOR["UNKNOWN"])
 
-    body_rows = "\n".join(_row_html(n, m, p, md) for n, m, p, md in rows)
+    body_rows = "\n".join(
+        _row_html(n, m, p, md, rank=i + 1)
+        for i, (n, m, p, md) in enumerate(rows)
+    )
     if not rows:
         body_rows = (
-            "<tr><td colspan=9 style='text-align:center;color:#6b7280;"
+            "<tr><td colspan=10 style='text-align:center;color:#6b7280;"
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
@@ -1862,6 +1936,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   <div class="stat">
     <div class="label">Realized P&amp;L</div>
     <div class="value" style="color:{realized_color}">{_fmt_money(total_realized)}</div>
+    {realized_badge}
   </div>
   <div class="stat">
     <div class="label">Unrealized P&amp;L</div>
@@ -1888,6 +1963,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 <table>
   <thead>
     <tr>
+      <th class=num title="Rank by total P&amp;L (traded strategies only)">#</th>
       <th>Strategy</th>
       <th>Venue</th>
       <th>Mode</th>

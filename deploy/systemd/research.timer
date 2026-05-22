@@ -1,0 +1,15 @@
+[Unit]
+Description=AI-AT-ADVENT daily research timer (validation + walk-forward)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+
+[Timer]
+# Once daily at 06:30 UTC — before the US open and the 13:00 digest, so
+# the day's validation/walk-forward verdicts are fresh when the digest
+# and dashboard render. Matches the retired GH Actions research.yml
+# schedule. Persistent=true catches up after a reboot.
+OnCalendar=*-*-* 06:30:00
+Persistent=true
+Unit=research.service
+
+[Install]
+WantedBy=timers.target

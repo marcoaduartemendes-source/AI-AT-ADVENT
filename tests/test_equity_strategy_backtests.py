@@ -305,15 +305,29 @@ def test_internationals_rotation_with_full_universe():
 
 
 def test_all_dispatchable_via_runner():
-    """Every Sprint-B3 strategy must be wired into the runner's dispatch
-    table so dashboards/CI runs pick them up automatically."""
+    """Surviving Sprint-B3 strategies must stay wired into the runner's
+    dispatch table so dashboards/CI runs pick them up automatically."""
     from backtests.runner import _STRATEGY_BACKTESTS
     expected = {
-        "rsi_mean_reversion", "bollinger_breakout", "gap_trading",
-        "low_vol_anomaly", "turn_of_month",
-        # Second batch
-        "sector_rotation", "pairs_trading", "dividend_growth",
+        "bollinger_breakout", "sector_rotation", "dividend_growth",
         "internationals_rotation",
     }
     missing = expected - set(_STRATEGY_BACKTESTS.keys())
     assert not missing, f"Missing dispatchers: {missing}"
+
+
+def test_eliminated_strategies_unwired_but_functions_kept():
+    """The 6 validation-FAIL strategies eliminated 2026-05-22 must be OUT
+    of the active dispatch table, but their backtest functions stay
+    importable for reference / revival."""
+    import backtests.runner as r
+    eliminated = {
+        "crypto_xsmom", "rsi_mean_reversion", "gap_trading",
+        "low_vol_anomaly", "turn_of_month", "pairs_trading",
+    }
+    assert not (eliminated & set(r._STRATEGY_BACKTESTS.keys())), \
+        "an eliminated strategy is still in the active dispatch table"
+    import backtests.equity_strategies_backtest as eb
+    for fn in ("backtest_gap_trading", "backtest_low_vol_anomaly",
+               "backtest_rsi_mean_reversion", "backtest_turn_of_month"):
+        assert hasattr(eb, fn), f"{fn} should remain defined for revival"

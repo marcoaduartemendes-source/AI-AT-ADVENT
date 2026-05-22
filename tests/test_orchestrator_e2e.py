@@ -432,3 +432,77 @@ class TestKillSwitchEmergencyClose:
         last = broker.placed_orders[-1]
         assert last.side == OrderSide.SELL
         assert last.symbol == "SPY"
+
+
+class TestMarketClosedIsNotAnError:
+    """2026-05-22: a "market closed" BrokerError during execution is an
+    EXPECTED off-RTH defer, not a failure. It must NOT land in
+    report.errors, which feeds n_errors and drags self-grade's
+    setup_health axis to 0/0 clean cycles (observed: earnings_momentum
+    erroring every overnight cycle)."""
+
+    def test_market_closed_defer_is_not_counted_as_error(self):
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+        from brokers.base import BrokerError
+        from strategy_engine.orchestrator import CycleReport
+
+        broker = MockBroker(venue="alpaca", cash_usd=100_000)
+
+        def _closed(*a, **k):
+            raise BrokerError(
+                "Alpaca market closed — deferring order to next in-session cycle")
+        broker.place_order = _closed
+
+        strat = _DummyStrategy(broker, [])
+        orch, _ = _make_orchestrator(
+            brokers={"alpaca": broker},
+            strategies={"_dummy": strat}, dry_run=False)
+        # _execute_proposal touches these per-cycle scratch dicts that
+        # run_cycle() normally initialises.
+        orch._cycle_reject_reasons = {}
+        orch._cycle_execute_errors = {}
+
+        report = CycleReport(timestamp=datetime.now(UTC))
+        proposal = TradeProposal(
+            strategy="_dummy", venue="alpaca", symbol="SPY",
+            side=OrderSide.BUY, order_type=OrderType.MARKET,
+            notional_usd=1000, confidence=0.9, reason="test")
+        decision = SimpleNamespace(approved_notional_usd=1000.0)
+
+        orch._execute_proposal(proposal, decision, report, strat)
+
+        assert report.errors == [], f"market-closed leaked into errors: {report.errors}"
+        assert report.trades_submitted == 0
+        # Surfaced as a soft defer reason instead.
+        assert any("deferred" in r for r in
+                   orch._cycle_reject_reasons.get("_dummy", []))
+
+    def test_real_execution_error_still_counts(self):
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+        from brokers.base import BrokerError
+        from strategy_engine.orchestrator import CycleReport
+
+        broker = MockBroker(venue="alpaca", cash_usd=100_000)
+
+        def _boom(*a, **k):
+            raise BrokerError("HTTP 403 insufficient buying power")
+        broker.place_order = _boom
+
+        strat = _DummyStrategy(broker, [])
+        orch, _ = _make_orchestrator(
+            brokers={"alpaca": broker},
+            strategies={"_dummy": strat}, dry_run=False)
+        orch._cycle_reject_reasons = {}
+        orch._cycle_execute_errors = {}
+
+        report = CycleReport(timestamp=datetime.now(UTC))
+        proposal = TradeProposal(
+            strategy="_dummy", venue="alpaca", symbol="SPY",
+            side=OrderSide.BUY, order_type=OrderType.MARKET,
+            notional_usd=1000, confidence=0.9, reason="test")
+        decision = SimpleNamespace(approved_notional_usd=1000.0)
+
+        orch._execute_proposal(proposal, decision, report, strat)
+        assert len(report.errors) == 1   # a genuine failure still surfaces
