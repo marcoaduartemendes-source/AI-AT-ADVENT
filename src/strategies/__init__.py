@@ -38,7 +38,9 @@ a 4% baseline; the auto-Sharpe-tilt + champion-tier (≥1.0 Sharpe → 1.5×
 boost) reallocate capital to winners.
 """
 from .bollinger_breakout import BollingerBreakout
+from .bond_carry import BondCarry
 from .commodity_carry import CommodityCarry
+from .commodity_momentum import CommodityMomentum
 from .cross_asset_trend import CrossAssetTrend
 from .cross_venue_arb import CrossVenueArb
 from .crypto_basis_trade import CryptoBasisTrade
@@ -96,6 +98,9 @@ __all__ = [
     "CrossAssetTrend",
     # Dual momentum — crisis-alpha diversifier (rotates to bonds risk-off)
     "DualMomentum",
+    # Dedicated bond + commodity sleeves
+    "BondCarry",
+    "CommodityMomentum",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds
     "CrossVenueArb",         # Kalshi vs Polymarket
     "CryptoFundingCarryV2",  # Coinbase + Binance consensus
