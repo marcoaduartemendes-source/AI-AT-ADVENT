@@ -354,3 +354,42 @@ class TestAssetClassExposureCap:
         # No cap on NEW_CLASS → not scaled by the asset-class gate
         assert decision.decision == Decision.APPROVE
         assert decision.approved_notional_usd == pytest.approx(10_000)
+
+
+class TestUnfreezeStrategies:
+    """--unfreeze fixes the lifecycle latch-asymmetry: a strategy that
+    auto-froze on past underperformance but has since re-validated must
+    be returnable to ACTIVE (allocator never auto-recovers FROZEN)."""
+
+    def _reg(self, tmp_path):
+        from allocator.lifecycle import StrategyRegistry, StrategyState, StrategyMeta
+        reg = StrategyRegistry(str(tmp_path / "alloc.db"))
+        for n in ("risk_parity_etf", "loser", "active_one"):
+            reg.register(StrategyMeta(name=n, asset_classes=["ETF"],
+                                      venue="alpaca", target_alloc_pct=0.1,
+                                      min_alloc_pct=0.0, max_alloc_pct=0.3))
+        reg.set_state("risk_parity_etf", StrategyState.FROZEN, "auto-freeze")
+        reg.set_state("loser", StrategyState.FROZEN, "auto-freeze")
+        return reg, StrategyState
+
+    def test_unfreeze_named_passing_strategy(self, tmp_path):
+        from run_orchestrator import unfreeze_strategies
+        reg, St = self._reg(tmp_path)
+        out = unfreeze_strategies("risk_parity_etf", reg, {"risk_parity_etf"})
+        assert out == [("risk_parity_etf", "PASS")]
+        assert reg.get_state("risk_parity_etf") == St.ACTIVE
+        assert reg.get_state("loser") == St.FROZEN   # untouched
+
+    def test_unfreeze_all_flips_every_frozen(self, tmp_path):
+        from run_orchestrator import unfreeze_strategies
+        reg, St = self._reg(tmp_path)
+        names = {n for n, _ in unfreeze_strategies("all", reg, set())}
+        assert names == {"risk_parity_etf", "loser"}
+        assert reg.get_state("risk_parity_etf") == St.ACTIVE
+        assert reg.get_state("loser") == St.ACTIVE
+
+    def test_unfreeze_skips_non_frozen(self, tmp_path):
+        from run_orchestrator import unfreeze_strategies
+        reg, St = self._reg(tmp_path)
+        assert unfreeze_strategies("active_one", reg, set()) == []
+        assert reg.get_state("active_one") == St.ACTIVE
