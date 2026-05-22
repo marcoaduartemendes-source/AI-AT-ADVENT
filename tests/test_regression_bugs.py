@@ -305,3 +305,70 @@ class TestFIFORecompute:
         assert recomputed == pytest.approx(100.0)
         assert "tsmom_etf" in drift
         assert drift["tsmom_etf"] == pytest.approx(100.0)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bug #5 — headline Realized P&L silently trusted a drifted ledger.
+# On the droplet the stored pnl_usd summed to $+2.26 while a clean FIFO
+# walk gave $+720.64 (a $718 drift), but the dashboard only ever showed
+# the stored number — the recompute was logged where nobody looked. The
+# dashboard must now flag a diverging headline instead of trusting it.
+# ─────────────────────────────────────────────────────────────────────
+class TestRealizedPnLDriftSurfacedOnDashboard:
+    """The dashboard helper that cross-checks stored P&L against the
+    FIFO recompute must (a) report no divergence for a clean ledger and
+    (b) flag divergence when the stored number lies."""
+
+    def _make_db(self, path, sell_pnl):
+        conn = sqlite3.connect(path)
+        conn.execute("""
+            CREATE TABLE trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT, strategy TEXT, product_id TEXT,
+                side TEXT, amount_usd REAL, quantity REAL, price REAL,
+                order_id TEXT, pnl_usd REAL, dry_run INTEGER,
+                fill_status TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO trades (timestamp,strategy,product_id,side,"
+            "amount_usd,quantity,price,order_id,pnl_usd,dry_run,fill_status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            ("2026-05-20T10:00:00+00:00", "s1", "AAA", "BUY",
+             100, 1, 100, "o1", None, 0, "FILLED"),
+        )
+        conn.execute(
+            "INSERT INTO trades (timestamp,strategy,product_id,side,"
+            "amount_usd,quantity,price,order_id,pnl_usd,dry_run,fill_status) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            ("2026-05-20T11:00:00+00:00", "s1", "AAA", "SELL",
+             110, 1, 110, "o2", sell_pnl, 0, "FILLED"),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_clean_ledger_not_flagged(self, tmp_path):
+        import build_dashboard as bd
+        db = tmp_path / "clean.db"
+        self._make_db(db, sell_pnl=10.0)   # FIFO also derives +10 → match
+        res = bd._realized_pnl_drift(str(db))
+        assert res is not None
+        assert res["diverged"] is False
+        assert res["drift"] == pytest.approx(0.0)
+
+    def test_drifted_ledger_is_flagged(self, tmp_path):
+        import build_dashboard as bd
+        db = tmp_path / "drift.db"
+        # Stored pnl lies (+728) while FIFO derives +10 → $718 drift,
+        # exactly the droplet failure mode.
+        self._make_db(db, sell_pnl=728.0)
+        res = bd._realized_pnl_drift(str(db))
+        assert res is not None
+        assert res["diverged"] is True
+        assert res["drift"] == pytest.approx(718.0)
+        assert res["db_total"] == pytest.approx(728.0)
+        assert res["fifo_total"] == pytest.approx(10.0)
+
+    def test_missing_db_returns_none(self, tmp_path):
+        import build_dashboard as bd
+        assert bd._realized_pnl_drift(str(tmp_path / "nope.db")) is None
