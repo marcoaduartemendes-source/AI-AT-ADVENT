@@ -38,6 +38,7 @@ from strategies import (
     CryptoFundingCarryV2,
     CryptoXSMom,
     DividendGrowth,
+    DualMomentum,
     EarningsMomentum,
     EarningsNewsPEAD,
     GapTrading,
@@ -242,6 +243,18 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.03, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)",
     ),
+    # dual_momentum: Antonacci dual momentum — top-3 of 6 risk ETFs by
+    # 12-1m momentum, gated by absolute momentum, rotating to IEF
+    # (Treasuries) when risk-off. The crisis-alpha diversifier the bench
+    # lacked: uncorrelated to the bull-market equity beta the other
+    # momentum sleeves all carry. Registers SMALL and stays DRY until
+    # docs/validation.json records PASS (5y Sharpe ≥ 0.5, fee-positive).
+    StrategyMeta(
+        name="dual_momentum",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
+        description="Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier",
+    ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
@@ -419,6 +432,8 @@ def build_strategies(brokers):
         instances["thematic_growth"] = ThematicGrowth(al)
         instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
         instances["cross_asset_trend"] = CrossAssetTrend(al)
+        # Crisis-alpha diversifier — dual momentum w/ Treasury risk-off.
+        instances["dual_momentum"] = DualMomentum(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:

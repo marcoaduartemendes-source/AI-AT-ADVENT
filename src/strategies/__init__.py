@@ -49,6 +49,7 @@ from .crypto_pairs_trading import CryptoPairsTrading
 from .crypto_vol_regime_overlay import CryptoVolRegimeOverlay
 from .crypto_xsmom import CryptoXSMom
 from .dividend_growth import DividendGrowth
+from .dual_momentum import DualMomentum
 from .earnings_momentum import EarningsMomentum
 from .earnings_news_pead import EarningsNewsPEAD
 from .gap_trading import GapTrading
@@ -105,6 +106,8 @@ __all__ = [
     "ThematicGrowth",
     # Cross-asset diversification — first non-equity-beta strategy
     "CrossAssetTrend",
+    # Dual momentum — crisis-alpha diversifier (rotates to bonds risk-off)
+    "DualMomentum",
     # Phase 5 — strategies consuming the new Sprint-3 data feeds
     "CrossVenueArb",         # Kalshi vs Polymarket
     "CryptoFundingCarryV2",  # Coinbase + Binance consensus
