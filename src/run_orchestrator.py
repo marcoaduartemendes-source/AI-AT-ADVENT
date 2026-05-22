@@ -34,6 +34,8 @@ from strategies import (
     CryptoBreakout,
     CryptoFundingCarry,
     CryptoPairsTrading,
+    BondCarry,
+    CommodityMomentum,
     CryptoVolRegimeOverlay,
     CryptoFundingCarryV2,
     DividendGrowth,
@@ -247,6 +249,21 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
         description="Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier",
     ),
+    # Dedicated bond + commodity sleeves (user-requested 2026-05-22).
+    # Both register SMALL and stay DRY until validation PASS; uncorrelated
+    # to the book's equity beta.
+    StrategyMeta(
+        name="bond_carry",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
+        description="Term/credit-premium bond basket, trend-gated (TLT/LQD/HYG/EMB→SHY)",
+    ),
+    StrategyMeta(
+        name="commodity_momentum",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        description="Cross-sectional 12-1m momentum on commodity ETFs (CTA)",
+    ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
@@ -386,6 +403,9 @@ def build_strategies(brokers):
         instances["cross_asset_trend"] = CrossAssetTrend(al)
         # Crisis-alpha diversifier — dual momentum w/ Treasury risk-off.
         instances["dual_momentum"] = DualMomentum(al)
+        # Dedicated bond + commodity sleeves (uncorrelated to equity beta).
+        instances["bond_carry"] = BondCarry(al)
+        instances["commodity_momentum"] = CommodityMomentum(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:

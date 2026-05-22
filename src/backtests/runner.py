@@ -761,9 +761,147 @@ def backtest_dual_momentum(window_days: int) -> BacktestSummary:
     return _equity_curve_to_summary("dual_momentum", window_days, trades, entry_volume)
 
 
+def _rebalance_to_targets(name, histories, target_fn, window_days,
+                          rebalance_every=21, book_usd=3000.0,
+                          band_frac=0.02):
+    """Shared monthly delta-rebalance loop for the basket strategies.
+
+    target_fn(i) -> {symbol: target_usd} computes the desired book at bar
+    i (point-in-time). We diff against current positions and emit BUY/SELL
+    trades with FIFO-ish weighted entry pricing + round-trip fees, exactly
+    like backtest_dual_momentum / risk_parity. Keeps the two new sleeves
+    from copy-pasting 60 lines of rebalance plumbing each."""
+    n_bars = min(len(h) for h in histories.values())
+    base_idx = max(n_bars - window_days, 260)
+    trades: list[dict] = []
+    positions: dict[str, dict] = {}
+    entry_volume = 0.0
+    for i in range(base_idx, n_bars):
+        if (i - base_idx) % rebalance_every != 0:
+            continue
+        bar_time = datetime.fromtimestamp(
+            next(iter(histories.values()))[i, 0], tz=UTC).isoformat()
+        targets = target_fn(i)
+        if targets is None:
+            continue
+        for sym, tgt in targets.items():
+            h = histories.get(sym)
+            if h is None or i >= len(h):
+                continue
+            price = float(h[i, 4])
+            if price <= 0:
+                continue
+            cur_qty = positions.get(sym, {}).get("qty", 0.0)
+            delta = tgt - cur_qty * price
+            if abs(delta) < book_usd * band_frac:
+                continue
+            if delta > 0:
+                add_qty = delta / price
+                new_qty = cur_qty + add_qty
+                entry_p = (positions[sym]["entry_price"] * cur_qty + price * add_qty) / new_qty \
+                    if cur_qty > 0 else price
+                positions[sym] = {"qty": new_qty, "entry_price": entry_p,
+                                  "entry_time": bar_time}
+                entry_volume += abs(delta)
+                trades.append({
+                    "strategy": name, "side": "BUY", "product_id": sym,
+                    "amount_usd": abs(delta), "quantity": add_qty,
+                    "entry_price": price, "open_time": bar_time,
+                    "reason": f"target ${tgt:.0f}",
+                })
+            else:
+                sell_qty = min(cur_qty, abs(delta) / price)
+                if sell_qty <= 0:
+                    continue
+                gross = sell_qty * (price - positions[sym]["entry_price"])
+                fees = (sell_qty * positions[sym]["entry_price"]
+                        + sell_qty * price) * _FEE_RATE
+                positions[sym]["qty"] -= sell_qty
+                trades.append({
+                    "strategy": name, "side": "SELL", "product_id": sym,
+                    "amount_usd": sell_qty * price, "quantity": sell_qty,
+                    "entry_price": positions[sym]["entry_price"], "exit_price": price,
+                    "open_time": positions[sym]["entry_time"], "close_time": bar_time,
+                    "pnl_usd": gross - fees, "exit_reason": "rebalance",
+                })
+                if positions[sym]["qty"] <= 1e-9:
+                    positions.pop(sym, None)
+    return _equity_curve_to_summary(name, window_days, trades, entry_volume)
+
+
+def backtest_bond_carry(window_days: int) -> BacktestSummary:
+    """Term/credit-premium basket, trend-gated — mirrors
+    strategies/bond_carry.py: equal-weight TLT/IEF/LQD/HYG/EMB while each
+    is above its 100d SMA, else rotate that slot to SHY. Monthly."""
+    from strategies.bond_carry import CARRY_UNIVERSE, SAFE_ASSET, TREND_SMA
+    universe = CARRY_UNIVERSE + [SAFE_ASSET]
+    histories = {s: _yahoo_history(s, window_days + TREND_SMA + 30) for s in universe}
+    histories = {s: h for s, h in histories.items() if len(h) >= TREND_SMA + 5}
+    if SAFE_ASSET not in histories:
+        return BacktestSummary(strategy="bond_carry", window_days=window_days,
+                               note="No Yahoo data available")
+    per_slot = 3000.0 / len(CARRY_UNIVERSE)
+
+    def _targets(i):
+        tgt = {s: 0.0 for s in universe}
+        for s in CARRY_UNIVERSE:
+            h = histories.get(s)
+            if h is None or i >= len(h):
+                tgt[SAFE_ASSET] += per_slot
+                continue
+            closes = h[:i + 1, 4]
+            if len(closes) < TREND_SMA or closes[-1] >= closes[-TREND_SMA:].mean():
+                tgt[s] += per_slot          # above trend (or cold) → carry on
+            else:
+                tgt[SAFE_ASSET] += per_slot  # below trend → park in SHY
+        return tgt
+
+    return _rebalance_to_targets("bond_carry", histories, _targets, window_days)
+
+
+def backtest_commodity_momentum(window_days: int) -> BacktestSummary:
+    """Cross-sectional 12-1m momentum on commodity ETFs — mirrors
+    strategies/commodity_momentum.py: long the top-3 with positive
+    absolute momentum, equal-weight, else cash. Monthly."""
+    from strategies.commodity_momentum import (
+        LOOKBACK_DAYS, SKIP_DAYS, TOP_K, UNIVERSE,
+    )
+    histories = {s: _yahoo_history(s, window_days + LOOKBACK_DAYS + 30)
+                 for s in UNIVERSE}
+    histories = {s: h for s, h in histories.items() if len(h) >= LOOKBACK_DAYS + 5}
+    if len(histories) < TOP_K:
+        return BacktestSummary(strategy="commodity_momentum",
+                               window_days=window_days,
+                               note="No Yahoo data available")
+    per_slot = 3000.0 / TOP_K
+
+    def _targets(i):
+        mom = {}
+        for s, h in histories.items():
+            if i >= len(h):
+                continue
+            window = h[i - LOOKBACK_DAYS:i - SKIP_DAYS, 4]
+            if len(window) < 30 or window[0] <= 0:
+                continue
+            mom[s] = (window[-1] - window[0]) / window[0]
+        if not mom:
+            return None
+        ranked = sorted(mom, key=lambda s: mom[s], reverse=True)[:TOP_K]
+        tgt = {s: 0.0 for s in UNIVERSE}
+        for s in ranked:
+            if mom[s] > 0:
+                tgt[s] = per_slot
+        return tgt
+
+    return _rebalance_to_targets("commodity_momentum", histories, _targets,
+                                 window_days)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "dual_momentum": backtest_dual_momentum,
+    "bond_carry": backtest_bond_carry,
+    "commodity_momentum": backtest_commodity_momentum,
     "risk_parity_etf": backtest_risk_parity_etf,
     "vol_managed_overlay": backtest_vol_managed_overlay,
     "pead": _pead_dispatch,
