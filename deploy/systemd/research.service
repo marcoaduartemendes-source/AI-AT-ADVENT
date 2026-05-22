@@ -1,0 +1,43 @@
+[Unit]
+Description=AI-AT-ADVENT daily research (validation + walk-forward backtests)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+# The HEAVY backtests (3x backtest_all + walk-forward) deliberately do
+# NOT live in the 5-min orchestrator cycle — they exceeded its timeout
+# and froze cycles for 22h (2026-05-20). They run here on a daily
+# cadence instead. Without this timer the droplet never refreshes
+# validation.json / walk_forward.json on its own (GH Actions is
+# throttled), starving self-grade's research_freshness + overfit_
+# resistance axes and leaving new strategies (e.g. dual_momentum)
+# without a verdict. 20-min ceiling: backtests fetch Yahoo history.
+TimeoutStartSec=1200
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_research.py'
+
+# Same hardening profile as the orchestrator. Writes only docs/ (the
+# validation/walk-forward JSONs) and data/ (any cached state).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+ReadWritePaths=/opt/ai-at-advent/data /opt/ai-at-advent/docs
+
+# Daily oneshot — don't auto-restart. A persistent failure shows up as
+# a stale validation panel + the data-quality agent flagging it.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
