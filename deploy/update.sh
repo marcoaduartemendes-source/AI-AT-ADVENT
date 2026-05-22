@@ -74,19 +74,28 @@ else
 fi
 
 echo "[4/6] Refreshing systemd unit files (if changed)"
-for unit in orchestrator scouts dashboard db-backup daily-digest; do
-    src="$INSTALL_DIR/deploy/systemd/$unit.service"
-    dst="/etc/systemd/system/$unit.service"
-    [[ -f "$src" ]] || continue    # db-backup is new; tolerate older deploys
+# 2026-05-22: glob ALL unit files instead of a hardcoded list. The
+# old list (orchestrator scouts dashboard db-backup daily-digest)
+# silently skipped dashboard-http.service when it was added later —
+# the box ran fine but never served the live dashboard until a
+# manual cp. Globbing means any NEW unit auto-installs on deploy.
+for src in "$INSTALL_DIR"/deploy/systemd/*.service \
+           "$INSTALL_DIR"/deploy/systemd/*.timer; do
+    [[ -f "$src" ]] || continue
+    dst="/etc/systemd/system/$(basename "$src")"
     if ! cmp -s "$src" "$dst"; then
         cp "$src" "$dst"
-        if [[ -f "$INSTALL_DIR/deploy/systemd/$unit.timer" ]]; then
-            cp "$INSTALL_DIR/deploy/systemd/$unit.timer" "/etc/systemd/system/$unit.timer"
-        fi
-        echo "  updated $unit"
+        echo "  updated $(basename "$src")"
     fi
 done
 systemctl daemon-reload
+
+# Long-running services need an explicit restart to pick up new code
+# (timers re-exec on each fire; daemons don't). Best-effort.
+if [[ -f "/etc/systemd/system/dashboard-http.service" ]]; then
+    systemctl enable --now dashboard-http.service 2>/dev/null || true
+    systemctl try-restart dashboard-http.service 2>/dev/null || true
+fi
 
 # Sprint A2 — Enable db-backup timer on first deploy that includes it.
 if [[ -f "/etc/systemd/system/db-backup.timer" ]]; then
