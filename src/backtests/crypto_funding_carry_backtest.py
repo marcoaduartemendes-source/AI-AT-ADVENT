@@ -91,7 +91,11 @@ def backtest_crypto_funding_carry(
     bybit: BybitClient | None = None,
 ) -> BacktestSummary:
     """Run the funding-carry backtest over the last `window_days`."""
-    client = bybit or BybitClient()
+    # Default to the OKX→Bybit fallback chain: Bybit is geo-blocked from
+    # the droplet (CloudFront 403), so a bare BybitClient returned NO_DATA
+    # for everything. Tests still inject their own stub via `bybit=`.
+    from .data.okx import crypto_data_client
+    client = bybit or crypto_data_client()
     universe = universe or CARRY_UNIVERSE
 
     today = date.today()
