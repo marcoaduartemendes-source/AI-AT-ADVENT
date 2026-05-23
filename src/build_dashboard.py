@@ -205,6 +205,28 @@ def _per_strategy_pnl(db_path: str) -> dict[str, dict]:
             "last_trade_at":    last_ts,
             "days_since":       days_since,
         }
+
+    # Overlay canonical FIFO realized P&L + win stats. The stored pnl_usd
+    # column (summed above) drifts on partial fills / stale cost-basis /
+    # phantom price=0; the FIFO walk over raw fills is the auditable
+    # truth, so the dashboard shows that. n_trades/last_trade keep the
+    # SQL values (they're counts/timestamps, not P&L).
+    try:
+        from trading.recompute import fifo_realized_events
+        for strat, evs in fifo_realized_events(db_path).items():
+            n_closed = len(evs)
+            wins = sum(1 for e in evs if e["pnl_usd"] > 0)
+            losses = sum(1 for e in evs if e["pnl_usd"] < 0)
+            d = out.setdefault(strat, {
+                "n_trades": n_closed, "last_trade_at": None, "days_since": None,
+            })
+            d["realized_pnl_usd"] = round(sum(e["pnl_usd"] for e in evs), 2)
+            d["n_closed"] = n_closed
+            d["wins"] = wins
+            d["losses"] = losses
+            d["win_rate"] = (wins / n_closed) if n_closed else 0.0
+    except Exception as e:
+        logger.debug(f"FIFO realized overlay failed: {e}")
     return out
 
 
