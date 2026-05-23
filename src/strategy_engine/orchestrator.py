@@ -110,6 +110,11 @@ class CycleReport:
     proposals_rejected: int = 0
     proposals_scaled: int = 0
     trades_submitted: int = 0
+    # DRY-logged proposals (live trading disabled for that venue/strategy).
+    # Tracked so execution_quality can exclude them — they're intentional
+    # non-submissions, not failures, and otherwise drag the submit ratio
+    # to ~0 in a mostly-DRY/paper book.
+    proposals_dry: int = 0
     errors: list[str] = field(default_factory=list)
     rebalanced: bool = False
     cycle_seconds: float = 0.0
@@ -312,6 +317,7 @@ class Orchestrator:
             "git_sha": os.environ.get("GITHUB_SHA", "")[:7] or "local",
             "proposals_total": report.proposals_total,
             "proposals_submitted": report.trades_submitted,
+            "proposals_dry": report.proposals_dry,
             "n_errors": len(report.errors),
             "first_error": (report.errors[0][:240] if report.errors else None),
             "venue_health": report.venue_health,
@@ -1318,6 +1324,7 @@ class Orchestrator:
         record to ledger, mark intra-cycle pending. Catches
         broker-side errors so a bad call doesn't kill the cycle."""
         if self.cfg.is_dry(proposal.venue, proposal.strategy):
+            report.proposals_dry += 1
             logger.info(f"[{proposal.strategy}] DRY[{proposal.venue}] "
                         f"{proposal.side.value} {proposal.symbol} "
                         f"${decision.approved_notional_usd:.2f} ({proposal.reason})")

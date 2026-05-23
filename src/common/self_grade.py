@@ -123,19 +123,29 @@ def _grade_overfit_resistance(validation, walk_forward) -> tuple[float, str]:
 
 
 def _grade_execution(cycle_status) -> tuple[float, str]:
-    """Submitted / proposed ratio across last 20 cycles."""
+    """Submitted / submittable ratio across last 20 cycles.
+
+    DRY-logged proposals are EXCLUDED from the denominator — they're
+    intentional non-submissions (live trading disabled for that
+    venue/strategy), not execution failures. Counting them dragged the
+    ratio to ~0 in a mostly-DRY/paper book, which read as "execution is
+    broken" when it wasn't (2026-05-22: 1/50 = 2% while the one live
+    strategy was submitting fine)."""
     if not isinstance(cycle_status, list) or not cycle_status:
         return 5.0, "no cycle data → 5/10"
     recent = sorted(cycle_status,
                      key=lambda c: c.get("timestamp", ""))[-20:]
     total_p = sum(c.get("proposals_total", 0) for c in recent)
+    total_dry = sum(c.get("proposals_dry", 0) for c in recent)
     total_s = sum(c.get("proposals_submitted", 0) for c in recent)
-    if total_p == 0:
-        return 5.0, "no proposals in last 20 cycles → 5/10"
-    ratio = total_s / total_p
-    g = round(ratio * 10, 1)
-    return g, (f"submit ratio {total_s}/{total_p} = {ratio:.0%} → "
-                f"{g}/10 (≥80% target)")
+    submittable = total_p - total_dry
+    if submittable <= 0:
+        return 5.0, (f"no live-submittable proposals in last 20 cycles "
+                     f"({total_dry} DRY-logged) → 5/10 (neutral)")
+    ratio = total_s / submittable
+    g = round(min(ratio, 1.0) * 10, 1)
+    return g, (f"submit ratio {total_s}/{submittable} = {ratio:.0%} "
+               f"(excl. {total_dry} DRY) → {g}/10 (≥80% target)")
 
 
 def _grade_setup_health(cycle_status) -> tuple[float, str]:
