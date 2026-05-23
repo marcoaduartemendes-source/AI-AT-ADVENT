@@ -478,3 +478,54 @@ class TestKalshiSettledMarketParsing:
         assert _parse_settlement({"result": "yes"}) == 1.0
         assert _parse_settlement({"result": "no"}) == 0.0
         assert _parse_settlement({}) == 0.5   # unknown → void → skipped
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bug #9 — realized P&L was sourced from the stored pnl_usd column, which
+# is computed at fill time from a single avg-cost entry and drifts on
+# partial fills / stale broker cost-basis / orphan SELLs / phantom
+# price=0 (the $718 droplet drift, and the corrupt allocator metrics that
+# spuriously froze risk_parity_etf at "60d Sharpe=-5.62, DD=57758%").
+# FIFO over the raw fill ledger is the canonical, auditable source.
+# ─────────────────────────────────────────────────────────────────────
+class TestFifoCanonicalRealized:
+    def _db(self, tmp_path, rows):
+        db = tmp_path / "t.db"
+        conn = sqlite3.connect(db)
+        conn.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                     "timestamp TEXT, strategy TEXT, product_id TEXT, side TEXT, "
+                     "quantity REAL, price REAL, pnl_usd REAL, fill_status TEXT)")
+        conn.executemany(
+            "INSERT INTO trades (timestamp,strategy,product_id,side,quantity,"
+            "price,pnl_usd,fill_status) VALUES (?,?,?,?,?,?,?,?)", rows)
+        conn.commit()
+        conn.close()
+        return str(db)
+
+    def test_multilot_fifo_ignores_bogus_stored_pnl(self, tmp_path):
+        from trading.recompute import fifo_realized_by_strategy
+        db = self._db(tmp_path, [
+            ("2026-05-01T10:00", "s1", "AAA", "BUY", 1, 100, None, "FILLED"),
+            ("2026-05-01T11:00", "s1", "AAA", "BUY", 1, 105, None, "FILLED"),
+            ("2026-05-02T10:00", "s1", "AAA", "SELL", 2, 110, 999.0, "FILLED"),
+        ])
+        # FIFO: (110-100) + (110-105) = 15, not the stored 999.
+        assert fifo_realized_by_strategy(db) == {"s1": 15.0}
+
+    def test_orphan_sell_and_phantom_excluded(self, tmp_path):
+        from trading.recompute import fifo_realized_events
+        db = self._db(tmp_path, [
+            ("2026-05-03T10:00", "s2", "BBB", "SELL", 1, 50, 777.0, "FILLED"),  # orphan
+            ("2026-05-04T10:00", "s3", "CCC", "BUY", 1, 0, None, "CANCELED"),   # phantom
+        ])
+        assert fifo_realized_events(db) == {}
+
+    def test_allocator_metrics_use_fifo_not_stored(self, tmp_path):
+        from allocator.metrics import StrategyPerformance
+        # Stored pnl is a wild +5000 on one SELL, but FIFO says +10.
+        db = self._db(tmp_path, [
+            ("2026-05-01T10:00", "s1", "AAA", "BUY", 1, 100, None, "FILLED"),
+            ("2026-05-02T10:00", "s1", "AAA", "SELL", 1, 110, 5000.0, "FILLED"),
+        ])
+        m = StrategyPerformance(db_path=db).metrics_for("s1", window_days=3650)
+        assert m.total_pnl_usd == pytest.approx(10.0)   # FIFO, not 5000

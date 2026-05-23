@@ -112,3 +112,75 @@ def recompute_realized_pnl_fifo(
             drift[s] = round(d, 2)
 
     return round(db_total, 2), round(recomputed_total, 2), drift
+
+
+def fifo_realized_events(db_path: str) -> dict[str, list[dict]]:
+    """Per-strategy realized-PnL close events via FIFO lot matching over
+    the RAW fill ledger — the canonical, auditable realized P&L.
+
+    Returns {strategy: [{"timestamp", "pnl_usd", "product_id"}, …]} with
+    one event per SELL that matched against a prior BUY lot. This is the
+    phantom-proof source of truth the dashboard and the allocator's
+    metrics should use instead of the stored pnl_usd column, which is
+    computed at fill time from a single avg-cost entry and drifts on
+    partial fills, stale broker cost-basis, orphan SELLs, and the
+    price=0 phantom-loss bug.
+
+    Rules (match recompute_realized_pnl_fifo so the drift check stays
+    consistent):
+      • Only price>0 rows count (CANCELED/unfilled have price=0).
+      • Trades processed in (timestamp, id) order per (strategy, product).
+      • BUY pushes a lot; SELL pops lots FIFO, realizing (sell-lot)×qty.
+      • An orphan SELL (no matching BUY) realizes nothing and emits NO
+        event — it's not a real round trip (vs the stored column, which
+        recorded a bogus number for it).
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT timestamp, strategy, product_id, side, quantity, price
+              FROM trades
+             WHERE price IS NOT NULL AND price > 0
+             ORDER BY timestamp ASC, id ASC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    books: dict[tuple[str, str], deque[_Lot]] = defaultdict(deque)
+    events: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        key = (r["strategy"], r["product_id"])
+        qty = float(r["quantity"] or 0)
+        px = float(r["price"] or 0)
+        if qty <= 0 or px <= 0:
+            continue
+        if r["side"] == "BUY":
+            books[key].append(_Lot(qty=qty, price=px))
+            continue
+        # SELL — FIFO match.
+        remaining = qty
+        realized = 0.0
+        while remaining > 0 and books[key]:
+            lot = books[key][0]
+            matched = min(lot.qty, remaining)
+            realized += (px - lot.price) * matched
+            lot.qty -= matched
+            remaining -= matched
+            if lot.qty <= 1e-12:
+                books[key].popleft()
+        if remaining < qty:   # matched at least part of a real round trip
+            events[r["strategy"]].append({
+                "timestamp": r["timestamp"],
+                "pnl_usd": realized,
+                "product_id": r["product_id"],
+            })
+    return dict(events)
+
+
+def fifo_realized_by_strategy(db_path: str) -> dict[str, float]:
+    """Total FIFO realized P&L per strategy (sum of close events)."""
+    return {s: round(sum(e["pnl_usd"] for e in evs), 2)
+            for s, evs in fifo_realized_events(db_path).items()}

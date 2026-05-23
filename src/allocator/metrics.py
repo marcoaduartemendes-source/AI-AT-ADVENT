@@ -75,19 +75,20 @@ class StrategyPerformance:
     # ── Public API -------------------------------------------------------
 
     def metrics_for(self, strategy_name: str, window_days: int = 60) -> StrategyMetrics:
+        # Source realized P&L from the FIFO ledger walk, NOT the stored
+        # pnl_usd column. The stored column drifts (avg-cost single entry,
+        # stale broker cost-basis, phantom price=0), producing corrupt
+        # Sharpe/drawdown that spuriously froze good strategies
+        # (risk_parity_etf: "60d Sharpe=-5.62, DD=57758%"). FIFO over raw
+        # fills is the auditable truth.
         cutoff = (datetime.now(UTC) - timedelta(days=window_days)).isoformat()
         try:
-            with self._conn() as c:
-                rows = c.execute(
-                    "SELECT pnl_usd FROM trades "
-                    "WHERE strategy=? AND side='SELL' AND timestamp>=? "
-                    "ORDER BY timestamp",
-                    (strategy_name, cutoff),
-                ).fetchall()
-            pnls = [float(r["pnl_usd"]) for r in rows if r["pnl_usd"] is not None]
-        except sqlite3.OperationalError:
+            from trading.recompute import fifo_realized_events
+            evs = fifo_realized_events(self.db_path).get(strategy_name, [])
+            pnls = [float(e["pnl_usd"]) for e in evs
+                    if str(e.get("timestamp", "")) >= cutoff]
+        except Exception:
             pnls = []
-
         return self._compute(strategy_name, window_days, pnls)
 
     def _compute(self, name: str, window_days: int, pnls: list[float]) -> StrategyMetrics:
@@ -146,4 +147,16 @@ class StrategyPerformance:
         )
 
     def metrics_bulk(self, names: list[str], window_days: int = 60) -> dict[str, StrategyMetrics]:
-        return {n: self.metrics_for(n, window_days) for n in names}
+        # Walk the FIFO ledger ONCE, then slice per strategy/window.
+        cutoff = (datetime.now(UTC) - timedelta(days=window_days)).isoformat()
+        try:
+            from trading.recompute import fifo_realized_events
+            all_events = fifo_realized_events(self.db_path)
+        except Exception:
+            all_events = {}
+        out: dict[str, StrategyMetrics] = {}
+        for n in names:
+            pnls = [float(e["pnl_usd"]) for e in all_events.get(n, [])
+                    if str(e.get("timestamp", "")) >= cutoff]
+            out[n] = self._compute(n, window_days, pnls)
+        return out
