@@ -1,20 +1,36 @@
 {
-  "as_of": "2026-05-22T09:56:41.552495+00:00",
-  "n_frozen": 2,
+  "as_of": "2026-05-23T08:36:47.674548+00:00",
+  "n_frozen": 4,
   "overrides": {
+    "bond_carry": {
+      "multiplier": 0.0,
+      "reasons": [
+        "validation FAIL: 5y Sharpe -1.678 < 0.5; positive in only 0/3 windows (overfit risk); return-on-v"
+      ],
+      "frozen_at": "2026-05-23T08:36:47.674442+00:00"
+    },
+    "crypto_funding_carry": {
+      "multiplier": 0.0,
+      "reasons": [
+        "validation FAIL: 5y Sharpe -19.53904460688904 < 0.5; positive in only 0/3 windows (overfit risk);"
+      ],
+      "frozen_at": "2026-05-23T08:36:47.674473+00:00"
+    },
     "sector_rotation": {
       "multiplier": 0.0,
       "reasons": [
-        "validation FAIL: positive in only 1/3 windows (overfit risk)"
+        "validation FAIL: positive in only 1/3 windows (overfit risk)",
+        "walk-forward OVERFIT_SUSPECT: OOS Sharpe +2.53 only 32% of IS +7.96 (need \u2265 50%)"
       ],
-      "frozen_at": "2026-05-22T09:56:41.552470+00:00"
+      "frozen_at": "2026-05-23T08:36:47.674529+00:00"
     },
     "vol_managed_overlay": {
       "multiplier": 0.0,
       "reasons": [
-        "validation FAIL: 5y Sharpe -0.069 < 0.5; positive in only 0/3 windows (overfit risk); return-on-v"
+        "validation FAIL: 5y Sharpe -0.146 < 0.5; positive in only 0/3 windows (overfit risk); return-on-v",
+        "walk-forward OVERFIT_SUSPECT: OOS Sharpe -1.14 is NEGATIVE vs IS +1.79 \u2014 edge inverted out-of-sample"
       ],
-      "frozen_at": "2026-05-22T09:56:41.552491+00:00"
+      "frozen_at": "2026-05-23T08:36:47.674545+00:00"
     }
   },
   "rules": {

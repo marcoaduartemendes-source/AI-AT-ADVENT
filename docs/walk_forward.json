@@ -1,80 +1,98 @@
 {
-  "as_of": "2026-05-22T09:56:41.541469+00:00",
+  "as_of": "2026-05-23T08:36:47.663259+00:00",
   "window_days": 1260,
   "is_frac": 0.6,
   "min_oos_ratio_pass": 0.5,
   "counts": {
-    "ROBUST": 0,
-    "OVERFIT_SUSPECT": 0,
-    "WEAK": 0,
-    "UNPROVEN": 0,
-    "FAIL": 0,
-    "NO_DATA": 18
+    "ROBUST": 10,
+    "OVERFIT_SUSPECT": 2,
+    "WEAK": 2,
+    "UNPROVEN": 1,
+    "FAIL": 2,
+    "NO_DATA": 4
   },
-  "n_strategies": 18,
+  "n_strategies": 21,
   "strategies": {
     "tsmom_etf": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
+      "verdict": "UNPROVEN",
+      "is_sharpe": -6.812,
+      "oos_sharpe": -8.285,
+      "is_trades": 5,
+      "oos_trades": 4,
       "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "reason": "too few trades to compare (IS=5, OOS=4, need \u22655 each)"
     },
     "dual_momentum": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
+      "verdict": "ROBUST",
+      "is_sharpe": 5.245,
+      "oos_sharpe": 10.512,
+      "is_trades": 24,
+      "oos_trades": 17,
+      "ratio": 2.004,
+      "reason": "OOS Sharpe +10.51 is 200% of IS +5.24 \u2014 edge generalises"
+    },
+    "bond_carry": {
+      "verdict": "WEAK",
+      "is_sharpe": -3.119,
+      "oos_sharpe": 0.748,
+      "is_trades": 19,
+      "oos_trades": 13,
       "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "reason": "IS Sharpe -3.12 too low to assess robustness"
+    },
+    "commodity_momentum": {
+      "verdict": "ROBUST",
+      "is_sharpe": 4.886,
+      "oos_sharpe": 13.627,
+      "is_trades": 23,
+      "oos_trades": 16,
+      "ratio": 2.789,
+      "reason": "OOS Sharpe +13.63 is 279% of IS +4.89 \u2014 edge generalises"
     },
     "risk_parity_etf": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 10.917,
+      "oos_sharpe": 11.513,
+      "is_trades": 20,
+      "oos_trades": 14,
+      "ratio": 1.055,
+      "reason": "OOS Sharpe +11.51 is 105% of IS +10.92 \u2014 edge generalises"
     },
     "vol_managed_overlay": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "OVERFIT_SUSPECT",
+      "is_sharpe": 1.794,
+      "oos_sharpe": -1.141,
+      "is_trades": 92,
+      "oos_trades": 61,
+      "ratio": -0.636,
+      "reason": "OOS Sharpe -1.14 is NEGATIVE vs IS +1.79 \u2014 edge inverted out-of-sample"
     },
     "pead": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 2.265,
+      "oos_sharpe": 3.374,
+      "is_trades": 82,
+      "oos_trades": 55,
+      "ratio": 1.489,
+      "reason": "OOS Sharpe +3.37 is 149% of IS +2.27 \u2014 edge generalises"
     },
     "commodity_carry": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
+      "verdict": "WEAK",
+      "is_sharpe": 0.074,
+      "oos_sharpe": 7.881,
+      "is_trades": 16,
+      "oos_trades": 11,
       "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "reason": "IS Sharpe +0.07 too low to assess robustness"
     },
     "crypto_funding_carry": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
+      "verdict": "FAIL",
+      "is_sharpe": -25.178,
+      "oos_sharpe": -54.727,
+      "is_trades": 59,
+      "oos_trades": 39,
       "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "reason": "both halves negative Sharpe (IS=-25.18, OOS=-54.73)"
     },
     "crypto_basis_trade": {
       "verdict": "NO_DATA",
@@ -104,40 +122,49 @@
       "reason": "insufficient equity-curve points"
     },
     "bollinger_breakout": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 4.341,
+      "oos_sharpe": 2.734,
+      "is_trades": 109,
+      "oos_trades": 73,
+      "ratio": 0.63,
+      "reason": "OOS Sharpe +2.73 is 63% of IS +4.34 \u2014 edge generalises"
     },
     "sector_rotation": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "OVERFIT_SUSPECT",
+      "is_sharpe": 7.958,
+      "oos_sharpe": 2.531,
+      "is_trades": 21,
+      "oos_trades": 15,
+      "ratio": 0.318,
+      "reason": "OOS Sharpe +2.53 only 32% of IS +7.96 (need \u2265 50%)"
     },
     "dividend_growth": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 2.491,
+      "oos_sharpe": 8.105,
+      "is_trades": 14,
+      "oos_trades": 10,
+      "ratio": 3.254,
+      "reason": "OOS Sharpe +8.11 is 325% of IS +2.49 \u2014 edge generalises"
     },
     "internationals_rotation": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 3.703,
+      "oos_sharpe": 4.219,
+      "is_trades": 14,
+      "oos_trades": 9,
+      "ratio": 1.139,
+      "reason": "OOS Sharpe +4.22 is 114% of IS +3.70 \u2014 edge generalises"
+    },
+    "multifactor_equity": {
+      "verdict": "ROBUST",
+      "is_sharpe": 9.293,
+      "oos_sharpe": 8.784,
+      "is_trades": 27,
+      "oos_trades": 18,
+      "ratio": 0.945,
+      "reason": "OOS Sharpe +8.78 is 95% of IS +9.29 \u2014 edge generalises"
     },
     "leveraged_momentum": {
       "verdict": "NO_DATA",
@@ -149,31 +176,31 @@
       "reason": "insufficient equity-curve points"
     },
     "thematic_growth": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 2.43,
+      "oos_sharpe": 4.578,
+      "is_trades": 134,
+      "oos_trades": 89,
+      "ratio": 1.884,
+      "reason": "OOS Sharpe +4.58 is 188% of IS +2.43 \u2014 edge generalises"
     },
     "cross_asset_trend": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
+      "verdict": "FAIL",
+      "is_sharpe": -20.386,
+      "oos_sharpe": -5.69,
+      "is_trades": 9,
+      "oos_trades": 7,
       "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "reason": "both halves negative Sharpe (IS=-20.39, OOS=-5.69)"
     },
     "earnings_momentum": {
-      "verdict": "NO_DATA",
-      "is_sharpe": null,
-      "oos_sharpe": null,
-      "is_trades": 0,
-      "oos_trades": 0,
-      "ratio": null,
-      "reason": "insufficient equity-curve points"
+      "verdict": "ROBUST",
+      "is_sharpe": 2.265,
+      "oos_sharpe": 3.374,
+      "is_trades": 82,
+      "oos_trades": 55,
+      "ratio": 1.489,
+      "reason": "OOS Sharpe +3.37 is 149% of IS +2.27 \u2014 edge generalises"
     }
   }
 }

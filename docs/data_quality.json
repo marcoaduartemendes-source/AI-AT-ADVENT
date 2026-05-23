@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-22T09:56:41.560129+00:00",
+  "as_of": "2026-05-23T08:36:47.681592+00:00",
   "score": 7.3,
   "counts": {
     "OK": 8,
@@ -56,7 +56,7 @@
     {
       "check": "trade-orphans",
       "status": "INCONSISTENT",
-      "reason": "trades exist for strategies not in validation: ['low_vol_anomaly', 'multifactor_equity', 'pairs_trading', 'rsi_mean_reversion']"
+      "reason": "trades exist for strategies not in validation: ['low_vol_anomaly', 'pairs_trading', 'rsi_mean_reversion']"
     },
     {
       "check": "cancel-rate",

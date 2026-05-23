@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-05-22T09:56:41.568828+00:00",
-  "overall_grade": 3.85,
+  "as_of": "2026-05-23T08:36:47.690449+00:00",
+  "overall_grade": 5.01,
   "target_grade": 9.0,
   "weights": {
     "alpha_track": 0.22,
@@ -22,12 +22,12 @@
       "reason": "bot 30d -1.7% vs SPY +4.5% \u2192 excess -6.2pp \u2192 0.0/10"
     },
     "fee_discipline": {
-      "score": 0.0,
-      "reason": "0/50 trades from PASS strategies \u2192 0.0/10"
+      "score": 0.6,
+      "reason": "3/50 trades from PASS strategies \u2192 0.6/10"
     },
     "overfit_resistance": {
-      "score": 0.0,
-      "reason": "0/9 PASSes are also walk-forward ROBUST \u2192 0.0/10"
+      "score": 9.1,
+      "reason": "10/11 PASSes are also walk-forward ROBUST \u2192 9.1/10"
     },
     "execution_quality": {
       "score": 2.2,
@@ -48,17 +48,18 @@
   },
   "narrative": {
     "tried": [
-      "Backtested 18 strategies across 1y/2y/5y under a strict fee-aware rubric."
+      "Backtested 21 strategies across 1y/2y/5y under a strict fee-aware rubric."
     ],
     "worked": [
-      "9/18 strategies cleared the validation gate (PASS)."
+      "11/21 strategies cleared the validation gate (PASS)."
     ],
     "failed": [
-      "9/18 strategies did NOT pass \u2014 fee-bleeders or overfit."
+      "10/21 strategies did NOT pass \u2014 fee-bleeders or overfit.",
+      "2 strategies failed walk-forward \u2014 their backtest Sharpe doesn't hold OOS."
     ],
     "next": [
       "Submit ratio submit ratio 54/245 \u2014 investigate why proposals are being rejected.",
-      "Current grade 3.85/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
+      "Current grade 5.01/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
     ]
   }
 }
