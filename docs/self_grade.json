@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-23T08:36:47.690449+00:00",
+  "as_of": "2026-05-24T09:07:05.629243+00:00",
   "overall_grade": 5.01,
   "target_grade": 9.0,
   "weights": {
@@ -31,7 +31,7 @@
     },
     "execution_quality": {
       "score": 2.2,
-      "reason": "submit ratio 54/245 = 22% \u2192 2.2/10 (\u226580% target)"
+      "reason": "submit ratio 54/245 = 22% (excl. 0 DRY) \u2192 2.2/10 (\u226580% target)"
     },
     "setup_health": {
       "score": 0.0,
