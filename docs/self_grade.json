@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-05-24T09:07:05.629243+00:00",
-  "overall_grade": 5.01,
+  "as_of": "2026-05-25T10:57:42.847954+00:00",
+  "overall_grade": 4.82,
   "target_grade": 9.0,
   "weights": {
     "alpha_track": 0.22,
@@ -26,8 +26,8 @@
       "reason": "3/50 trades from PASS strategies \u2192 0.6/10"
     },
     "overfit_resistance": {
-      "score": 9.1,
-      "reason": "10/11 PASSes are also walk-forward ROBUST \u2192 9.1/10"
+      "score": 7.5,
+      "reason": "9/12 PASSes are also walk-forward ROBUST \u2192 7.5/10"
     },
     "execution_quality": {
       "score": 2.2,
@@ -51,15 +51,15 @@
       "Backtested 21 strategies across 1y/2y/5y under a strict fee-aware rubric."
     ],
     "worked": [
-      "11/21 strategies cleared the validation gate (PASS)."
+      "12/21 strategies cleared the validation gate (PASS)."
     ],
     "failed": [
-      "10/21 strategies did NOT pass \u2014 fee-bleeders or overfit.",
+      "9/21 strategies did NOT pass \u2014 fee-bleeders or overfit.",
       "2 strategies failed walk-forward \u2014 their backtest Sharpe doesn't hold OOS."
     ],
     "next": [
       "Submit ratio submit ratio 54/245 \u2014 investigate why proposals are being rejected.",
-      "Current grade 5.01/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
+      "Current grade 4.82/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
     ]
   }
 }
