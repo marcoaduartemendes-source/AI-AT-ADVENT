@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-26T10:35:16.519094+00:00",
+  "as_of": "2026-05-27T10:37:50.672865+00:00",
   "windows_days": [
     252,
     504,
@@ -13,43 +13,43 @@
   },
   "n_strategies": 21,
   "n_pass": 12,
-  "elapsed_seconds": 141.3,
+  "elapsed_seconds": 144.8,
   "strategies": {
     "bollinger_breakout": {
       "verdict": "PASS",
-      "sharpe_1y": 1.203,
-      "sharpe_2y": 2.606,
-      "sharpe_5y": 3.493,
-      "pnl_1y": 1257.25,
-      "pnl_2y": 5999.36,
-      "pnl_5y": 17302.58,
-      "n_trades_5y": 183,
-      "return_on_volume_pct": 2.301,
-      "reason": "Sharpe 3.493 over 5y, positive 3/3 windows, 183 trades"
+      "sharpe_1y": 0.744,
+      "sharpe_2y": 2.365,
+      "sharpe_5y": 3.373,
+      "pnl_1y": 803.55,
+      "pnl_2y": 5545.66,
+      "pnl_5y": 16848.88,
+      "n_trades_5y": 185,
+      "return_on_volume_pct": 2.229,
+      "reason": "Sharpe 3.373 over 5y, positive 3/3 windows, 185 trades"
     },
     "bond_carry": {
       "verdict": "FAIL",
       "sharpe_1y": null,
-      "sharpe_2y": -14.089,
-      "sharpe_5y": -3.932,
+      "sharpe_2y": -25.76,
+      "sharpe_5y": -4.334,
       "pnl_1y": 0.0,
-      "pnl_2y": -29.92,
-      "pnl_5y": -102.31,
-      "n_trades_5y": 36,
-      "return_on_volume_pct": -0.322,
-      "reason": "5y Sharpe -3.932 < 0.5; positive in only 0/3 windows (overfit risk); return-on-volume -0.32% \u2264 0 (fee-negative)"
+      "pnl_2y": -50.19,
+      "pnl_5y": -106.21,
+      "n_trades_5y": 38,
+      "return_on_volume_pct": -0.316,
+      "reason": "5y Sharpe -4.334 < 0.5; positive in only 0/3 windows (overfit risk); return-on-volume -0.32% \u2264 0 (fee-negative)"
     },
     "commodity_carry": {
       "verdict": "PASS",
-      "sharpe_1y": 2.636660294163785,
-      "sharpe_2y": 0.9145995969632968,
-      "sharpe_5y": 1.628285514337463,
-      "pnl_1y": 5965.25,
-      "pnl_2y": 4965.91,
-      "pnl_5y": 9413.81,
-      "n_trades_5y": 31,
-      "return_on_volume_pct": 6.073,
-      "reason": "Sharpe 1.628285514337463 over 5y, positive 3/3 windows, 31 trades"
+      "sharpe_1y": 1.9659393940857497,
+      "sharpe_2y": 1.3861931138266215,
+      "sharpe_5y": 1.1367418492211097,
+      "pnl_1y": 5404.66,
+      "pnl_2y": 7044.32,
+      "pnl_5y": 7134.34,
+      "n_trades_5y": 32,
+      "return_on_volume_pct": 4.459,
+      "reason": "Sharpe 1.1367418492211097 over 5y, positive 3/3 windows, 32 trades"
     },
     "commodity_momentum": {
       "verdict": "PASS",
@@ -89,15 +89,15 @@
     },
     "crypto_funding_carry": {
       "verdict": "FAIL",
-      "sharpe_1y": -19.0104935968839,
-      "sharpe_2y": -19.0104935968839,
-      "sharpe_5y": -19.0104935968839,
-      "pnl_1y": -232.08,
-      "pnl_2y": -232.08,
-      "pnl_5y": -232.08,
-      "n_trades_5y": 95,
+      "sharpe_1y": -19.405647359587036,
+      "sharpe_2y": -19.405647359587036,
+      "sharpe_5y": -19.405647359587036,
+      "pnl_1y": -237.56,
+      "pnl_2y": -237.56,
+      "pnl_5y": -237.56,
+      "n_trades_5y": 97,
       "return_on_volume_pct": -0.049,
-      "reason": "5y Sharpe -19.0104935968839 < 0.5; positive in only 0/3 windows (overfit risk); return-on-volume -0.05% \u2264 0 (fee-negative)"
+      "reason": "5y Sharpe -19.405647359587036 < 0.5; positive in only 0/3 windows (overfit risk); return-on-volume -0.05% \u2264 0 (fee-negative)"
     },
     "dividend_growth": {
       "verdict": "PASS",
@@ -125,15 +125,15 @@
     },
     "earnings_momentum": {
       "verdict": "PASS",
-      "sharpe_1y": -0.9947321705568171,
-      "sharpe_2y": 1.6337782369929965,
-      "sharpe_5y": 1.9947636186654116,
-      "pnl_1y": -3468.47,
-      "pnl_2y": 8208.97,
-      "pnl_5y": 11699.92,
-      "n_trades_5y": 139,
-      "return_on_volume_pct": 1.683,
-      "reason": "Sharpe 1.9947636186654116 over 5y, positive 2/3 windows, 139 trades"
+      "sharpe_1y": -0.11823737333556512,
+      "sharpe_2y": 1.9830154051956774,
+      "sharpe_5y": 2.2948556329572827,
+      "pnl_1y": -519.04,
+      "pnl_2y": 11158.4,
+      "pnl_5y": 14649.35,
+      "n_trades_5y": 144,
+      "return_on_volume_pct": 2.035,
+      "reason": "Sharpe 2.2948556329572827 over 5y, positive 2/3 windows, 144 trades"
     },
     "internationals_rotation": {
       "verdict": "PASS",
@@ -185,39 +185,39 @@
     },
     "multifactor_equity": {
       "verdict": "PASS",
-      "sharpe_1y": 3.272,
-      "sharpe_2y": 3.498,
+      "sharpe_1y": -18.261,
+      "sharpe_2y": 9.888,
       "sharpe_5y": 9.4,
-      "pnl_1y": 36.95,
-      "pnl_2y": 1204.39,
+      "pnl_1y": -604.35,
+      "pnl_2y": 3572.45,
       "pnl_5y": 14918.88,
       "n_trades_5y": 38,
       "return_on_volume_pct": 10.409,
-      "reason": "Sharpe 9.4 over 5y, positive 3/3 windows, 38 trades"
+      "reason": "Sharpe 9.4 over 5y, positive 2/3 windows, 38 trades"
     },
     "pead": {
       "verdict": "PASS",
-      "sharpe_1y": -0.9947321705568171,
-      "sharpe_2y": 1.6337782369929965,
-      "sharpe_5y": 1.9947636186654116,
-      "pnl_1y": -3468.47,
-      "pnl_2y": 8208.97,
-      "pnl_5y": 11699.92,
-      "n_trades_5y": 139,
-      "return_on_volume_pct": 1.683,
-      "reason": "Sharpe 1.9947636186654116 over 5y, positive 2/3 windows, 139 trades"
+      "sharpe_1y": -0.11823737333556512,
+      "sharpe_2y": 1.9830154051956774,
+      "sharpe_5y": 2.2948556329572827,
+      "pnl_1y": -519.04,
+      "pnl_2y": 11158.4,
+      "pnl_5y": 14649.35,
+      "n_trades_5y": 144,
+      "return_on_volume_pct": 2.035,
+      "reason": "Sharpe 2.2948556329572827 over 5y, positive 2/3 windows, 144 trades"
     },
     "risk_parity_etf": {
       "verdict": "PASS",
-      "sharpe_1y": 16.246,
-      "sharpe_2y": 9.994,
-      "sharpe_5y": 9.67,
-      "pnl_1y": 142.32,
-      "pnl_2y": 356.02,
-      "pnl_5y": 861.48,
-      "n_trades_5y": 41,
-      "return_on_volume_pct": 8.134,
-      "reason": "Sharpe 9.67 over 5y, positive 3/3 windows, 41 trades"
+      "sharpe_1y": 15.907,
+      "sharpe_2y": 10.677,
+      "sharpe_5y": 12.493,
+      "pnl_1y": 175.66,
+      "pnl_2y": 397.07,
+      "pnl_5y": 877.06,
+      "n_trades_5y": 39,
+      "return_on_volume_pct": 8.584,
+      "reason": "Sharpe 12.493 over 5y, positive 3/3 windows, 39 trades"
     },
     "sector_rotation": {
       "verdict": "PASS",
@@ -233,15 +233,15 @@
     },
     "thematic_growth": {
       "verdict": "PASS",
-      "sharpe_1y": -4.677,
-      "sharpe_2y": 4.462,
-      "sharpe_5y": 3.172,
-      "pnl_1y": -430.9,
-      "pnl_2y": 2240.42,
-      "pnl_5y": 10526.59,
-      "n_trades_5y": 234,
-      "return_on_volume_pct": 8.842,
-      "reason": "Sharpe 3.172 over 5y, positive 2/3 windows, 234 trades"
+      "sharpe_1y": -9.007,
+      "sharpe_2y": 4.58,
+      "sharpe_5y": 3.075,
+      "pnl_1y": -673.6,
+      "pnl_2y": 2300.21,
+      "pnl_5y": 10579.37,
+      "n_trades_5y": 236,
+      "return_on_volume_pct": 8.686,
+      "reason": "Sharpe 3.075 over 5y, positive 2/3 windows, 236 trades"
     },
     "tsmom_etf": {
       "verdict": "UNPROVEN",
@@ -257,15 +257,15 @@
     },
     "vol_managed_overlay": {
       "verdict": "FAIL",
-      "sharpe_1y": 0.283,
-      "sharpe_2y": -1.479,
-      "sharpe_5y": -0.166,
-      "pnl_1y": 5.76,
-      "pnl_2y": -59.09,
-      "pnl_5y": -13.16,
+      "sharpe_1y": -0.579,
+      "sharpe_2y": -1.531,
+      "sharpe_5y": -0.127,
+      "pnl_1y": 0.15,
+      "pnl_2y": -57.98,
+      "pnl_5y": -4.07,
       "n_trades_5y": 155,
-      "return_on_volume_pct": -1.739,
-      "reason": "5y Sharpe -0.166 < 0.5; positive in only 1/3 windows (overfit risk); return-on-volume -1.74% \u2264 0 (fee-negative)"
+      "return_on_volume_pct": -1.346,
+      "reason": "5y Sharpe -0.127 < 0.5; positive in only 1/3 windows (overfit risk); return-on-volume -1.35% \u2264 0 (fee-negative)"
     }
   }
 }

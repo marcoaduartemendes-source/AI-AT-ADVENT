@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-05-26T10:35:18.031624+00:00",
-  "overall_grade": 4.92,
+  "as_of": "2026-05-27T10:37:51.943192+00:00",
+  "overall_grade": 4.82,
   "target_grade": 9.0,
   "weights": {
     "alpha_track": 0.22,
@@ -26,8 +26,8 @@
       "reason": "3/50 trades from PASS strategies \u2192 0.6/10"
     },
     "overfit_resistance": {
-      "score": 8.3,
-      "reason": "10/12 PASSes are also walk-forward ROBUST \u2192 8.3/10"
+      "score": 7.5,
+      "reason": "9/12 PASSes are also walk-forward ROBUST \u2192 7.5/10"
     },
     "execution_quality": {
       "score": 2.2,
@@ -59,7 +59,7 @@
     ],
     "next": [
       "Submit ratio submit ratio 54/245 \u2014 investigate why proposals are being rejected.",
-      "Current grade 4.92/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
+      "Current grade 4.82/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
     ]
   }
 }
