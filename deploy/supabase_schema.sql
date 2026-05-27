@@ -16,11 +16,19 @@
 --
 -- Idempotent — uses CREATE TABLE IF NOT EXISTS, safe to re-run.
 --
--- Row Level Security is INTENTIONALLY DISABLED on these tables.
--- They're only ever written by the orchestrator using the service_role
--- key (which bypasses RLS anyway). Adding RLS would just be cargo-cult
--- security theater here. If you ever expose any of this to a public
--- client (you shouldn't), enable RLS first.
+-- Row Level Security: ENABLED on every table (2026-05-23 audit fix).
+-- The bot writes with the service_role key, which BYPASSES RLS, so this
+-- doesn't change the bot's behaviour — but it slams the door on the
+-- anon/public API key, which by default has read access to any
+-- RLS-disabled table. Without RLS, anyone who guesses or scrapes the
+-- anon key (often grep-able from frontend code) could read the full
+-- trade ledger, equity history, and kill-switch events. Supabase's
+-- dashboard correctly flags RLS-off as a security warning.
+--
+-- The orchestrator continues to work unchanged because service_role
+-- ignores RLS. No policies are added below; that produces a deny-all
+-- result for every non-service_role identity, which is exactly what
+-- this internal trading bot needs.
 
 -- ─── trades — every order we placed ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS trades (
@@ -148,6 +156,27 @@ CREATE TABLE IF NOT EXISTS strategic_review (
 );
 CREATE INDEX IF NOT EXISTS idx_strategic_review_ts
     ON strategic_review(timestamp DESC);
+
+
+-- ─── Row Level Security (2026-05-23 security audit fix) ───────────
+-- ENABLE on every table. Idempotent — re-running is a no-op. Service
+-- role bypasses RLS so the orchestrator is unaffected; anon/public
+-- access becomes deny-all (no policies attached = deny-by-default).
+ALTER TABLE trades             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE equity_snapshots   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kill_switch_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE allocations        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lifecycle_events   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE strategy_state     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE signals            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE strategic_review   ENABLE ROW LEVEL SECURITY;
+-- Belt-and-suspenders: explicitly revoke the default PUBLIC grants
+-- (Postgres ships SELECT to PUBLIC on new tables in some configs).
+-- service_role keeps full access via its role grant.
+REVOKE ALL ON trades, equity_snapshots, kill_switch_events,
+              allocations, lifecycle_events, strategy_state,
+              signals, strategic_review
+       FROM PUBLIC, anon, authenticated;
 
 
 -- ─── Reset/cleanup helpers (for dev) ───────────────────────────────
