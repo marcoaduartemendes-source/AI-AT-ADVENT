@@ -184,3 +184,71 @@ def fifo_realized_by_strategy(db_path: str) -> dict[str, float]:
     """Total FIFO realized P&L per strategy (sum of close events)."""
     return {s: round(sum(e["pnl_usd"] for e in evs), 2)
             for s, evs in fifo_realized_events(db_path).items()}
+
+
+def normalize_symbol(sym: str) -> str:
+    """Canonical key for matching a broker position to a ledger row.
+
+    The #1 cause of "<unattributed>" P&L was format drift between how a
+    venue reports an open position and how product_id was stored:
+        Coinbase position "BTC"    vs ledger "BTC-USD"
+        Alpaca   crypto   "BTC/USD" vs "BTCUSD"
+    Collapse all of these to the base asset. Equity/ETF tickers (no
+    separator) pass through unchanged.
+    """
+    s = str(sym or "").upper().strip().replace("/", "-")
+    if "-" in s:                      # crypto pair → base asset
+        s = s.split("-", 1)[0]
+    return s
+
+
+def fifo_open_positions(db_path: str) -> dict[str, dict[str, float]]:
+    """Per-(normalized-symbol) open inventory split BY strategy, via the
+    same FIFO walk used for realized P&L.
+
+    Returns {norm_symbol: {strategy: open_qty}} for every symbol with a
+    net-long open position in the ledger. The authoritative source for
+    attributing a live broker position's unrealized P&L back to the
+    strategies that opened it — proportional to each strategy's remaining
+    open lots — so it never lands in "<unattributed>" merely because two
+    strategies share a symbol or the symbol format differs.
+    """
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT strategy, product_id, side, quantity, price
+              FROM trades
+             WHERE price IS NOT NULL AND price > 0
+             ORDER BY timestamp ASC, id ASC
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    books: dict[tuple[str, str], deque[_Lot]] = defaultdict(deque)
+    for r in rows:
+        qty = float(r["quantity"] or 0)
+        px = float(r["price"] or 0)
+        if qty <= 0 or px <= 0:
+            continue
+        key = (r["strategy"], normalize_symbol(r["product_id"]))
+        if r["side"] == "BUY":
+            books[key].append(_Lot(qty=qty, price=px))
+            continue
+        remaining = qty
+        while remaining > 0 and books[key]:
+            lot = books[key][0]
+            matched = min(lot.qty, remaining)
+            lot.qty -= matched
+            remaining -= matched
+            if lot.qty <= 1e-12:
+                books[key].popleft()
+
+    out: dict[str, dict[str, float]] = defaultdict(dict)
+    for (strategy, sym), lots in books.items():
+        open_qty = sum(lot.qty for lot in lots)
+        if open_qty > 1e-9:
+            out[sym][strategy] = round(open_qty, 10)
+    return dict(out)
