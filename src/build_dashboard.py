@@ -271,13 +271,71 @@ def _realized_pnl_drift(db_path: str) -> dict | None:
     }
 
 
-def _live_unrealized_by_strategy() -> dict[str, float]:
-    """Return per-strategy unrealized P&L by querying live broker
-    positions and attributing each symbol to the strategy that
-    last opened it (per the trades ledger).
+def _open_lots_by_symbol() -> dict[str, dict[str, float]]:
+    """{normalized_symbol: {strategy: open_qty}} for attribution.
 
-    Empty dict when broker creds aren't configured or nothing is
-    open; the dashboard treats absent strategies as 0 unrealized.
+    Primary: FIFO open lots from the local trades ledger. Fallback (when
+    the local DB is empty/fresh — e.g. a rebuilt droplet): reconstruct
+    from Supabase's persistent trade history, which survives local DB
+    resets. This is what kills "<unattributed>" after a DB wipe.
+    """
+    db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
+    if Path(db_path).exists():
+        try:
+            from trading.recompute import fifo_open_positions
+            lots = fifo_open_positions(db_path)
+            if lots:
+                return lots
+        except Exception as e:
+            logger.debug(f"fifo_open_positions failed: {e}")
+
+    # Supabase fallback — rebuild a FIFO from the persisted ledger.
+    try:
+        from common.supabase_store import SupabaseStore
+        from trading.recompute import normalize_symbol
+        sb = SupabaseStore()
+        if not sb.is_configured():
+            return {}
+        rows = sb.recent_trades(limit=5000)
+        from collections import defaultdict, deque
+        books: dict[tuple[str, str], deque] = defaultdict(deque)
+        for r in sorted(rows, key=lambda x: str(x.get("timestamp", ""))):
+            qty = float(r.get("quantity") or 0)
+            px = float(r.get("price") or 0)
+            if qty <= 0 or px <= 0:
+                continue
+            key = (r.get("strategy"), normalize_symbol(r.get("product_id")))
+            if (r.get("side") or "").upper() == "BUY":
+                books[key].append(qty)
+            else:
+                rem = qty
+                while rem > 0 and books[key]:
+                    take = min(books[key][0], rem)
+                    books[key][0] -= take
+                    rem -= take
+                    if books[key][0] <= 1e-12:
+                        books[key].popleft()
+        out: dict[str, dict[str, float]] = {}
+        for (strat, sym), q in books.items():
+            tot = sum(q)
+            if tot > 1e-9 and strat:
+                out.setdefault(sym, {})[strat] = tot
+        return out
+    except Exception as e:
+        logger.debug(f"supabase open-lots fallback failed: {e}")
+        return {}
+
+
+def _live_unrealized_by_strategy() -> dict[str, float]:
+    """Per-strategy unrealized P&L from live broker positions, attributed
+    via FIFO open lots (symbol-normalized, multi-strategy proportional).
+
+    Each broker position's unrealized P&L is split across the strategies
+    holding open lots in that (normalized) symbol, proportional to each
+    strategy's open quantity. A position with NO matching ledger lots —
+    genuinely external or opened before tracking — is labelled
+    "<unattributed: no ledger entry>" so it's honest, not silent. Empty
+    dict when broker creds aren't configured.
     """
     out: dict[str, float] = {}
     try:
@@ -288,25 +346,8 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
     if not brokers:
         return out
 
-    # Map (venue, symbol) -> strategy by looking at the most recent
-    # opening BUY for that pair in the trades ledger.
-    db_path = os.environ.get("TRADING_DB_PATH", "data/trading_performance.db")
-    sym_to_strategy: dict[tuple[str, str], str] = {}
-    if Path(db_path).exists():
-        try:
-            with sqlite3.connect(db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                for r in conn.execute(
-                    "SELECT venue, product_id, strategy "
-                    "  FROM trades "
-                    " WHERE side = 'BUY' AND venue IS NOT NULL "
-                    "   AND product_id IS NOT NULL "
-                    "   AND strategy IS NOT NULL "
-                    " ORDER BY id ASC"
-                ).fetchall():
-                    sym_to_strategy[(r["venue"], r["product_id"])] = r["strategy"]
-        except sqlite3.Error as e:
-            logger.debug(f"sym_to_strategy query failed: {e}")
+    from trading.recompute import normalize_symbol
+    open_lots = _open_lots_by_symbol()       # {norm_symbol: {strategy: qty}}
 
     for venue, adapter in brokers.items():
         try:
@@ -318,13 +359,18 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
             unrealized = float(p.unrealized_pnl_usd or 0.0)
             if unrealized == 0.0:
                 continue
-            strategy = sym_to_strategy.get((venue, p.symbol))
-            if strategy is None:
-                # Position not attributable to any tracked strategy;
-                # bucket under "<unattributed>" so the dashboard total
-                # still reflects it.
-                strategy = "<unattributed>"
-            out[strategy] = out.get(strategy, 0.0) + unrealized
+            weights = open_lots.get(normalize_symbol(p.symbol))
+            if weights:
+                total_qty = sum(weights.values())
+                # Split this position's unrealized across the strategies
+                # that hold it, proportional to open quantity.
+                for strat, qty in weights.items():
+                    share = (qty / total_qty) if total_qty > 0 else 0.0
+                    out[strat] = out.get(strat, 0.0) + unrealized * share
+            else:
+                out["<unattributed: no ledger entry>"] = (
+                    out.get("<unattributed: no ledger entry>", 0.0)
+                    + unrealized)
     return out
 
 

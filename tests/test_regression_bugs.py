@@ -529,3 +529,93 @@ class TestFifoCanonicalRealized:
         ])
         m = StrategyPerformance(db_path=db).metrics_for("s1", window_days=3650)
         assert m.total_pnl_usd == pytest.approx(10.0)   # FIFO, not 5000
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Bug #10 — "<unattributed>" unrealized P&L. The dashboard matched a live
+# broker position to the ledger by EXACT (venue, symbol) against the most
+# recent BUY, so it dumped P&L into "<unattributed>" on symbol-format
+# drift (Coinbase "BTC" vs ledger "BTC-USD"), multi-strategy symbols, or
+# a wiped local DB. Fixed with FIFO open-lot attribution + symbol
+# normalization + proportional split.
+# ─────────────────────────────────────────────────────────────────────
+class TestUnattributedPnLFixed:
+    def _db(self, tmp_path, rows):
+        db = tmp_path / "t.db"
+        conn = sqlite3.connect(db)
+        conn.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                     "timestamp TEXT, strategy TEXT, product_id TEXT, side TEXT, "
+                     "quantity REAL, price REAL, pnl_usd REAL, fill_status TEXT)")
+        conn.executemany(
+            "INSERT INTO trades (timestamp,strategy,product_id,side,quantity,"
+            "price,pnl_usd,fill_status) VALUES (?,?,?,?,?,?,?,?)", rows)
+        conn.commit()
+        conn.close()
+        return str(db)
+
+    def test_symbol_normalization_collapses_formats(self):
+        from trading.recompute import normalize_symbol
+        assert normalize_symbol("BTC-USD") == "BTC"
+        assert normalize_symbol("BTC/USD") == "BTC"
+        assert normalize_symbol("btc") == "BTC"
+        assert normalize_symbol("AAPL") == "AAPL"      # equities untouched
+
+    def test_multi_strategy_open_lots_split(self, tmp_path):
+        from trading.recompute import fifo_open_positions
+        db = self._db(tmp_path, [
+            ("t1", "sA", "BTC-USD", "BUY", 3, 100, None, "FILLED"),
+            ("t2", "sB", "BTC-USD", "BUY", 2, 100, None, "FILLED"),
+            ("t3", "sA", "BTC-USD", "SELL", 1, 110, 10.0, "FILLED"),
+        ])
+        lots = fifo_open_positions(db)
+        assert lots == {"BTC": {"sA": 2.0, "sB": 2.0}}
+
+    def test_closed_position_has_no_open_lot(self, tmp_path):
+        from trading.recompute import fifo_open_positions
+        db = self._db(tmp_path, [
+            ("t1", "sC", "AAPL", "BUY", 10, 50, None, "FILLED"),
+            ("t2", "sC", "AAPL", "SELL", 10, 55, 50.0, "FILLED"),
+        ])
+        assert "AAPL" not in fifo_open_positions(db)
+
+    def test_dashboard_attribution_proportional_no_unattributed(self, tmp_path, monkeypatch):
+        import build_dashboard as bd
+
+        class _Pos:
+            def __init__(self, symbol, upnl):
+                self.symbol = symbol
+                self.unrealized_pnl_usd = upnl
+
+        class _Broker:
+            def get_positions(self):
+                # Broker reports a single netted BTC position (Coinbase
+                # format "BTC") with +$100 unrealized.
+                return [_Pos("BTC", 100.0)]
+
+        monkeypatch.setattr(bd, "build_brokers", None, raising=False)
+        monkeypatch.setattr("brokers.registry.build_brokers",
+                            lambda: {"coinbase": _Broker()})
+        # sA holds 3 open, sB holds 1 open (ledger stores "BTC-USD").
+        monkeypatch.setattr(bd, "_open_lots_by_symbol",
+                            lambda: {"BTC": {"sA": 3.0, "sB": 1.0}})
+        out = bd._live_unrealized_by_strategy()
+        assert out["sA"] == pytest.approx(75.0)   # 3/4 of +100
+        assert out["sB"] == pytest.approx(25.0)   # 1/4 of +100
+        assert not any("unattributed" in k for k in out)
+
+    def test_genuinely_external_position_labelled_clearly(self, tmp_path, monkeypatch):
+        import build_dashboard as bd
+
+        class _Pos:
+            symbol = "DOGE"
+            unrealized_pnl_usd = 42.0
+
+        class _Broker:
+            def get_positions(self):
+                return [_Pos()]
+
+        monkeypatch.setattr("brokers.registry.build_brokers",
+                            lambda: {"coinbase": _Broker()})
+        monkeypatch.setattr(bd, "_open_lots_by_symbol", lambda: {})   # no ledger
+        out = bd._live_unrealized_by_strategy()
+        assert out == {"<unattributed: no ledger entry>": 42.0}
