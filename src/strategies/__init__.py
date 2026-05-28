@@ -56,6 +56,7 @@ from .earnings_news_pead import EarningsNewsPEAD
 from .internationals_rotation import InternationalsRotation
 from .intraday_mean_reversion import IntradayMeanReversion
 from .kalshi_calibration_arb import KalshiCalibrationArb
+from .leveraged_champions import LeveragedChampions
 from .leveraged_momentum import LeveragedMomentum
 from .multifactor_equity import MultiFactorEquity
 from .macro_kalshi import MacroKalshi
@@ -93,6 +94,7 @@ __all__ = [
     # New (user-requested): leveraged trend + thematic basket + intraday MR
     "IntradayMeanReversion",
     "LeveragedMomentum",
+    "LeveragedChampions",
     "ThematicGrowth",
     # Cross-asset diversification — first non-equity-beta strategy
     "CrossAssetTrend",

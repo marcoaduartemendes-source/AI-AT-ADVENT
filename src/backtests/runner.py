@@ -567,6 +567,11 @@ def _leveraged_momentum_dispatch(window_days: int) -> BacktestSummary:
     return backtest_leveraged_momentum(window_days)
 
 
+def _leveraged_champions_dispatch(window_days: int) -> BacktestSummary:
+    from .leveraged_thematic_backtest import backtest_leveraged_champions
+    return backtest_leveraged_champions(window_days)
+
+
 def _thematic_growth_dispatch(window_days: int) -> BacktestSummary:
     from .leveraged_thematic_backtest import backtest_thematic_growth
     return backtest_thematic_growth(window_days)
@@ -926,6 +931,7 @@ _STRATEGY_BACKTESTS = {
     # registered DRY-only in run_orchestrator; the validation harness
     # backtests them here so the dashboard panel shows their verdict.
     "leveraged_momentum": _leveraged_momentum_dispatch,
+    "leveraged_champions": _leveraged_champions_dispatch,
     "thematic_growth": _thematic_growth_dispatch,
     "cross_asset_trend": _cross_asset_trend_dispatch,
     # Reuses pead's FMP-driven backtest with earnings_momentum branding

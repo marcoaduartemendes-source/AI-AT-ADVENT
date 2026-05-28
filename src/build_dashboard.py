@@ -328,13 +328,29 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
     return out
 
 
-def _portfolio_leverage(equity_usd: float) -> float | None:
-    """Gross leverage = Σ|market_value| across every live broker
-    position ÷ equity. None when no brokers/creds or zero equity.
+# Built-in leverage factor of known leveraged ETFs. A $1k TQQQ position
+# is $3k of economic Nasdaq exposure, so counting it at face notional
+# UNDERSTATES true leverage — which matters now that leveraged_momentum
+# and leveraged_champions hold these. Multiply face notional by these
+# to get ECONOMIC exposure for the gross-leverage stat.
+_LEVERAGED_ETF_FACTOR: dict[str, float] = {
+    "TQQQ": 3.0, "UPRO": 3.0, "SOXL": 3.0, "TNA": 3.0, "TMF": 3.0,
+    "SPXL": 3.0, "TECL": 3.0, "FAS": 3.0, "LABU": 3.0, "UDOW": 3.0,
+    "QLD": 2.0, "SSO": 2.0, "UGL": 2.0,
+}
 
-    Surfaced so the user can answer "how levered am I right now?" — the
-    3x ETF sleeve (leveraged_momentum) and any margin show up here.
-    Mirrors the risk engine's notional sum (risk/manager.compute_state).
+
+def _portfolio_leverage(equity_usd: float) -> float | None:
+    """Gross ECONOMIC leverage = Σ(|market_value| × etf_leverage_factor)
+    ÷ equity across every live broker position. None when no brokers/
+    creds or zero equity.
+
+    Leveraged-ETF positions are scaled by their built-in factor (TQQQ ×3,
+    SSO ×2, …) so the figure reflects true economic exposure — a 3x
+    sleeve held at $2k face shows as $6k of exposure, not $2k. Plain
+    positions count at face (factor 1.0). Answers "how levered am I
+    really?" — the leveraged_momentum / leveraged_champions sleeves and
+    any margin all surface here.
     """
     if not equity_usd or equity_usd <= 0:
         return None
@@ -350,8 +366,11 @@ def _portfolio_leverage(equity_usd: float) -> float | None:
     for venue, adapter in brokers.items():
         try:
             for p in adapter.get_positions():
-                gross += abs(float(p.market_price or 0.0)
-                             * float(p.quantity or 0.0))
+                face = abs(float(p.market_price or 0.0)
+                           * float(p.quantity or 0.0))
+                factor = _LEVERAGED_ETF_FACTOR.get(
+                    str(getattr(p, "symbol", "")).upper(), 1.0)
+                gross += face * factor
                 saw_position = True
         except Exception as e:
             logger.debug(f"[{venue}] get_positions for leverage: {e}")

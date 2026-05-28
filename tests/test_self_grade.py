@@ -37,3 +37,14 @@ class TestExecutionExcludesDry:
         g, _ = _grade_execution([{"timestamp": "t", "proposals_total": 10,
                                   "proposals_submitted": 8}])
         assert g == 8.0
+
+
+class TestEconomicLeverage:
+    """Gross-leverage stat must count leveraged-ETF positions at their
+    ECONOMIC exposure (TQQQ ×3), not face notional — otherwise the 3x
+    sleeves read as far less levered than they really are."""
+
+    def test_3x_etf_counts_triple(self):
+        import build_dashboard as bd
+        assert bd._LEVERAGED_ETF_FACTOR["TQQQ"] == 3.0
+        assert bd._LEVERAGED_ETF_FACTOR.get("SPY", 1.0) == 1.0
