@@ -56,6 +56,7 @@ def main() -> int:
     # the next dashboard build reflects them immediately.
     for mod, fn in (("common.performance_review", "run_performance_review"),
                      ("common.auto_demote", "run_auto_demote"),
+                     ("common.portfolio_intel", "run_portfolio_intel"),
                      ("common.data_quality", "run_data_quality"),
                      ("common.self_grade", "run_self_grade")):
         try:
