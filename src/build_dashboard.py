@@ -1167,6 +1167,50 @@ def _read_data_quality() -> dict | None:
         return None
 
 
+def _read_portfolio_intel() -> dict | None:
+    p = Path("docs/portfolio_intel.json")
+    if not p.exists():
+        return None
+    try:
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"portfolio_intel.json read failed: {e}")
+        return None
+
+
+def _render_portfolio_intel(pi: dict | None) -> str:
+    if not pi:
+        return ""
+    concentrated = pi.get("concentrated")
+    border = "#b45309" if concentrated else "#15803d"
+    enb = pi.get("effective_bets")
+    avg = pi.get("avg_pairwise_corr")
+    rows = "".join(
+        f"<tr><td>{html.escape(p['a'])}</td><td>{html.escape(p['b'])}</td>"
+        f"<td class=num>{p['corr']:+.2f}</td></tr>"
+        for p in (pi.get("top_correlated_pairs") or [])[:6]
+    )
+    pairs_tbl = (
+        f"<table style='margin-top:8px;font-size:12px'><thead><tr>"
+        f"<th>Strategy</th><th>Strategy</th><th class=num>Corr</th>"
+        f"</tr></thead><tbody>{rows}</tbody></table>" if rows else "")
+    return (
+        f'<section id="portfolio-intel"><h2>Portfolio intelligence — '
+        f'diversification</h2>'
+        f'<div style="background:white;border:2px solid {border};'
+        f'border-radius:8px;padding:12px 14px;margin-bottom:14px">'
+        f'<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:14px">'
+        f'<span><strong>Effective bets:</strong> '
+        f'{enb if enb is not None else "—"} of '
+        f'{pi.get("n_strategies_compared","—")}</span>'
+        f'<span><strong>Avg pairwise corr:</strong> '
+        f'{f"{avg:+.2f}" if avg is not None else "—"}</span></div>'
+        f'<p style="font-size:13px;margin:8px 0 0">'
+        f'{html.escape(pi.get("verdict",""))}</p>'
+        f'{pairs_tbl}</div></section>')
+
+
 def _render_data_quality(dq: dict | None) -> str:
     if not dq:
         return ""
@@ -1796,6 +1840,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     self_grade = _read_self_grade()
     hedge_funds = _read_hedge_funds()
     data_quality = _read_data_quality()
+    portfolio_intel = _read_portfolio_intel()
     # Live unrealized P&L per strategy — pulled from broker positions
     # at render time. Best-effort; absent or empty when creds missing.
     unrealized_by_strategy = _live_unrealized_by_strategy()
@@ -2130,6 +2175,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_render_improvements(improvements)}
 
 {_render_hedge_funds(hedge_funds)}
+
+{_render_portfolio_intel(portfolio_intel)}
 
 {_render_data_quality(data_quality)}
 
