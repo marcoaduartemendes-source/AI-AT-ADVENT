@@ -45,6 +45,7 @@ from strategies import (
     InternationalsRotation,
     IntradayMeanReversion,
     KalshiCalibrationArb,
+    LeveragedChampions,
     LeveragedMomentum,
     MacroKalshi,
     MacroKalshiV2,
@@ -206,6 +207,16 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
         description="3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)",
+    ),
+    # leveraged_champions: 3x exposure that DYNAMICALLY tracks the top-5
+    # PASS strategies (mapped to liquid 3x ETF proxies), same regime gate
+    # + hard stop as leveraged_momentum. Tiny + DRY until validated; 3x
+    # decay makes this the highest-risk sleeve, so the cap stays small.
+    StrategyMeta(
+        name="leveraged_champions",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        description="3x leverage tracking the top-5 PASS strategies (regime-gated, -15% stop)",
     ),
     # thematic_growth: curated 2026 themes (AI compute, AI power,
     # cybersec, defense, GLP-1, robotics, quantum) — within-theme
@@ -427,6 +438,7 @@ def build_strategies(brokers):
         # User-requested: leveraged trend + thematic basket. Tiny
         # DRY allocations until the validation harness PASSes them.
         instances["leveraged_momentum"] = LeveragedMomentum(al)
+        instances["leveraged_champions"] = LeveragedChampions(al)
         instances["thematic_growth"] = ThematicGrowth(al)
         instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
         instances["cross_asset_trend"] = CrossAssetTrend(al)

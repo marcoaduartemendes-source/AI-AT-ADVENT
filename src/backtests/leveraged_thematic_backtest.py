@@ -39,18 +39,44 @@ def backtest_leveraged_momentum(window_days: int) -> BacktestSummary:
     AND 60d realised vol ≤ 0.022, hold the 3x leg for the next month.
     Intra-month: stop out if the 3x position drops -15% from entry.
     Fees: 10bps round-trip (runner._FEE_RATE)."""
+    return _backtest_leveraged_pairs("leveraged_momentum", _LEV_PAIRS,
+                                     window_days)
+
+
+# Champions: distinct 3x proxies the top-5 PASS strategies map to (see
+# strategies/leveraged_champions.CHAMPION_PROXY). Backtested as a fixed
+# representative set — the live sleeve resolves the universe dynamically,
+# but the validation verdict reflects the same regime-gated 3x mechanics.
+_CHAMPION_PAIRS = [
+    ("UPRO", "SPY"),    # large-cap factor/momentum champions
+    ("TQQQ", "QQQ"),    # growth/earnings-momentum champions
+    ("SOXL", "SOXX"),   # thematic (AI/semis) champion
+    ("TMF",  "TLT"),    # bond-sleeve champion (risk_parity_etf)
+]
+
+
+def backtest_leveraged_champions(window_days: int) -> BacktestSummary:
+    """Regime-gated 3x hold on the proxy basket the top-5 PASS strategies
+    point to. Same mechanics as leveraged_momentum (200d SMA + vol gate +
+    -15% hard stop, monthly), different universe."""
+    return _backtest_leveraged_pairs("leveraged_champions", _CHAMPION_PAIRS,
+                                     window_days)
+
+
+def _backtest_leveraged_pairs(name: str, lev_pairs: list,
+                              window_days: int) -> BacktestSummary:
     need = _LEV_SMA + _LEV_VOL_LOOKBACK + window_days + 30
     hist3x: dict[str, np.ndarray] = {}
     histund: dict[str, np.ndarray] = {}
-    for lev, und in _LEV_PAIRS:
+    for lev, und in lev_pairs:
         hist3x[lev] = _yahoo_history(lev, need)
         histund[und] = _yahoo_history(und, need)
     # Drop pairs missing either history (e.g. SOXL pre-2010).
-    pairs = [(lev, und) for lev, und in _LEV_PAIRS
+    pairs = [(lev, und) for lev, und in lev_pairs
              if len(hist3x.get(lev, [])) >= _LEV_SMA + 5
              and len(histund.get(und, [])) >= _LEV_SMA + 5]
     if not pairs:
-        return BacktestSummary(strategy="leveraged_momentum",
+        return BacktestSummary(strategy=name,
                                 window_days=window_days,
                                 note="no Yahoo history for 3x ETFs")
 
@@ -77,7 +103,7 @@ def backtest_leveraged_momentum(window_days: int) -> BacktestSummary:
                 fees = (pos["qty"] * pos["entry_price"]
                          + pos["qty"] * cur) * _FEE_RATE
                 trades.append({
-                    "strategy": "leveraged_momentum", "side": "SELL",
+                    "strategy": name, "side": "SELL",
                     "product_id": lev, "amount_usd": pos["qty"] * cur,
                     "quantity": pos["qty"], "entry_price": pos["entry_price"],
                     "exit_price": cur, "open_time": pos["entry_time"],
@@ -105,7 +131,7 @@ def backtest_leveraged_momentum(window_days: int) -> BacktestSummary:
                                     "entry_time": bar_time.isoformat()}
                 entry_volume += _LEV_TGT_USD
                 trades.append({
-                    "strategy": "leveraged_momentum", "side": "BUY",
+                    "strategy": name, "side": "BUY",
                     "product_id": lev, "amount_usd": _LEV_TGT_USD,
                     "quantity": qty, "entry_price": lev_price,
                     "open_time": bar_time.isoformat(),
@@ -117,14 +143,14 @@ def backtest_leveraged_momentum(window_days: int) -> BacktestSummary:
                 fees = (pos["qty"] * pos["entry_price"]
                          + pos["qty"] * lev_price) * _FEE_RATE
                 trades.append({
-                    "strategy": "leveraged_momentum", "side": "SELL",
+                    "strategy": name, "side": "SELL",
                     "product_id": lev, "amount_usd": pos["qty"] * lev_price,
                     "quantity": pos["qty"], "entry_price": pos["entry_price"],
                     "exit_price": lev_price, "open_time": pos["entry_time"],
                     "close_time": bar_time.isoformat(),
                     "pnl_usd": gross - fees, "exit_reason": "regime_off",
                 })
-    return _equity_curve_to_summary("leveraged_momentum", window_days,
+    return _equity_curve_to_summary(name, window_days,
                                      trades, entry_volume)
 
 
