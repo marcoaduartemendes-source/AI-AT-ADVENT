@@ -89,8 +89,25 @@ def main() -> int:
     # Allow restart-without-TIME_WAIT delay so systemctl restart is snappy.
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("0.0.0.0", PORT), _Handler) as srv:
-        logger.info(f"dashboard-http: serving {ROOT} on :{PORT} "
-                    f"(HTTP Basic auth required, realm={REALM!r})")
+        # Optional TLS — wrap the socket if DASHBOARD_CERT + DASHBOARD_KEY
+        # are set. Lets the dashboard listen on 443 with HTTPS so it works
+        # from networks that block 8080 (common on home/mobile networks).
+        # 2026-05-30: added after port 8080 was consistently blocked from
+        # the user's network. Self-signed cert is fine — the basic-auth
+        # password is the security primitive; TLS just keeps it private
+        # on the wire and lets the URL be https://<ip>/.
+        cert = os.environ.get("DASHBOARD_CERT", "").strip()
+        key = os.environ.get("DASHBOARD_KEY", "").strip()
+        if cert and key:
+            import ssl
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(certfile=cert, keyfile=key)
+            srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+            scheme = "https"
+        else:
+            scheme = "http"
+        logger.info(f"dashboard-http: serving {ROOT} on {scheme}://:{PORT} "
+                    f"(Basic auth required, realm={REALM!r})")
         try:
             srv.serve_forever()
         except KeyboardInterrupt:
