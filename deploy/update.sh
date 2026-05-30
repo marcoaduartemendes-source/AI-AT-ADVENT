@@ -82,12 +82,18 @@ for f in cycle_status trades_recent benchmark validation walk_forward \
 done
 rm -rf "$_docs_bak"
 
+# 2026-05-30: do NOT early-exit when the code SHA is unchanged. The old
+# `exit 0` here skipped the systemd unit refresh (step 4), so a changed
+# unit file (e.g. dashboard-http.service port) never got installed when
+# the commit had already been pulled — the box kept running the stale
+# unit. Fall through so unit files + long-running services are always
+# reconciled, even on a no-op code pull. (Deps step below is a safe
+# no-op when CURRENT==NEW: the git diff is empty.)
 if [[ "$CURRENT" == "$NEW" ]]; then
-    echo "  already at $CURRENT — nothing to do"
-    systemctl start orchestrator.timer
-    exit 0
+    echo "  code already at $CURRENT — reconciling unit files + services anyway"
+else
+    echo "  $CURRENT → $NEW"
 fi
-echo "  $CURRENT → $NEW"
 
 echo "[3/6] Refreshing Python deps (only if requirements.txt changed)"
 if sudo -u "$SERVICE_USER" git diff "$CURRENT" "$NEW" --name-only | grep -q "^requirements.txt$"; then
