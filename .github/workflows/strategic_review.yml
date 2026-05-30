@@ -5,8 +5,6 @@ name: Strategic Review (weekly)
 # automatically — the user reviews them on the dashboard.
 
 on:
-  schedule:
-    - cron: "0 13 * * 1"      # Mondays at 13:00 UTC
   workflow_dispatch:
 
 permissions:

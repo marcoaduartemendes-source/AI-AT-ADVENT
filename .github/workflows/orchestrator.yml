@@ -6,8 +6,6 @@ name: Multi-Asset Orchestrator (DRY)
 # be retired and this one promoted.
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
   workflow_dispatch:
   # On-demand trigger: open an issue titled "run:orchestrator" to
   # fire a cycle immediately (the job guard below ignores all other

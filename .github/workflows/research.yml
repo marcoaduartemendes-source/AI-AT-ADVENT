@@ -6,8 +6,6 @@ name: Daily Research (validation + walk-forward)
 # ~22h (observed 2026-05-20→21). Verdicts barely move intraday.
 
 on:
-  schedule:
-    - cron: "30 6 * * *"      # 06:30 UTC daily, before US market open
   workflow_dispatch:
 
 permissions:

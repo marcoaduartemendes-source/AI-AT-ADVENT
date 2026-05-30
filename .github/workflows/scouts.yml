@@ -4,8 +4,6 @@ name: Scout Sweep
 # Strategies pick them up automatically on their next orchestrator cycle.
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"     # every 30 minutes
   workflow_dispatch:
 
 permissions:

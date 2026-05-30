@@ -1,14 +1,6 @@
 name: Build Dashboard
 
 on:
-  schedule:
-    # Backup-only schedule. The PRIMARY dashboard rebuild now happens
-    # at the end of orchestrator.yml (the same job that wrote the
-    # trades). This separate workflow runs every 30 min as a safety
-    # net in case the in-orchestrator rebuild step fails. If that
-    # never happens, this just emits no-op commits (suppressed by
-    # the content-hash gate) costing ~30s of CI minutes/hour.
-    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
