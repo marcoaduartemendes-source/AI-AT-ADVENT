@@ -1,14 +1,15 @@
 [Unit]
-Description=AI-AT-ADVENT dashboard static HTTP server (port 8080)
+Description=AI-AT-ADVENT dashboard static HTTP server (port 80)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 # Long-running HTTP server (NOT oneshot like dashboard.service which
-# rebuilds the file). Serves /opt/ai-at-advent/docs over HTTP so the
-# browser can fetch the latest index.html as fast as dashboard.timer
-# rebuilds it (30s). User opens http://<vps-ip>:8080/ in a browser
-# and the meta-refresh in the HTML reloads the file every 30s.
+# rebuilds the file). Serves /opt/ai-at-advent/docs over HTTP on the
+# standard web port so the URL is simply http://<vps-ip>/ — no port
+# suffix to mistype, no browsers auto-upgrading to https, no networks
+# that block 8080. Port 80 needs CAP_NET_BIND_SERVICE since we run as
+# the unprivileged `aaa` user; granted below (not full root).
 #
 # Why not nginx: this is a single static file with auto-reload — the
 # stdlib http.server is enough and adds zero install footprint.
@@ -16,6 +17,9 @@ Type=simple
 User=aaa
 Group=aaa
 WorkingDirectory=/opt/ai-at-advent
+Environment=DASHBOARD_PORT=80
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 # Source /etc/aaa.env so the basic-auth script sees DASHBOARD_USER /
 # DASHBOARD_PASS (it refuses to start without them — see
 # src/dashboard_http.py). Stock `python -m http.server` was world-
