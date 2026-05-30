@@ -20,12 +20,17 @@ Type=simple
 User=aaa
 Group=aaa
 WorkingDirectory=/opt/ai-at-advent
-# Source /etc/aaa.env so the basic-auth script sees DASHBOARD_USER /
-# DASHBOARD_PASS (it refuses to start without them — see
-# src/dashboard_http.py). Stock `python -m http.server` was world-
-# readable on whatever port the firewall let through; this is the
-# audit fix.
-ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/dashboard_http.py'
+# Dashboard auth creds (DASHBOARD_USER / DASHBOARD_PASS) come from a
+# DEDICATED file, NOT the big /etc/aaa.env. 2026-05-30: a reboot wiped
+# the creds out of aaa.env and the service crash-looped for hours
+# ("FATAL: DASHBOARD_USER ... must be set"). aaa.env is also fragile to
+# source (multi-line KALSHI PEM). The dedicated /etc/aaa-dashboard.env
+# is loaded directly by systemd (the leading `-` makes it optional so
+# the unit never fails to load), so nothing else can break the
+# dashboard's auth. We still source aaa.env for any other vars the
+# build might reference, but the creds no longer depend on it.
+EnvironmentFile=-/etc/aaa-dashboard.env
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env 2>/dev/null || true; set +a; exec /opt/ai-at-advent/.venv/bin/python src/dashboard_http.py'
 Restart=on-failure
 RestartSec=5
 
