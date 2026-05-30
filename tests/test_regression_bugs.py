@@ -171,8 +171,16 @@ class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
         # base_increment must be set or the strategy will round qty
         # down to 0 and skip — observed 2026-05-08 INVALID_SIZE_PRECISION
         # fix added base_increment-aware rounding.
+        #
+        # 2026-05-30: the expiry MUST be computed relative to now, not
+        # hardcoded. A previously-hardcoded "29MAY26" silently expired and
+        # the strategy correctly skipped the dead contract → the test
+        # started failing with time, not with any code change. Generate a
+        # contract ~90 days out so it's always live.
+        from datetime import timedelta
+        expiry = (datetime.now(UTC) + timedelta(days=90)).strftime("%d%b%y").upper()
         fake_products = [
-            {"product_id": "ET-29MAY26-CDE", "price": "3500",
+            {"product_id": f"ET-{expiry}-CDE", "price": "3500",
              "base_increment": "0.001"},
         ]
         from strategies import crypto_basis_trade as cbt
