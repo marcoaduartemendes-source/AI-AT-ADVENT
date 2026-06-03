@@ -145,6 +145,7 @@ def _strategy_meta() -> dict[str, dict]:
                 "venue": m.venue,
                 "asset_classes": list(m.asset_classes),
                 "description": getattr(m, "description", ""),
+                "group": getattr(m, "group", "OTHER"),
             }
     except ImportError:
         pass
@@ -652,6 +653,26 @@ def _fmt_pct(x: float) -> str:
     return f"{x * 100:.1f}%"
 
 
+# Strategy-group display metadata: emoji + human label + display order
+# (top = highest-conviction / largest sleeves, bottom = experimental
+# / overlay / informational). Drives the group-header rows in the
+# strategy table.
+_GROUP_DISPLAY: dict[str, tuple[str, str, int]] = {
+    "TREND":         ("📈", "Trend-following",            10),
+    "FACTOR":        ("📊", "Equity factor",              20),
+    "MACRO":         ("🌍", "Global macro",               25),
+    "CARRY":         ("💰", "Carry & yield",              30),
+    "DEFENSIVE":     ("🛡️", "Defensive / risk-parity",   40),
+    "MEAN_REVERSION":("🔄", "Mean reversion",             50),
+    "EVENT":         ("📰", "Event-driven",               55),
+    "CRYPTO":        ("₿",  "Crypto",                     60),
+    "PREDICTION":    ("🎯", "Prediction markets",         70),
+    "LEVERAGED":     ("⚡", "Leveraged (3x)",             80),
+    "OVERLAY":       ("⚙️", "Overlays (no trades)",       90),
+    "OTHER":         ("•",  "Other",                       95),
+}
+
+
 def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = None) -> str:
     venue = meta.get("venue", "—") if meta else "—"
     mode_color, mode_label = _MODE_BADGE.get(mode, ("#4b5563", mode))
@@ -683,6 +704,55 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = No
         f"<td>{html.escape(last_label)}</td>"
         f"</tr>"
     )
+
+
+def _group_header_row(group: str, members: list[tuple[str, dict, dict, str]]) -> str:
+    """Visual section header inside the strategy table: emoji + name +
+    count + group P&L subtotal. Spans all 10 columns."""
+    emoji, label, _ = _GROUP_DISPLAY.get(group, _GROUP_DISPLAY["OTHER"])
+    subtotal = sum(
+        (p.get("realized_pnl_usd", 0.0) + p.get("unrealized_pnl_usd", 0.0))
+        for _, _, p, _ in members
+    )
+    color = "#166534" if subtotal > 0 else ("#7f1d1d" if subtotal < 0 else "#4b5563")
+    return (
+        f'<tr data-group-header="1" style="background:#eef2f7">'
+        f'<td colspan=8 style="padding:8px 12px;font-weight:600;'
+        f'color:#1f2937;font-size:13px;'
+        f'border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">'
+        f'{emoji}&nbsp;&nbsp;{html.escape(label)}'
+        f'<span class="group-pill">{html.escape(group)}</span>'
+        f'<span style="font-weight:400;color:#6b7280;margin-left:8px">'
+        f'· {len(members)} strateg{"y" if len(members)==1 else "ies"}</span>'
+        f'</td>'
+        f'<td class=num style="color:{color};font-weight:600;'
+        f'border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">'
+        f'{_fmt_money(subtotal)}</td>'
+        f'<td style="border-top:1px solid #e5e7eb;'
+        f'border-bottom:1px solid #e5e7eb"></td></tr>'
+    )
+
+
+def _grouped_body_rows(rows: list[tuple[str, dict, dict, str]]) -> str:
+    """Insert group-header rows between rank-sorted strategies so the
+    table reads like a clean roster organized by edge type."""
+    if not rows:
+        return ""
+    # Bucket by group (stable order: by group display priority, then
+    # original rank inside each group — already sorted by total P&L desc).
+    by_group: dict[str, list[tuple]] = {}
+    for r in rows:
+        g = (r[1].get("group") or "OTHER") if r[1] else "OTHER"
+        by_group.setdefault(g, []).append(r)
+    out_html: list[str] = []
+    rank = 0
+    for g in sorted(by_group, key=lambda gg: _GROUP_DISPLAY.get(gg, _GROUP_DISPLAY["OTHER"])[2]):
+        members = by_group[g]
+        out_html.append(_group_header_row(g, members))
+        for n, m, p, md in members:
+            rank += 1
+            out_html.append(_row_html(n, m, p, md, rank=rank))
+    return "\n".join(out_html)
 
 
 def _render_mode_diagnostic(diag: dict, venue_modes: list[tuple[str, str]]) -> str:
@@ -1950,10 +2020,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     ks = (risk.get("kill_switch") or "UNKNOWN").upper()
     ks_color, ks_emoji = _KS_COLOR.get(ks, _KS_COLOR["UNKNOWN"])
 
-    body_rows = "\n".join(
-        _row_html(n, m, p, md, rank=i + 1)
-        for i, (n, m, p, md) in enumerate(rows)
-    )
+    body_rows = _grouped_body_rows(rows)
     if not rows:
         body_rows = (
             "<tr><td colspan=10 style='text-align:center;color:#6b7280;"
@@ -2082,6 +2149,31 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   .narrative-grid .card ul {{ margin: 0; padding-left: 14px;
                                 color: #e2e8f0; }}
   td.num, th.num, .num-cell {{ font-variant-numeric: tabular-nums; }}
+  /* ── 2026-06-03 UI polish: sticky headers, hover, density ─────── */
+  table {{ box-shadow: 0 1px 2px rgba(15,23,42,0.04); }}
+  thead th {{ position: sticky; top: 36px; z-index: 10;
+              background: #f3f4f6; box-shadow: inset 0 -1px 0 #e5e7eb; }}
+  tbody tr:hover td {{ background: #fafbfc; }}
+  tbody tr[data-group-header] {{ position: sticky; top: 72px; z-index: 5; }}
+  .stat {{ transition: transform 120ms ease, box-shadow 120ms ease; }}
+  .stat:hover {{ transform: translateY(-1px);
+                 box-shadow: 0 4px 10px rgba(15,23,42,0.06); }}
+  .stat .value {{ letter-spacing: -0.01em; }}
+  h2 {{ margin-top: 28px; font-size: 16px; color: #1f2937; }}
+  .group-pill {{ display: inline-block; padding: 1px 7px; border-radius: 9999px;
+                 background: #eef2ff; color: #4338ca; font-size: 10px;
+                 font-weight: 600; text-transform: uppercase;
+                 letter-spacing: 0.05em; margin-left: 6px; vertical-align: middle; }}
+  @media (max-width: 720px) {{
+    body {{ margin: 12px auto; padding: 0 10px; }}
+    .grade-hero {{ grid-template-columns: 1fr; }}
+    .grade-hero .score {{ border-right: 0;
+                            border-bottom: 1px solid rgba(255,255,255,0.15);
+                            padding-right: 0; padding-bottom: 10px; }}
+    table {{ font-size: 12px; }}
+    th, td {{ padding: 7px 6px; }}
+    .nav {{ font-size: 11px; gap: 8px; }}
+  }}
 </style>
 </head>
 <body>

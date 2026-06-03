@@ -105,38 +105,63 @@
   .narrative-grid .card ul { margin: 0; padding-left: 14px;
                                 color: #e2e8f0; }
   td.num, th.num, .num-cell { font-variant-numeric: tabular-nums; }
+  /* ── 2026-06-03 UI polish: sticky headers, hover, density ─────── */
+  table { box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+  thead th { position: sticky; top: 36px; z-index: 10;
+              background: #f3f4f6; box-shadow: inset 0 -1px 0 #e5e7eb; }
+  tbody tr:hover td { background: #fafbfc; }
+  tbody tr[data-group-header] { position: sticky; top: 72px; z-index: 5; }
+  .stat { transition: transform 120ms ease, box-shadow 120ms ease; }
+  .stat:hover { transform: translateY(-1px);
+                 box-shadow: 0 4px 10px rgba(15,23,42,0.06); }
+  .stat .value { letter-spacing: -0.01em; }
+  h2 { margin-top: 28px; font-size: 16px; color: #1f2937; }
+  .group-pill { display: inline-block; padding: 1px 7px; border-radius: 9999px;
+                 background: #eef2ff; color: #4338ca; font-size: 10px;
+                 font-weight: 600; text-transform: uppercase;
+                 letter-spacing: 0.05em; margin-left: 6px; vertical-align: middle; }
+  @media (max-width: 720px) {
+    body { margin: 12px auto; padding: 0 10px; }
+    .grade-hero { grid-template-columns: 1fr; }
+    .grade-hero .score { border-right: 0;
+                            border-bottom: 1px solid rgba(255,255,255,0.15);
+                            padding-right: 0; padding-bottom: 10px; }
+    table { font-size: 12px; }
+    th, td { padding: 7px 6px; }
+    .nav { font-size: 11px; gap: 8px; }
+  }
 </style>
 </head>
 <body>
 
 <h1>AI-AT-ADVENT — Performance Control</h1>
 <div class="meta">
-  Snapshot: <time data-ts="snapshot">2026-05-04 09:06 ET</time>
+  Snapshot: <time data-ts="snapshot">—</time>
   · Updated every 5 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
 </div>
 <div class="nav"><strong style="color:#111827">JUMP →</strong><a href="#grade">Self-grade</a><a href="#improvements">Action queue</a><a href="#validation">Validation</a><a href="#hedge-funds">Hedge funds</a><a href="#data-quality">Data quality</a><a href="#strategies">Strategies</a><a href="#trades">Trades</a></div>
 
 <div class="grade-hero" id="grade">
   <div class="score">
-    <div class="big" style="color:#facc15">5.01</div>
+    <div class="big" style="color:#f97316">3.22</div>
     <div class="of">/ 10</div>
     <div class="target">target ≥ 9.0</div>
   </div>
   <div class="right">
-    <h3>Self-grade — 2026-05-30</h3>
-    <div class="bars"><div class="bar-row"><div class="label">alpha track</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#22c55e"></div></div><div class="score-cell">10.0</div></div><div class="bar-row"><div class="label">alpha vs spy</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#ef4444"></div></div><div class="score-cell">0.0</div></div><div class="bar-row"><div class="label">fee discipline</div><div class="bar-track"><div class="bar-fill" style="width:6.0%;background:#ef4444"></div></div><div class="score-cell">0.6</div></div><div class="bar-row"><div class="label">overfit resistance</div><div class="bar-track"><div class="bar-fill" style="width:91.0%;background:#22c55e"></div></div><div class="score-cell">9.1</div></div><div class="bar-row"><div class="label">execution quality</div><div class="bar-track"><div class="bar-fill" style="width:22.0%;background:#f97316"></div></div><div class="score-cell">2.2</div></div><div class="bar-row"><div class="label">setup health</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#ef4444"></div></div><div class="score-cell">0.0</div></div><div class="bar-row"><div class="label">research freshness</div><div class="bar-track"><div class="bar-fill" style="width:100%;background:#22c55e"></div></div><div class="score-cell">10.0</div></div><div class="bar-row"><div class="label">data quality</div><div class="bar-track"><div class="bar-fill" style="width:73.0%;background:#84cc16"></div></div><div class="score-cell">7.3</div></div></div>
+    <h3>Self-grade — 2026-06-03</h3>
+    <div class="bars"><div class="bar-row"><div class="label">alpha track</div><div class="bar-track"><div class="bar-fill" style="width:10.0%;background:#ef4444"></div></div><div class="score-cell">1.0</div></div><div class="bar-row"><div class="label">alpha vs spy</div><div class="bar-track"><div class="bar-fill" style="width:50.0%;background:#facc15"></div></div><div class="score-cell">5.0</div></div><div class="bar-row"><div class="label">fee discipline</div><div class="bar-track"><div class="bar-fill" style="width:0%;background:#ef4444"></div></div><div class="score-cell">0.0</div></div><div class="bar-row"><div class="label">overfit resistance</div><div class="bar-track"><div class="bar-fill" style="width:91.0%;background:#22c55e"></div></div><div class="score-cell">9.1</div></div><div class="bar-row"><div class="label">execution quality</div><div class="bar-track"><div class="bar-fill" style="width:21.0%;background:#f97316"></div></div><div class="score-cell">2.1</div></div><div class="bar-row"><div class="label">setup health</div><div class="bar-track"><div class="bar-fill" style="width:25.0%;background:#f97316"></div></div><div class="score-cell">2.5</div></div><div class="bar-row"><div class="label">research freshness</div><div class="bar-track"><div class="bar-fill" style="width:19.0%;background:#ef4444"></div></div><div class="score-cell">1.9</div></div><div class="bar-row"><div class="label">data quality</div><div class="bar-track"><div class="bar-fill" style="width:50.0%;background:#facc15"></div></div><div class="score-cell">5.0</div></div></div>
     <div class="narrative-grid">
       <div class="card"><h4 style="color:#a5b4fc">Tried</h4><ul><li>Backtested 22 strategies across 1y/2y/5y under a strict fee-aware rubric.</li></ul></div>
       <div class="card"><h4 style="color:#86efac">Worked</h4><ul><li>11/22 strategies cleared the validation gate (PASS).</li></ul></div>
       <div class="card"><h4 style="color:#fca5a5">Failed</h4><ul><li>11/22 strategies did NOT pass — fee-bleeders or overfit.</li><li>2 strategies failed walk-forward — their backtest Sharpe doesn&#x27;t hold OOS.</li></ul></div>
-      <div class="card"><h4 style="color:#fcd34d">Next</h4><ul><li>Submit ratio submit ratio 54/245 — investigate why proposals are being rejected.</li><li>Current grade 5.01/10 &lt; target 9.0 — focus on the lowest-scoring axis next (alpha_vs_spy).</li></ul></div>
+      <div class="card"><h4 style="color:#fcd34d">Next</h4><ul><li>Submit ratio submit ratio 34/164 — investigate why proposals are being rejected.</li><li>Live alpha is weak — the PASS strategies aren&#x27;t yet translating to real returns; review execution drag (improvements panel, P1 LIVE BLEED).</li><li>Current grade 3.22/10 &lt; target 9.0 — focus on the lowest-scoring axis next (fee_discipline).</li></ul></div>
     </div>
   </div>
 </div>
-<div style="background:white;border:2px solid #7f1d1d;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;display:flex;flex-wrap:wrap;gap:18px;align-items:center"><span style="font-size:18px">🔴</span><span><strong>Last cycle:</strong> 236h ago (20.1s)</span><span><strong>Today:</strong> 0 cycles · 0 proposed · 0 submitted · 0 errors</span></div>
+<div style="background:white;border:2px solid #15803d;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;display:flex;flex-wrap:wrap;gap:18px;align-items:center"><span style="font-size:18px">🟢</span><span><strong>Last cycle:</strong> 3m ago (0.0s)</span><span><strong>Today:</strong> 5 cycles · 3 proposed · 3 submitted · 1 errors</span></div>
 
-<div class="ks-banner" style="background:#166534">
-  <span>✅ Kill switch: NORMAL</span>
+<div class="ks-banner" style="background:#4b5563">
+  <span>❓ Kill switch: NO-DATA</span>
   <small><time data-ts="kill-switch"></time></small>
   <span class="ks-actions">
     <a class="ks-btn ks-arm" target="_blank"
@@ -152,19 +177,19 @@
 <div style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;
             padding:10px 14px;margin-bottom:14px;font-size:13px;">
   <strong>Mode by venue</strong>
-  <table style="margin-top:6px;font-size:12px;"><tr><td><strong>coinbase</strong></td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td></tr>
-<tr><td><strong>alpaca</strong></td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td></tr>
-<tr><td><strong>kalshi</strong></td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td></tr></table>
+  <table style="margin-top:6px;font-size:12px;"><tr><td><strong>coinbase</strong></td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td></tr>
+<tr><td><strong>alpaca</strong></td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td></tr>
+<tr><td><strong>kalshi</strong></td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td></tr></table>
   
   <details style="margin-top:6px">
     <summary style="cursor:pointer;color:#6b7280;font-size:11px">
       Why these modes? (click to expand env-var state)
     </summary>
     <table style="margin-top:6px;font-size:11px;"><tr><td><code>DRY_RUN</code></td><td><code>true</code></td></tr>
-<tr><td><code>DRY_RUN_COINBASE</code></td><td><code>False</code></td></tr>
-<tr><td><code>DRY_RUN_ALPACA</code></td><td><code>false</code></td></tr>
-<tr><td><code>ALLOW_LIVE_TRADING</code></td><td><code>1</code></td></tr>
-<tr><td><code>LIVE_STRATEGIES</code></td><td><code>crypto_funding_carry,crypto_basis_trade,commodity_carry,crypto_xsmom,crypto_pairs_trading,crypto_breakout</code></td></tr></table>
+<tr><td><code>DRY_RUN_COINBASE</code></td><td><code>(unset → falls back to DRY_RUN)</code></td></tr>
+<tr><td><code>DRY_RUN_ALPACA</code></td><td><code>(unset → falls back to DRY_RUN)</code></td></tr>
+<tr><td><code>ALLOW_LIVE_TRADING</code></td><td><code>(unset → blocks LIVE_STRATEGIES)</code></td></tr>
+<tr><td><code>LIVE_STRATEGIES</code></td><td><code>(unset → no per-strategy override)</code></td></tr></table>
     <p style="font-size:11px;color:#6b7280;margin:6px 0 0">
       Set repo Variables at
       <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/settings/variables/actions" target=_blank>
@@ -176,9 +201,9 @@
 
 
 <div class="totals">
-  <div class="stat" style="grid-column: span 2; border: 2px solid #166534;">
+  <div class="stat" style="grid-column: span 2; border: 2px solid #4b5563;">
     <div class="label">Total P&amp;L (realized + unrealized)</div>
-    <div class="value" style="color:#166534; font-size: 28px;">$2,611.09</div>
+    <div class="value" style="color:#4b5563; font-size: 28px;">$0.00</div>
   </div>
   <div class="stat">
     <div class="label">Realized P&amp;L</div>
@@ -187,11 +212,11 @@
   </div>
   <div class="stat">
     <div class="label">Unrealized P&amp;L</div>
-    <div class="value" style="color:#166534">$2,611.09</div>
+    <div class="value" style="color:#4b5563">$0.00</div>
   </div>
   <div class="stat">
     <div class="label">Portfolio equity</div>
-    <div class="value">$101,708.92</div>
+    <div class="value">$0.00</div>
   </div>
   <div class="stat">
     <div class="label">Closed trades</div>
@@ -203,11 +228,11 @@
   </div>
   <div class="stat">
     <div class="label">Drawdown from peak</div>
-    <div class="value">0.1%</div>
+    <div class="value">0.0%</div>
   </div>
   <div class="stat" title="Gross notional / equity across all live broker positions. Cap 2.0×.">
     <div class="label">Gross leverage</div>
-    <div class="value" style="color:#b45309">1.30×</div>
+    <div class="value" style="color:#4b5563">—</div>
   </div>
 </div>
 
@@ -227,54 +252,66 @@
     </tr>
   </thead>
   <tbody>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>&lt;unattributed: no ledger entry&gt;</strong></td><td>—</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#166534">$2,405.27</td><td class=num style="color:#166534;font-weight:600">$2,405.27</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>risk_parity_etf</strong><br><span class=desc>Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#166534">$205.82</td><td class=num style="color:#166534;font-weight:600">$205.82</td><td>27.6d ago</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>bollinger_breakout</strong><br><span class=desc>Momentum continuation on 20d Bollinger upper-band breaks (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>bond_carry</strong><br><span class=desc>Term/credit-premium bond basket, trend-gated (TLT/LQD/HYG/EMB→SHY)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>commodity_carry</strong><br><span class=desc>Top-N backwardated commodity futures (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>commodity_momentum</strong><br><span class=desc>Cross-sectional 12-1m momentum on commodity ETFs (CTA)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>cross_asset_trend</strong><br><span class=desc>CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>cross_venue_arb</strong><br><span class=desc>Kalshi vs Polymarket cross-venue arbitrage (P5)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_basis_trade</strong><br><span class=desc>Long spot / short dated future on Coinbase (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>26d ago</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_breakout</strong><br><span class=desc>Donchian 30d-high breakout w/ trail-stop (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_funding_carry</strong><br><span class=desc>Long spot / short perp; capture funding rate (P1)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_funding_carry_v2</strong><br><span class=desc>Funding carry gated on Coinbase+Binance consensus (P5)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_pairs_trading</strong><br><span class=desc>Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_vol_regime_overlay</strong><br><span class=desc>Publishes crypto vol-regime scaler; no trades (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_xsmom</strong></td><td>—</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>26d ago</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>dividend_growth</strong><br><span class=desc>Quality-dividend ETF rotation by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>dual_momentum</strong><br><span class=desc>Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>earnings_momentum</strong><br><span class=desc>Live PEAD via FMP earnings calendar (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>earnings_news_pead</strong><br><span class=desc>PEAD gated on RSS news corroboration (P5)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>internationals_rotation</strong><br><span class=desc>International country-ETF momentum vs SPY (P4b)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>intraday_mean_reversion</strong><br><span class=desc>Intraday VWAP fade on liquid ETFs (5-min bars)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>kalshi_calibration_arb</strong><br><span class=desc>Favorite-longshot bias arb on Kalshi (P1)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>leveraged_champions</strong><br><span class=desc>3x leverage tracking the top-5 PASS strategies (regime-gated, -15% stop)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>leveraged_momentum</strong><br><span class=desc>3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>macro_kalshi</strong><br><span class=desc>Kalshi macro events vs implied probabilities (P3)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>macro_kalshi_v2</strong><br><span class=desc>Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)</span></td><td>kalshi</td><td><span class=badge style="background:#b91c1c">💰 LIVE</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>multifactor_equity</strong><br><span class=desc>Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>sector_rotation</strong><br><span class=desc>Top-N SPDR sector ETFs by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>thematic_growth</strong><br><span class=desc>Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>tsmom_etf</strong><br><span class=desc>12-1m time-series momentum on 7-ETF basket (P2)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>27.6d ago</td></tr>
-<tr><td class=num style="color:#6b7280">—</td><td><strong>vol_managed_overlay</strong><br><span class=desc>Vol-target multiplier; publishes scaler only, no trades (P3)</span></td><td>alpaca</td><td><span class=badge style="background:#1e40af">🧪 PAPER</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">📈&nbsp;&nbsp;Trend-following<span class="group-pill">TREND</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 5 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>bollinger_breakout</strong><br><span class=desc>Momentum continuation on 20d Bollinger upper-band breaks (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>commodity_momentum</strong><br><span class=desc>Cross-sectional 12-1m momentum on commodity ETFs (CTA)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>dual_momentum</strong><br><span class=desc>Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>sector_rotation</strong><br><span class=desc>Top-N SPDR sector ETFs by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>tsmom_etf</strong><br><span class=desc>12-1m time-series momentum on 7-ETF basket (P2)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">📊&nbsp;&nbsp;Equity factor<span class="group-pill">FACTOR</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 5 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>defensive_value</strong><br><span class=desc>Long VTV+IDV+USMV (value+defensive composite)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>multifactor_equity</strong><br><span class=desc>Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>quality_factor</strong><br><span class=desc>Long QUAL+USMV defensive factor (AQR Quality Minus Junk)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>size_premium_trend</strong><br><span class=desc>IWM size premium with 200d-SMA trend gate (Fama-French SMB)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>thematic_growth</strong><br><span class=desc>Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">🌍&nbsp;&nbsp;Global macro<span class="group-pill">MACRO</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 2 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>global_macro_momentum</strong><br><span class=desc>Country-ETF cross-sectional momentum (Asness 2013)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>internationals_rotation</strong><br><span class=desc>International country-ETF momentum vs SPY (P4b)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">💰&nbsp;&nbsp;Carry &amp; yield<span class="group-pill">CARRY</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 4 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>commodity_carry</strong><br><span class=desc>Top-N backwardated commodity futures (P2)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>dividend_growth</strong><br><span class=desc>Quality-dividend ETF rotation by 90d return (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>high_yield_carry</strong><br><span class=desc>HYG/JNK credit carry, trend-gated (rotates to SHY)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>reit_income_carry</strong><br><span class=desc>VNQ/SCHH real-estate yield, trend-gated</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">🛡️&nbsp;&nbsp;Defensive / risk-parity<span class="group-pill">DEFENSIVE</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 1 strategy</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>risk_parity_etf</strong><br><span class=desc>Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">🔄&nbsp;&nbsp;Mean reversion<span class="group-pill">MEAN_REVERSION</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 1 strategy</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>intraday_mean_reversion</strong><br><span class=desc>Intraday VWAP fade on liquid ETFs (5-min bars)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">📰&nbsp;&nbsp;Event-driven<span class="group-pill">EVENT</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 2 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>earnings_momentum</strong><br><span class=desc>Live PEAD via FMP earnings calendar (P4)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>earnings_news_pead</strong><br><span class=desc>PEAD gated on RSS news corroboration (P5)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">₿&nbsp;&nbsp;Crypto<span class="group-pill">CRYPTO</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 3 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_breakout</strong><br><span class=desc>Donchian 30d-high breakout w/ trail-stop (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_funding_carry_v2</strong><br><span class=desc>Funding carry gated on Coinbase+Binance consensus (P5)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_pairs_trading</strong><br><span class=desc>Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">🎯&nbsp;&nbsp;Prediction markets<span class="group-pill">PREDICTION</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 4 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>cross_venue_arb</strong><br><span class=desc>Kalshi vs Polymarket cross-venue arbitrage (P5)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>kalshi_calibration_arb</strong><br><span class=desc>Favorite-longshot bias arb on Kalshi (P1)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>macro_kalshi</strong><br><span class=desc>Kalshi macro events vs implied probabilities (P3)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>macro_kalshi_v2</strong><br><span class=desc>Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)</span></td><td>kalshi</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">⚡&nbsp;&nbsp;Leveraged (3x)<span class="group-pill">LEVERAGED</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 3 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>leveraged_champions</strong><br><span class=desc>3x leverage tracking the top-5 PASS strategies (regime-gated, -15% stop)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>leveraged_momentum</strong><br><span class=desc>3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>leveraged_top4</strong><br><span class=desc>3x leverage tracking the top-4 PASS strategies (concentrated)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr data-group-header="1" style="background:#eef2f7"><td colspan=8 style="padding:8px 12px;font-weight:600;color:#1f2937;font-size:13px;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">⚙️&nbsp;&nbsp;Overlays (no trades)<span class="group-pill">OVERLAY</span><span style="font-weight:400;color:#6b7280;margin-left:8px">· 2 strategies</span></td><td class=num style="color:#4b5563;font-weight:600;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">$0.00</td><td style="border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb"></td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>crypto_vol_regime_overlay</strong><br><span class=desc>Publishes crypto vol-regime scaler; no trades (P6)</span></td><td>coinbase</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
+<tr><td class=num style="color:#6b7280">—</td><td><strong>vol_managed_overlay</strong><br><span class=desc>Vol-target multiplier; publishes scaler only, no trades (P3)</span></td><td>alpaca</td><td><span class=badge style="background:#4b5563">🟦 DRY</span></td><td class=num>0</td><td class=num>0.0%</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563">$0.00</td><td class=num style="color:#4b5563;font-weight:600">$0.00</td><td>never</td></tr>
   </tbody>
 </table>
 
 
 <h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
-  Cycle activity — last cycle was 2026-05-20T15:58:09.135246+00:00 (20.1s)
+  Cycle activity — last cycle was 2026-06-03T21:11:25.249819+00:00 (0.0s)
 </h2>
 <div style="margin-bottom:12px">
-  <strong>Venue health:</strong> <span style="background:#15803d;color:white;padding:2px 8px;border-radius:4px;font-size:11px">alpaca: ok</span> · <span style="background:#15803d;color:white;padding:2px 8px;border-radius:4px;font-size:11px">coinbase: ok</span> · <span style="background:#15803d;color:white;padding:2px 8px;border-radius:4px;font-size:11px">kalshi: ok</span><br>
+  <strong>Venue health:</strong> <span style="background:#7f1d1d;color:white;padding:2px 8px;border-radius:4px;font-size:11px">alpaca: unreachable (1 cycle)</span><br>
   <strong>Last 5 cycles:</strong>
   <table style="font-size:11px;margin-top:4px">
     <thead><tr><th>When</th><th>Duration</th><th>Proposed</th><th>Submitted</th><th>Errors</th></tr></thead>
-    <tbody><tr><td><time data-ts="cycle">2026-05-20T15:58:09.135246+00:00</time></td><td style="text-align:right">20.1s</td><td style="text-align:right">28</td><td style="text-align:right">2</td><td style="text-align:right">2</td></tr>
-<tr><td><time data-ts="cycle">2026-05-20T12:12:32.435226+00:00</time></td><td style="text-align:right">14.8s</td><td style="text-align:right">12</td><td style="text-align:right">2</td><td style="text-align:right">2</td></tr>
-<tr><td><time data-ts="cycle">2026-05-20T09:47:44.850960+00:00</time></td><td style="text-align:right">18.8s</td><td style="text-align:right">12</td><td style="text-align:right">2</td><td style="text-align:right">2</td></tr>
-<tr><td><time data-ts="cycle">2026-05-20T05:57:52.329551+00:00</time></td><td style="text-align:right">31.5s</td><td style="text-align:right">12</td><td style="text-align:right">2</td><td style="text-align:right">2</td></tr>
-<tr><td><time data-ts="cycle">2026-05-20T01:51:48.390578+00:00</time></td><td style="text-align:right">32.5s</td><td style="text-align:right">15</td><td style="text-align:right">2</td><td style="text-align:right">4</td></tr></tbody>
+    <tbody><tr><td><time data-ts="cycle">2026-06-03T21:11:25.249819+00:00</time></td><td style="text-align:right">0.0s</td><td style="text-align:right">0</td><td style="text-align:right">1</td><td style="text-align:right">0</td></tr>
+<tr><td><time data-ts="cycle">2026-06-03T21:11:25.124705+00:00</time></td><td style="text-align:right">0.0s</td><td style="text-align:right">0</td><td style="text-align:right">0</td><td style="text-align:right">0</td></tr>
+<tr><td><time data-ts="cycle">2026-06-03T21:11:24.988435+00:00</time></td><td style="text-align:right">0.0s</td><td style="text-align:right">0</td><td style="text-align:right">0</td><td style="text-align:right">1</td></tr>
+<tr><td><time data-ts="cycle">2026-06-03T21:11:24.834342+00:00</time></td><td style="text-align:right">0.0s</td><td style="text-align:right">2</td><td style="text-align:right">1</td><td style="text-align:right">0</td></tr>
+<tr><td><time data-ts="cycle">2026-06-03T21:11:24.715172+00:00</time></td><td style="text-align:right">0.0s</td><td style="text-align:right">1</td><td style="text-align:right">1</td><td style="text-align:right">0</td></tr></tbody>
   </table>
 </div>
 
@@ -289,55 +326,10 @@
       <th style='text-align:right;font-size:10px' title='Cycles since last proposal'>Last prop.</th>
       <th style='text-align:right;font-size:10px' title='Cycles since last successful submit'>Last sub.</th>
       <th>Outcome / why</th></tr></thead>
-  <tbody><tr style="background:#f3f4f6"><td><strong>bollinger_breakout</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>commodity_carry</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>3.0%</td><td style='text-align:right'>$2988</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>cross_venue_arb</strong></td><td>kalshi</td><td>ACTIVE</td><td style='text-align:right'>1.0%</td><td style='text-align:right'>$996</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>crypto_basis_trade</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>5.0%</td><td style='text-align:right'>$4981</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>4c ago</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>crypto_breakout</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>1.0%</td><td style='text-align:right'>$996</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>crypto_funding_carry</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>6.0%</td><td style='text-align:right'>$5977</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>crypto_funding_carry_v2</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>3.0%</td><td style='text-align:right'>$2988</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>crypto_pairs_trading</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>crypto_vol_regime_overlay</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>0.0%</td><td style='text-align:right'>$0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>target_alloc_usd=0, no proposals</td></tr>
-<tr style="background:#fee2e2"><td><strong>crypto_xsmom</strong></td><td>coinbase</td><td>ACTIVE</td><td style='text-align:right'>3.5%</td><td style='text-align:right'>$3486</td><td style='text-align:right'>2</td><td style='text-align:right'>2</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td><span style="color:#7f1d1d" title="BrokerError: Coinbase USD wallet too low: $0.00 available (need &gt;$1 after 5% buffer). Fund the spot USD wallet to enable trading. | BrokerError: Coinbase USD wallet too low: $0.00 available (need &gt;$1 after 5% buffer). Fund the spot USD wallet to enable trading.">EXEC: BrokerError: Coinbase USD wallet too low: $0.00 available (need &gt;$1 after 5% buffer). Fund the spot USD wallet to enable</span></td></tr>
-<tr style="background:#f3f4f6"><td><strong>dividend_growth</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>earnings_momentum</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>4.5%</td><td style='text-align:right'>$4482</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>earnings_news_pead</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>gap_trading</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>internationals_rotation</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>intraday_mean_reversion</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.8%</td><td style='text-align:right'>$747</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>kalshi_calibration_arb</strong></td><td>kalshi</td><td>ACTIVE</td><td style='text-align:right'>1.0%</td><td style='text-align:right'>$996</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#fef3c7"><td><strong>leveraged_momentum</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>1.0%</td><td style='text-align:right'>$996</td><td style='text-align:right'>3</td><td style='text-align:right'>0</td><td style='text-align:right'>3</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td><span style="color:#92400e" title="risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries | risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries | risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries">REJ: risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries</span></td></tr>
-<tr style="background:#dcfce7"><td><strong>low_vol_anomaly</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>1.5%</td><td style='text-align:right'>$1494</td><td style='text-align:right'>3</td><td style='text-align:right'>1</td><td style='text-align:right'>2</td><td style='text-align:right'>1</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td><span style="color:#166534">submitted 1 order(s)</span></td></tr>
-<tr style="background:#f3f4f6"><td><strong>macro_kalshi</strong></td><td>kalshi</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>macro_kalshi_v2</strong></td><td>kalshi</td><td>ACTIVE</td><td style='text-align:right'>2.0%</td><td style='text-align:right'>$1992</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>multifactor_equity</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>7.0%</td><td style='text-align:right'>$6973</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>pairs_trading</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>risk_parity_etf</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>15.0%</td><td style='text-align:right'>$14942</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#dcfce7"><td><strong>rsi_mean_reversion</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>1.5%</td><td style='text-align:right'>$1494</td><td style='text-align:right'>2</td><td style='text-align:right'>1</td><td style='text-align:right'>1</td><td style='text-align:right'>1</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td><span style="color:#166534">submitted 1 order(s)</span></td></tr>
-<tr style="background:#fef3c7"><td><strong>sector_rotation</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>1.0%</td><td style='text-align:right'>$996</td><td style='text-align:right'>1</td><td style='text-align:right'>0</td><td style='text-align:right'>1</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td><span style="color:#92400e" title="risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries">REJ: risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries</span></td></tr>
-<tr style="background:#fef3c7"><td><strong>thematic_growth</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>1.2%</td><td style='text-align:right'>$1245</td><td style='text-align:right'>12</td><td style='text-align:right'>0</td><td style='text-align:right'>12</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td><span style="color:#92400e" title="risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries | risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries">REJ: risk: EQUITY exposure $50,166 ≥ 45% cap ($44,825) — no headroom for new entries</span></td></tr>
-<tr style="background:#fef3c7"><td><strong>tsmom_etf</strong></td><td>alpaca</td><td>WATCH</td><td style='text-align:right'>6.0%</td><td style='text-align:right'>$5977</td><td style='text-align:right'>5</td><td style='text-align:right'>0</td><td style='text-align:right'>5</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>now</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td><span style="color:#92400e" title="risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries | risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries | risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries | risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries | risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries">REJ: risk: ETF exposure $55,607 ≥ 45% cap ($44,825) — no headroom for new entries</span></td></tr>
-<tr style="background:#f3f4f6"><td><strong>turn_of_month</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.2%</td><td style='text-align:right'>$249</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>no proposals</td></tr>
-<tr style="background:#f3f4f6"><td><strong>vol_managed_overlay</strong></td><td>alpaca</td><td>ACTIVE</td><td style='text-align:right'>0.0%</td><td style='text-align:right'>$0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right'>0</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td style='text-align:right;font-size:10px;color:#6b7280'>—</td><td>target_alloc_usd=0, no proposals</td></tr></tbody>
+  <tbody><tr><td colspan="12">(no strategies ran)</td></tr></tbody>
 </table>
 
-
-<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">
-  Performance vs market <span style="font-weight:400;color:#6b7280;font-size:12px">(as of 2026-05-20T15:58:29)</span>
-</h2>
-<table style="font-size:12px">
-  <thead><tr><th>Series</th><th style='text-align:right'>7d</th><th style='text-align:right'>14d</th><th style='text-align:right'>30d</th></tr></thead>
-  <tbody>
-<tr style='background:#eff6ff'><td><strong>Portfolio</strong> (equity $99,611)</td><td style="text-align:right;color:#7f1d1d;font-weight:600">-0.11%</td><td style="text-align:right;color:#7f1d1d;font-weight:600">-1.31%</td><td style="text-align:right;color:#7f1d1d;font-weight:600">-1.65%</td></tr>
-<tr><td>S&amp;P 500 <code style='color:#6b7280'>SPY</code></td><td style="text-align:right;color:#7f1d1d;font-weight:600">-0.21%</td><td style="text-align:right;color:#166534;font-weight:600">+0.94%</td><td style="text-align:right;color:#166534;font-weight:600">+4.52%</td></tr>
-<tr><td>Nasdaq-100 <code style='color:#6b7280'>QQQ</code></td><td style="text-align:right;color:#7f1d1d;font-weight:600">-0.39%</td><td style="text-align:right;color:#166534;font-weight:600">+2.32%</td><td style="text-align:right;color:#166534;font-weight:600">+10.07%</td></tr>
-<tr style='background:#fefce8'><td><strong>Alpha vs S&amp;P 500</strong></td><td style="text-align:right;color:#166534;font-weight:600">+0.10%</td><td style="text-align:right;color:#7f1d1d;font-weight:600">-2.25%</td><td style="text-align:right;color:#7f1d1d;font-weight:600">-6.17%</td></tr>
-  </tbody>
-</table>
-<p style="color:#6b7280;font-size:11px;margin-top:4px">
-  Trailing total return. Portfolio = paper+live equity curve from
-  risk_state.db. Benchmarks = FMP adjusted closes. Alpha = portfolio − SPY.
-</p>
+<h2 style="font-size:16px;margin-top:28px;margin-bottom:8px">Performance vs market</h2><p style="color:#6b7280;font-size:13px">Benchmark not yet computed (needs ≥1 equity snapshot + FMP_API_KEY). Will populate within a cycle or two.</p>
 
 
 <h2 id="validation" style="font-size:16px;margin-top:28px;margin-bottom:8px">
@@ -384,7 +376,7 @@ else stays paper-only until it proves an edge.</p>
 <h2 id="improvements" style="font-size:16px;margin-top:28px;margin-bottom:8px">
   Performance review — autonomous action queue
   <span style="font-weight:400;color:#6b7280;font-size:12px">
-  (as of 2026-05-30T08:47:45 —
+  (as of 2026-06-03T21:11:25 —
   P1:0 bleed,
   P2:2 overfit,
   P3:2 fail,
@@ -397,7 +389,7 @@ else stays paper-only until it proves an edge.</p>
   P3 (yellow) = validation FAIL, freeze or retire.
   live_sharpe approximated from realized P&amp;L per trade, annualised by sqrt(252); UNDER = live &lt; 40% of backtest; OVER = live &gt; 150%. Insufficient data when &lt; 5 live trades in 30d.
 </p>
-<div style="background:#fee2e2;padding:8px 12px;margin:6px 0;border-radius:4px;font-size:12px"><strong>Setup issues (recurring in last 20 cycles):</strong><ul style='margin:4px 0 0 16px'><li>recurring (18/20): [crypto_xsmom] execution failed</li></ul></div>
+<div style="background:#fee2e2;padding:8px 12px;margin:6px 0;border-radius:4px;font-size:12px"><strong>Setup issues (recurring in last 20 cycles):</strong><ul style='margin:4px 0 0 16px'><li>recurring (11/20): [crypto_xsmom] execution failed</li></ul></div>
 <table style="font-size:12px">
   <thead><tr>
     <th>Strategy</th><th>Action</th>
@@ -420,7 +412,7 @@ else stays paper-only until it proves an edge.</p>
 <tr style="background:#dbeafe"><td><strong>dual_momentum</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+10.15</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
 <tr style="background:#dbeafe"><td><strong>earnings_momentum</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+2.28</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
 <tr style="background:#dbeafe"><td><strong>internationals_rotation</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+4.91</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
-<tr style="background:#dbeafe"><td><strong>multifactor_equity</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+5.92</td><td style="text-align:right">—</td><td style="text-align:right">3</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
+<tr style="background:#dbeafe"><td><strong>multifactor_equity</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+5.92</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
 <tr style="background:#dbeafe"><td><strong>pead</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+2.28</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
 <tr style="background:#dbeafe"><td><strong>risk_parity_etf</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+11.55</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
 <tr style="background:#dbeafe"><td><strong>thematic_growth</strong></td><td>P4 GATHERING</td><td>PASS</td><td>ROBUST</td><td style="text-align:right">+3.14</td><td style="text-align:right">—</td><td style="text-align:right">0</td><td style="text-align:right">$+0.00</td><td style="font-size:11px;color:#4b5563">PASS in backtest, not enough live data yet — let it run to gather sample</td></tr>
@@ -440,9 +432,9 @@ else stays paper-only until it proves an edge.</p>
 
 
 <h2 id="data-quality" style="font-size:16px;margin-top:28px;margin-bottom:8px">
-  Data quality — 7.3/10
+  Data quality — 5.0/10
   <span style="font-weight:400;color:#6b7280;font-size:12px">
-  (as of 2026-05-30T08:47:45 —
+  (as of 2026-06-03T21:11:25 —
   audits every JSON the dashboard reads each cycle)</span>
 </h2>
 <table style="font-size:12px">
@@ -450,32 +442,24 @@ else stays paper-only until it proves an edge.</p>
       <th style="text-align:right">Age (h)</th>
       <th>Notes</th></tr></thead>
   <tbody>
-<tr style="background:#dcfce7"><td><code>docs/cycle_status.json</code></td><td>OK</td><td style="text-align:right">0.1</td><td style="font-size:11px;color:#4b5563"></td></tr>
-<tr style="background:#dcfce7"><td><code>docs/trades_recent.json</code></td><td>OK</td><td style="text-align:right">0.1</td><td style="font-size:11px;color:#4b5563"></td></tr>
-<tr style="background:#dcfce7"><td><code>docs/benchmark.json</code></td><td>OK</td><td style="text-align:right">0.1</td><td style="font-size:11px;color:#4b5563"></td></tr>
-<tr style="background:#dcfce7"><td><code>docs/validation.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
-<tr style="background:#dcfce7"><td><code>docs/walk_forward.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/cycle_status.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/trades_recent.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/benchmark.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#fef3c7"><td><code>docs/validation.json</code></td><td>STALE</td><td style="text-align:right">103.5</td><td style="font-size:11px;color:#4b5563">103.5h old (expected refresh every 30h)</td></tr>
+<tr style="background:#fef3c7"><td><code>docs/walk_forward.json</code></td><td>STALE</td><td style="text-align:right">103.5</td><td style="font-size:11px;color:#4b5563">103.5h old (expected refresh every 30h)</td></tr>
 <tr style="background:#dcfce7"><td><code>docs/improvements.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
-<tr style="background:#dcfce7"><td><code>docs/self_grade.json</code></td><td>OK</td><td style="text-align:right">0.1</td><td style="font-size:11px;color:#4b5563"></td></tr>
+<tr style="background:#dcfce7"><td><code>docs/self_grade.json</code></td><td>OK</td><td style="text-align:right">0.0</td><td style="font-size:11px;color:#4b5563"></td></tr>
 <tr style="background:#fee2e2"><td><code>docs/hedge_fund_13f.json</code></td><td>MISSING</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">file does not exist</td></tr>
-<tr style="background:#dcfce7"><td><code>docs/index.html</code></td><td>OK</td><td style="text-align:right">0.1</td><td style="font-size:11px;color:#4b5563"></td></tr>
-<tr style="background:#fee2e2"><td><code>trade-orphans</code></td><td>INCONSISTENT</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">trades exist for strategies not in validation: [&#x27;low_vol_anomaly&#x27;, &#x27;pairs_trading&#x27;, &#x27;rsi_mean_reversion&#x27;]</td></tr>
-<tr style="background:#fee2e2"><td><code>cancel-rate</code></td><td>INCONSISTENT</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">38/50 recent trades CANCELED (76%) — likely out-of-RTH submission loop</td></tr>
+<tr style="background:#fef3c7"><td><code>docs/index.html</code></td><td>STALE</td><td style="text-align:right">103.5</td><td style="font-size:11px;color:#4b5563">103.5h old (expected refresh every 1h)</td></tr>
+<tr style="background:#fee2e2"><td><code>trade-orphans</code></td><td>INCONSISTENT</td><td style="text-align:right">—</td><td style="font-size:11px;color:#4b5563">trades exist for strategies not in validation: [&#x27;closer&#x27;]</td></tr>
   </tbody>
 </table>
 
 
-<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
-  Suggestions (2)
-</h2>
-<ul style="padding-left:20px;font-size:13px;line-height:1.5">
-<li>🔴 <strong>Cycles have stalled</strong> — last cycle was 2026-05-20T15:58:09.135246+00:00, more than 15 min ago. Check the Actions tab for orchestrator failures.</li>
-<li>🟡 <strong>22 strategies have proposed nothing in the last 5 cycles</strong>: <code>bollinger_breakout, commodity_carry, cross_venue_arb, crypto_breakout, crypto_funding_carry, crypto_funding_carry_v2 …</code>. Likely causes: missing API key, FROZEN state, or no signal. Check the per-strategy outcome panel for the specific reason.</li>
-</ul>
 
 
 <h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
-  Recent trades (50)
+  Recent trades (1)
 </h2>
 <table style="font-size:12px;">
   <thead>
@@ -484,62 +468,164 @@ else stays paper-only until it proves an edge.</p>
         <th>Status</th><th>Mode</th><th>P&amp;L</th></tr>
   </thead>
   <tbody>
-<tr><td><time data-ts='trade'>2026-05-20T15:58:25.599002+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.011617</td><td style="text-align:right">$996.11</td><td>$92.07</td><td><span style="background:#d97706;color:white;padding:1px 6px;border-radius:4px;font-size:11px">PENDING</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T15:58:17.120390+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000217</td><td style="text-align:right">$996.11</td><td>$132.81</td><td><span style="background:#d97706;color:white;padding:1px 6px;border-radius:4px;font-size:11px">PENDING</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T12:12:45.826309+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T12:12:40.371852+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T09:48:01.689135+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T09:47:52.760587+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T05:58:20.381511+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T05:58:04.670082+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T01:52:17.362685+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-20T01:52:02.096903+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T23:50:11.223455+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T23:49:55.021435+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T22:50:00.568856+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T22:49:45.435455+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T21:42:41.987642+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T21:42:37.794261+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T20:04:53.273777+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T20:04:48.145911+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T18:12:37.723860+00:00</time></td><td>multifactor_equity</td><td>alpaca</td><td><code>GE</code></td><td style="color:#166534;font-weight:600">BUY</td><td>10.336270</td><td style="text-align:right">$2,968.68</td><td>$287.21</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T18:12:37.548503+00:00</time></td><td>multifactor_equity</td><td>alpaca</td><td><code>GOOGL</code></td><td style="color:#166534;font-weight:600">BUY</td><td>7.587874</td><td style="text-align:right">$2,968.68</td><td>$391.24</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T18:12:37.378447+00:00</time></td><td>multifactor_equity</td><td>alpaca</td><td><code>AVGO</code></td><td style="color:#166534;font-weight:600">BUY</td><td>7.165186</td><td style="text-align:right">$2,968.68</td><td>$414.32</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T18:12:35.238310+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.116172</td><td style="text-align:right">$10.68</td><td>$91.90</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right"><span style="color:#166534">$0.07</span></td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T18:12:25.359575+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.002174</td><td style="text-align:right">$0.29</td><td>$134.11</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right"><span style="color:#166534">$0.01</span></td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T16:00:37.650218+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>1.161719</td><td style="text-align:right">$106.39</td><td>$91.58</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right"><span style="color:#166534">$0.31</span></td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T16:00:34.774051+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>JPM</code></td><td style="color:#166534;font-weight:600">BUY</td><td>1.104189</td><td style="text-align:right">$329.30</td><td>$298.23</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T16:00:34.529757+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>GS</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.353780</td><td style="text-align:right">$329.30</td><td>$930.80</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T16:00:32.200752+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.021733</td><td style="text-align:right">$2.93</td><td>$134.95</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right"><span style="color:#166534">$0.13</span></td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T12:30:34.549057+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T12:30:33.374709+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>JPM</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T12:30:33.216916+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>GS</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T12:30:32.274691+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T09:38:56.146330+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T09:38:55.156777+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>JPM</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T09:38:54.870501+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>GS</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T09:38:54.100536+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T05:54:52.247970+00:00</time></td><td>low_vol_anomaly</td><td>alpaca</td><td><code>EFAV</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T05:54:49.699642+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>JPM</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T05:54:49.484039+00:00</time></td><td>pairs_trading</td><td>alpaca</td><td><code>GS</code></td><td style="color:#166534;font-weight:600">BUY</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T05:54:47.494005+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T01:49:33.288810+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>LLY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-19T01:49:33.000460+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T23:43:23.870510+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>LLY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T23:43:23.658800+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T22:37:11.624276+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>LLY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T22:37:11.392297+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T21:37:09.091864+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>LLY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T21:37:08.771741+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T20:08:11.596220+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>LLY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T20:08:11.431852+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>WMT</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.000000</td><td style="text-align:right">$0.00</td><td>—</td><td><span style="background:#6b7280;color:white;padding:1px 6px;border-radius:4px;font-size:11px">CANCELED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
-<tr><td><time data-ts='trade'>2026-05-18T18:19:27.620922+00:00</time></td><td>rsi_mean_reversion</td><td>alpaca</td><td><code>LLY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>0.001425</td><td style="text-align:right">$1.40</td><td>$985.82</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right"><span style="color:#7f1d1d">-$0.01</span></td></tr>
+<tr><td><time data-ts='trade'>2026-06-03T21:11:25.257368+00:00</time></td><td>closer</td><td>alpaca</td><td><code>SPY</code></td><td style="color:#7f1d1d;font-weight:600">SELL</td><td>10.000000</td><td style="text-align:right">$100.00</td><td>$725.00</td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px">FILLED</span></td><td><span style="background:#15803d;color:white;padding:1px 6px;border-radius:4px;font-size:11px;">LIVE</span></td><td style="text-align:right">—</td></tr>
   </tbody>
 </table>
 
 
+<h2 style="font-size: 16px; margin-top: 28px; margin-bottom: 8px;">
+  Recent errors (10)
+</h2>
+<table>
+  <thead>
+    <tr><th>When</th><th>Scope</th><th>Strategy</th>
+        <th>Venue</th><th>Exception</th></tr>
+  </thead>
+  <tbody>
+<tr><td><time data-ts='error'>2026-06-03T21:11:21.931857+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-06-03T21:11:20.848152+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-06-03T20:51:34.299794+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-06-03T20:51:33.654889+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-06-03T19:48:55.689232+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-06-03T19:48:54.876659+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-30T19:39:41.508579+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-30T19:39:40.854939+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-30T14:58:50.705957+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-05-30T14:58:50.596120+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 476, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
+  </tbody>
+</table>
 
-<footer>Generated <time data-ts="generated">2026-05-30 08:47 ET</time></footer>
+<footer>Generated <time data-ts="generated">2026-06-03 17:14 ET</time></footer>
 
 </body>
 </html>

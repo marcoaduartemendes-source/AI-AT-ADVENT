@@ -141,6 +141,7 @@ ALL_STRATEGIES = [
         asset_classes=["PREDICTION"], venue="kalshi",
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Favorite-longshot bias arb on Kalshi (P1)",
+        group="PREDICTION",
     ),
     # ── Phase 2 (crypto_basis_trade eliminated 2026-06-03 — NO_DATA / fee-neg)
     StrategyMeta(
@@ -148,12 +149,14 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.16, max_alloc_pct=0.28, min_alloc_pct=0.06,
         description="12-1m time-series momentum on 7-ETF basket (P2)",
+        group="TREND",
     ),
     StrategyMeta(
         name="commodity_carry",
         asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
         target_alloc_pct=0.06, max_alloc_pct=0.18, min_alloc_pct=0.02,
         description="Top-N backwardated commodity futures (P2)",
+        group="CARRY",
     ),
     # ── Phase 3
     # PEAD v1 retired 2026-05-07. The gap-only proxy for "earnings
@@ -167,6 +170,7 @@ ALL_STRATEGIES = [
         asset_classes=["PREDICTION"], venue="kalshi",
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Kalshi macro events vs implied probabilities (P3)",
+        group="PREDICTION",
     ),
     # ELIMINATED 2026-05-22 (user mandate "eliminate strategies that
     # aren't working"): crypto_xsmom, gap_trading, low_vol_anomaly,
@@ -180,6 +184,7 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.00, max_alloc_pct=0.00, min_alloc_pct=0.0,
         description="Vol-target multiplier; publishes scaler only, no trades (P3)",
+        group="OVERLAY",
     ),
     # ── Flagship — institutional multi-factor cross-sectional equity
     # model (2026-05-19). The highest-sophistication sleeve in the
@@ -191,6 +196,7 @@ ALL_STRATEGIES = [
         asset_classes=["EQUITY"], venue="alpaca",
         target_alloc_pct=0.14, max_alloc_pct=0.28, min_alloc_pct=0.06,
         description="Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)",
+        group="FACTOR",
     ),
     # ── User-requested experimental sleeves. Both REGISTER SMALL and
     # stay DRY until the validation harness (docs/validation.json)
@@ -202,6 +208,7 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
         description="3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)",
+        group="LEVERAGED",
     ),
     # leveraged_champions: 3x exposure that DYNAMICALLY tracks the top-5
     # PASS strategies (mapped to liquid 3x ETF proxies), same regime gate
@@ -276,6 +283,7 @@ ALL_STRATEGIES = [
         asset_classes=["EQUITY"], venue="alpaca",
         target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
         description="Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)",
+        group="FACTOR",
     ),
     # intraday_mean_reversion: the "HFT" the user requested, honestly
     # labelled — 5-min-bar mean reversion on SPY/QQQ/IWM. Cannot be
@@ -287,6 +295,7 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.015, max_alloc_pct=0.04, min_alloc_pct=0.0,
         description="Intraday VWAP fade on liquid ETFs (5-min bars)",
+        group="MEAN_REVERSION",
     ),
     # cross_asset_trend ELIMINATED 2026-06-03 — failed alpha generation.
     # dual_momentum: Antonacci dual momentum — crisis-alpha diversifier.
@@ -303,6 +312,7 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.0,
         description="Cross-sectional 12-1m momentum on commodity ETFs (CTA)",
+        group="TREND",
     ),
     # ── Phase 4 — EXPERIMENTAL (small initial allocations on Alpaca
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
@@ -313,6 +323,7 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Top-N SPDR sector ETFs by 90d return (P4)",
+        group="TREND",
     ),
     # (pairs_trading ELIMINATED 2026-05-22 — validation FAIL.)
     StrategyMeta(
@@ -320,6 +331,7 @@ ALL_STRATEGIES = [
         asset_classes=["EQUITY"], venue="alpaca",
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Momentum continuation on 20d Bollinger upper-band breaks (P4)",
+        group="TREND",
     ),
     StrategyMeta(
         name="earnings_momentum",
@@ -329,12 +341,14 @@ ALL_STRATEGIES = [
         # this should produce higher Sharpe than v1's gap-only proxy.
         target_alloc_pct=0.09, max_alloc_pct=0.2, min_alloc_pct=0.03,
         description="Live PEAD via FMP earnings calendar (P4)",
+        group="EVENT",
     ),
     StrategyMeta(
         name="dividend_growth",
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Quality-dividend ETF rotation by 90d return (P4)",
+        group="CARRY",
     ),
     # ── Phase 4b — additional experimental strategies for Alpaca
     # paper $100k. (gap_trading, turn_of_month, low_vol_anomaly all
@@ -345,6 +359,7 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="International country-ETF momentum vs SPY (P4b)",
+        group="MACRO",
     ),
     # ── Phase 5 — strategies consuming the new data feeds (Sprint C)
     StrategyMeta(
@@ -352,12 +367,14 @@ ALL_STRATEGIES = [
         asset_classes=["PREDICTION"], venue="kalshi",
         target_alloc_pct=0.04, max_alloc_pct=0.1, min_alloc_pct=0.01,
         description="Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)",
+        group="PREDICTION",
     ),
     StrategyMeta(
         name="cross_venue_arb",
         asset_classes=["PREDICTION"], venue="kalshi",
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Kalshi vs Polymarket cross-venue arbitrage (P5)",
+        group="PREDICTION",
     ),
     StrategyMeta(
         name="crypto_funding_carry_v2",
@@ -367,6 +384,7 @@ ALL_STRATEGIES = [
         # opportunity. Champion tier auto-promotes if it earns it.
         target_alloc_pct=0.06, max_alloc_pct=0.15, min_alloc_pct=0.02,
         description="Funding carry gated on Coinbase+Binance consensus (P5)",
+        group="CRYPTO",
     ),
     StrategyMeta(
         name="earnings_news_pead",
@@ -374,6 +392,7 @@ ALL_STRATEGIES = [
         # +2% baseline (was 3%) to absorb part of retired pead v1.
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="PEAD gated on RSS news corroboration (P5)",
+        group="EVENT",
     ),
     # ── Phase 6 — advanced crypto strategies (2026-05-08).
     # All three default to DRY: opt into real money by adding the
@@ -383,18 +402,21 @@ ALL_STRATEGIES = [
         asset_classes=["CRYPTO_SPOT", "CRYPTO_PERP"], venue="coinbase",
         target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
         description="Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)",
+        group="CRYPTO",
     ),
     StrategyMeta(
         name="crypto_breakout",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Donchian 30d-high breakout w/ trail-stop (P6)",
+        group="CRYPTO",
     ),
     StrategyMeta(
         name="crypto_vol_regime_overlay",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
         target_alloc_pct=0.00, max_alloc_pct=0.00, min_alloc_pct=0.0,
         description="Publishes crypto vol-regime scaler; no trades (P6)",
+        group="OVERLAY",
     ),
 ]
 
