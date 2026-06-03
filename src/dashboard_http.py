@@ -84,18 +84,34 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class _Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    """Threaded so one slow/broken client can't block the whole dashboard.
+
+    2026-06-03: the single-threaded TCPServer was wedging after random
+    ConnectionResetError events from health-checks/scanners/timed-out
+    browsers — nginx then hit it with 504 and the service appeared "up"
+    but unresponsive. Threading isolates each request; daemon_threads
+    means we don't leak threads on shutdown.
+    """
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        # Don't crash the server on a client connection blip. Suppress
+        # ConnectionResetError noise; log anything else.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, TimeoutError)):
+            return
+        logger.warning(f"request error from {client_address}: {exc!r}")
+
+
 def main() -> int:
     os.chdir(ROOT)
-    # Allow restart-without-TIME_WAIT delay so systemctl restart is snappy.
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("0.0.0.0", PORT), _Handler) as srv:
+    bind = os.environ.get("DASHBOARD_BIND", "0.0.0.0").strip()
+    with _Server((bind, PORT), _Handler) as srv:
         # Optional TLS — wrap the socket if DASHBOARD_CERT + DASHBOARD_KEY
         # are set. Lets the dashboard listen on 443 with HTTPS so it works
         # from networks that block 8080 (common on home/mobile networks).
-        # 2026-05-30: added after port 8080 was consistently blocked from
-        # the user's network. Self-signed cert is fine — the basic-auth
-        # password is the security primitive; TLS just keeps it private
-        # on the wire and lets the URL be https://<ip>/.
         cert = os.environ.get("DASHBOARD_CERT", "").strip()
         key = os.environ.get("DASHBOARD_KEY", "").strip()
         if cert and key:
@@ -106,7 +122,7 @@ def main() -> int:
             scheme = "https"
         else:
             scheme = "http"
-        logger.info(f"dashboard-http: serving {ROOT} on {scheme}://:{PORT} "
+        logger.info(f"dashboard-http: serving {ROOT} on {scheme}://{bind}:{PORT} "
                     f"(Basic auth required, realm={REALM!r})")
         try:
             srv.serve_forever()

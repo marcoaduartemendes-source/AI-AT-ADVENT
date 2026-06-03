@@ -31,8 +31,13 @@ WorkingDirectory=/opt/ai-at-advent
 # build might reference, but the creds no longer depend on it.
 EnvironmentFile=-/etc/aaa-dashboard.env
 ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env 2>/dev/null || true; set +a; exec /opt/ai-at-advent/.venv/bin/python src/dashboard_http.py'
-Restart=on-failure
-RestartSec=5
+# 2026-06-03: Restart=always (not on-failure) — survives any wedge or
+# clean exit; systemd brings it back within seconds. A dashboard going
+# down silently for a week is not acceptable.
+Restart=always
+RestartSec=3
+StartLimitBurst=10
+StartLimitIntervalSec=60
 
 NoNewPrivileges=yes
 ProtectSystem=strict
