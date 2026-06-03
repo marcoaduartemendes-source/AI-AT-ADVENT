@@ -58,6 +58,11 @@ from .intraday_mean_reversion import IntradayMeanReversion
 from .kalshi_calibration_arb import KalshiCalibrationArb
 from .leveraged_champions import LeveragedChampions
 from .leveraged_momentum import LeveragedMomentum
+from .alpha_sleeves import (
+    DefensiveValue, GlobalMacroMomentum, HighYieldCarry,
+    QualityFactor, ReitIncomeCarry, SizePremiumTrend,
+)
+from .leveraged_top4 import LeveragedTop4
 from .multifactor_equity import MultiFactorEquity
 from .macro_kalshi import MacroKalshi
 from .macro_kalshi_v2 import MacroKalshiV2
@@ -69,6 +74,9 @@ from .tsmom_etf import TSMomETF
 from .vol_managed_overlay import VolManagedOverlay
 
 __all__ = [
+    # 2026-06-03 new alpha sleeves + leveraged_top4
+    "DefensiveValue", "GlobalMacroMomentum", "HighYieldCarry",
+    "QualityFactor", "ReitIncomeCarry", "SizePremiumTrend", "LeveragedTop4",
     # Phase 1-3
     "CommodityCarry",
     "CryptoBasisTrade",

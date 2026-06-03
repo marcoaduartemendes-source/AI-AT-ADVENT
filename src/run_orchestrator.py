@@ -28,30 +28,33 @@ from risk.manager import RiskManager
 from strategies import (
     BollingerBreakout,
     CommodityCarry,
-    CrossAssetTrend,
-    CrossVenueArb,
-    CryptoBasisTrade,
-    CryptoBreakout,
-    CryptoFundingCarry,
-    CryptoPairsTrading,
-    BondCarry,
     CommodityMomentum,
+    CrossVenueArb,
+    CryptoBreakout,
+    CryptoPairsTrading,
     CryptoVolRegimeOverlay,
     CryptoFundingCarryV2,
+    DefensiveValue,
     DividendGrowth,
     DualMomentum,
     EarningsMomentum,
     EarningsNewsPEAD,
+    GlobalMacroMomentum,
+    HighYieldCarry,
     InternationalsRotation,
     IntradayMeanReversion,
     KalshiCalibrationArb,
     LeveragedChampions,
     LeveragedMomentum,
+    LeveragedTop4,
     MacroKalshi,
     MacroKalshiV2,
     MultiFactorEquity,
+    QualityFactor,
+    ReitIncomeCarry,
     RiskParityETF,
     SectorRotation,
+    SizePremiumTrend,
     ThematicGrowth,
     TSMomETF,
     VolManagedOverlay,
@@ -122,18 +125,16 @@ def _per_broker_flag(envvar: str) -> bool | None:
 
 
 ALL_STRATEGIES = [
-    # ── Phase 1 (rebalanced down to make room for P4 experimental sleeve)
-    StrategyMeta(
-        name="crypto_funding_carry",
-        asset_classes=["CRYPTO_PERP"], venue="coinbase",
-        target_alloc_pct=0.12, max_alloc_pct=0.25, min_alloc_pct=0.04,
-        description="Long spot / short perp; capture funding rate (P1)",
-    ),
+    # 2026-06-03: ELIMINATED 4 alpha-failing strategies (crypto_funding_carry,
+    # crypto_basis_trade, cross_asset_trend, bond_carry). All proven to
+    # not generate alpha over 5y backtests (fee-negative, NO_DATA, or sub-
+    # 0.5 Sharpe). Removed entirely instead of just zero-allocated.
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.22, max_alloc_pct=0.32, min_alloc_pct=0.15,
         description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
+        group="DEFENSIVE",
     ),
     StrategyMeta(
         name="kalshi_calibration_arb",
@@ -141,13 +142,7 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
         description="Favorite-longshot bias arb on Kalshi (P1)",
     ),
-    # ── Phase 2
-    StrategyMeta(
-        name="crypto_basis_trade",
-        asset_classes=["CRYPTO_FUTURE"], venue="coinbase",
-        target_alloc_pct=0.1, max_alloc_pct=0.2, min_alloc_pct=0.03,
-        description="Long spot / short dated future on Coinbase (P2)",
-    ),
+    # ── Phase 2 (crypto_basis_trade eliminated 2026-06-03 — NO_DATA / fee-neg)
     StrategyMeta(
         name="tsmom_etf",
         asset_classes=["ETF"], venue="alpaca",
@@ -217,6 +212,61 @@ ALL_STRATEGIES = [
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
         description="3x leverage tracking the top-5 PASS strategies (regime-gated, -15% stop)",
+        group="LEVERAGED",
+    ),
+    # 2026-06-03: leveraged_top4 — sister sleeve to leveraged_champions
+    # but more concentrated (top-4 instead of top-5).
+    StrategyMeta(
+        name="leveraged_top4",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        description="3x leverage tracking the top-4 PASS strategies (concentrated)",
+        group="LEVERAGED",
+    ),
+    # 2026-06-03: 6 new institutional-grade alpha sleeves — each a
+    # DISTINCT, academically-documented return premium so the book
+    # diversification finally improves. Register SMALL + DRY until PASS.
+    StrategyMeta(
+        name="global_macro_momentum",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        description="Country-ETF cross-sectional momentum (Asness 2013)",
+        group="MACRO",
+    ),
+    StrategyMeta(
+        name="quality_factor",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        description="Long QUAL+USMV defensive factor (AQR Quality Minus Junk)",
+        group="FACTOR",
+    ),
+    StrategyMeta(
+        name="defensive_value",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        description="Long VTV+IDV+USMV (value+defensive composite)",
+        group="FACTOR",
+    ),
+    StrategyMeta(
+        name="high_yield_carry",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.0,
+        description="HYG/JNK credit carry, trend-gated (rotates to SHY)",
+        group="CARRY",
+    ),
+    StrategyMeta(
+        name="reit_income_carry",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.0,
+        description="VNQ/SCHH real-estate yield, trend-gated",
+        group="CARRY",
+    ),
+    StrategyMeta(
+        name="size_premium_trend",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.0,
+        description="IWM size premium with 200d-SMA trend gate (Fama-French SMB)",
+        group="FACTOR",
     ),
     # thematic_growth: curated 2026 themes (AI compute, AI power,
     # cybersec, defense, GLP-1, robotics, quantum) — within-theme
@@ -238,37 +288,16 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.015, max_alloc_pct=0.04, min_alloc_pct=0.0,
         description="Intraday VWAP fade on liquid ETFs (5-min bars)",
     ),
-    # cross_asset_trend: CTA-style 12-1m trend on bonds / gold /
-    # commodities / oil / USD. First non-equity-beta strategy in
-    # the book — historical correlation to SPX is ~0. Modest Sharpe,
-    # huge diversification value.
-    StrategyMeta(
-        name="cross_asset_trend",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.06, min_alloc_pct=0.005,
-        description="CTA-style 12-1m TSMOM on TLT/GLD/DBC/USO/UUP (diversifier)",
-    ),
-    # dual_momentum: Antonacci dual momentum — top-3 of 6 risk ETFs by
-    # 12-1m momentum, gated by absolute momentum, rotating to IEF
-    # (Treasuries) when risk-off. The crisis-alpha diversifier the bench
-    # lacked: uncorrelated to the bull-market equity beta the other
-    # momentum sleeves all carry. Registers SMALL and stays DRY until
-    # docs/validation.json records PASS (5y Sharpe ≥ 0.5, fee-positive).
+    # cross_asset_trend ELIMINATED 2026-06-03 — failed alpha generation.
+    # dual_momentum: Antonacci dual momentum — crisis-alpha diversifier.
     StrategyMeta(
         name="dual_momentum",
         asset_classes=["ETF"], venue="alpaca",
         target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
         description="Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier",
+        group="TREND",
     ),
-    # Dedicated bond + commodity sleeves (user-requested 2026-05-22).
-    # Both register SMALL and stay DRY until validation PASS; uncorrelated
-    # to the book's equity beta.
-    StrategyMeta(
-        name="bond_carry",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
-        description="Term/credit-premium bond basket, trend-gated (TLT/LQD/HYG/EMB→SHY)",
-    ),
+    # bond_carry ELIMINATED 2026-06-03 — +$38/5y, fee-marginal, no edge.
     StrategyMeta(
         name="commodity_momentum",
         asset_classes=["ETF"], venue="alpaca",
@@ -406,8 +435,7 @@ def build_strategies(brokers):
     instances = {}
     if "coinbase" in brokers:
         cb = brokers["coinbase"]
-        instances["crypto_funding_carry"] = CryptoFundingCarry(cb)
-        instances["crypto_basis_trade"] = CryptoBasisTrade(cb)
+        # crypto_funding_carry + crypto_basis_trade ELIMINATED 2026-06-03 — no alpha.
         instances["commodity_carry"] = CommodityCarry(cb)
         # crypto_xsmom ELIMINATED 2026-05-22 (validation FAIL).
         # Phase 5 — multi-venue consensus version
@@ -439,14 +467,20 @@ def build_strategies(brokers):
         # DRY allocations until the validation harness PASSes them.
         instances["leveraged_momentum"] = LeveragedMomentum(al)
         instances["leveraged_champions"] = LeveragedChampions(al)
+        instances["leveraged_top4"] = LeveragedTop4(al)
         instances["thematic_growth"] = ThematicGrowth(al)
         instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
-        instances["cross_asset_trend"] = CrossAssetTrend(al)
-        # Crisis-alpha diversifier — dual momentum w/ Treasury risk-off.
+        # cross_asset_trend ELIMINATED 2026-06-03 — no alpha.
         instances["dual_momentum"] = DualMomentum(al)
-        # Dedicated bond + commodity sleeves (uncorrelated to equity beta).
-        instances["bond_carry"] = BondCarry(al)
+        # bond_carry ELIMINATED 2026-06-03 — no alpha.
         instances["commodity_momentum"] = CommodityMomentum(al)
+        # 6 new institutional-grade alpha sleeves (2026-06-03):
+        instances["global_macro_momentum"] = GlobalMacroMomentum(al)
+        instances["quality_factor"] = QualityFactor(al)
+        instances["defensive_value"] = DefensiveValue(al)
+        instances["high_yield_carry"] = HighYieldCarry(al)
+        instances["reit_income_carry"] = ReitIncomeCarry(al)
+        instances["size_premium_trend"] = SizePremiumTrend(al)
         # Phase 5 — Alpaca-side new-feed strategy
         instances["earnings_news_pead"] = EarningsNewsPEAD(al)
     if "kalshi" in brokers:

@@ -902,9 +902,116 @@ def backtest_commodity_momentum(window_days: int) -> BacktestSummary:
                                  window_days)
 
 
+# ─── Alpha sleeves (the 6 new institutional-grade strategies) ────────
+
+
+def _basket_above_sma_backtest(name, basket, safe, sma_days, window_days):
+    """Generic monthly-rebalance backtest for the basket-trend strategies:
+    each name in `basket` gets per_slot capital when above its SMA, else
+    that slot rotates to `safe`. Shared by quality_factor, defensive_value,
+    high_yield_carry, reit_income_carry, size_premium_trend."""
+    universe = list({*basket, safe})
+    hist = {s: _yahoo_history(s, window_days + sma_days + 30) for s in universe}
+    hist = {s: h for s, h in hist.items() if len(h) >= sma_days + 5}
+    if safe not in hist:
+        return BacktestSummary(strategy=name, window_days=window_days,
+                               note="No Yahoo data")
+    per_slot = 3000.0 / len(basket)
+
+    def _t(i):
+        tgt = {s: 0.0 for s in universe}
+        for s in basket:
+            h = hist.get(s)
+            if h is None or i >= len(h):
+                tgt[safe] += per_slot
+                continue
+            closes = h[:i + 1, 4]
+            if len(closes) < sma_days or closes[-1] >= closes[-sma_days:].mean():
+                tgt[s] += per_slot
+            else:
+                tgt[safe] += per_slot
+        return tgt
+
+    return _rebalance_to_targets(name, hist, _t, window_days)
+
+
+def backtest_quality_factor(window_days):
+    return _basket_above_sma_backtest(
+        "quality_factor", ["QUAL", "USMV"], "SHY", 200, window_days)
+
+
+def backtest_defensive_value(window_days):
+    return _basket_above_sma_backtest(
+        "defensive_value", ["VTV", "IDV", "USMV"], "SHY", 200, window_days)
+
+
+def backtest_high_yield_carry(window_days):
+    return _basket_above_sma_backtest(
+        "high_yield_carry", ["HYG", "JNK"], "SHY", 200, window_days)
+
+
+def backtest_reit_income_carry(window_days):
+    return _basket_above_sma_backtest(
+        "reit_income_carry", ["VNQ", "SCHH"], "SHY", 200, window_days)
+
+
+def backtest_size_premium_trend(window_days):
+    return _basket_above_sma_backtest(
+        "size_premium_trend", ["IWM"], "SHY", 200, window_days)
+
+
+def backtest_global_macro_momentum(window_days):
+    """Top-3 by 12-1m momentum across a diversified country basket;
+    flat in non-momentum names. Asness-Liew-Stevens 2013 country
+    momentum — uncorrelated to US-stock momentum at 1y horizon."""
+    from strategies.alpha_sleeves import GMM_UNIVERSE, GMM_TOP_K, GMM_LOOKBACK, GMM_SKIP
+    hist = {s: _yahoo_history(s, window_days + GMM_LOOKBACK + 30) for s in GMM_UNIVERSE}
+    hist = {s: h for s, h in hist.items() if len(h) >= GMM_LOOKBACK + 5}
+    if len(hist) < GMM_TOP_K:
+        return BacktestSummary(strategy="global_macro_momentum",
+                               window_days=window_days, note="No Yahoo data")
+    per_slot = 3000.0 / GMM_TOP_K
+
+    def _t(i):
+        mom = {}
+        for s, h in hist.items():
+            if i >= len(h):
+                continue
+            w = h[i - GMM_LOOKBACK:i - GMM_SKIP, 4]
+            if len(w) < 30 or w[0] <= 0:
+                continue
+            mom[s] = (w[-1] - w[0]) / w[0]
+        if not mom:
+            return None
+        winners = sorted([s for s in mom if mom[s] > 0],
+                         key=lambda s: mom[s], reverse=True)[:GMM_TOP_K]
+        tgt = {s: 0.0 for s in GMM_UNIVERSE}
+        for s in winners:
+            tgt[s] = per_slot
+        return tgt
+
+    return _rebalance_to_targets("global_macro_momentum", hist, _t, window_days)
+
+
+def backtest_leveraged_top4(window_days):
+    """3x basket on top-4 PASS strategies' proxies. Same regime gate as
+    leveraged_champions/leveraged_momentum. Reuses the proven pair-based
+    backtest from leveraged_thematic_backtest._backtest_leveraged_pairs."""
+    from .leveraged_thematic_backtest import _backtest_leveraged_pairs
+    pairs = [("UPRO", "SPY"), ("TQQQ", "QQQ"), ("SOXL", "SOXX"), ("TMF", "TLT")]
+    return _backtest_leveraged_pairs("leveraged_top4", pairs, window_days)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "dual_momentum": backtest_dual_momentum,
+    "global_macro_momentum": backtest_global_macro_momentum,
+    "quality_factor": backtest_quality_factor,
+    "defensive_value": backtest_defensive_value,
+    "high_yield_carry": backtest_high_yield_carry,
+    "reit_income_carry": backtest_reit_income_carry,
+    "size_premium_trend": backtest_size_premium_trend,
+    "leveraged_top4": backtest_leveraged_top4,
     "bond_carry": backtest_bond_carry,
     "commodity_momentum": backtest_commodity_momentum,
     "risk_parity_etf": backtest_risk_parity_etf,

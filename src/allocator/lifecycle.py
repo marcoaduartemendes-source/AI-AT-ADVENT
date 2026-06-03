@@ -53,6 +53,11 @@ class StrategyMeta:
     max_alloc_pct: float = 0.30           # hard ceiling
     min_alloc_pct: float = 0.05           # floor while ACTIVE/WATCH (0 if FROZEN)
     description: str = ""
+    # Strategy group for dashboard organisation. One of:
+    # TREND, FACTOR, CARRY, MEAN_REVERSION, MACRO, DEFENSIVE, CRYPTO,
+    # EVENT, LEVERAGED, OVERLAY, PREDICTION. Free-text — the dashboard
+    # uses it only to bucket strategies into sections.
+    group: str = "OTHER"
     enabled: bool = True                  # master kill — disabled won't even compute signals
 
 
