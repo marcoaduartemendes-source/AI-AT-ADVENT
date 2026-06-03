@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-05-30T08:47:45.193575+00:00",
+  "as_of": "2026-06-03T21:15:55.473526+00:00",
   "n_strategies": 22,
   "priority_counts": {
     "p1": 0,
@@ -10,7 +10,7 @@
     "p6": 4
   },
   "setup_issues": [
-    "recurring (18/20): [crypto_xsmom] execution failed"
+    "recurring (11/20): [crypto_xsmom] execution failed"
   ],
   "strategies": [
     {
@@ -166,7 +166,7 @@
       "walk_forward_oos_sharpe": 4.38,
       "live_class": "INSUFFICIENT_LIVE",
       "live_sharpe_30d": null,
-      "live_n_trades_30d": 3,
+      "live_n_trades_30d": 0,
       "live_pnl_30d": 0.0
     },
     {

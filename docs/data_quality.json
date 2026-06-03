@@ -1,27 +1,27 @@
 {
-  "as_of": "2026-05-30T08:47:45.210497+00:00",
-  "score": 7.3,
+  "as_of": "2026-06-03T21:15:55.477944+00:00",
+  "score": 8.0,
   "counts": {
     "OK": 8,
     "MISSING": 1,
-    "INCONSISTENT": 2
+    "INCONSISTENT": 1
   },
-  "n_checks": 11,
+  "n_checks": 10,
   "rows": [
     {
       "file": "docs/cycle_status.json",
       "status": "OK",
-      "age_hours": 0.1
+      "age_hours": 0.0
     },
     {
       "file": "docs/trades_recent.json",
       "status": "OK",
-      "age_hours": 0.1
+      "age_hours": 0.0
     },
     {
       "file": "docs/benchmark.json",
       "status": "OK",
-      "age_hours": 0.1
+      "age_hours": 0.0
     },
     {
       "file": "docs/validation.json",
@@ -41,7 +41,7 @@
     {
       "file": "docs/self_grade.json",
       "status": "OK",
-      "age_hours": 0.1
+      "age_hours": 0.0
     },
     {
       "file": "docs/hedge_fund_13f.json",
@@ -51,17 +51,12 @@
     {
       "file": "docs/index.html",
       "status": "OK",
-      "age_hours": 0.1
+      "age_hours": 0.0
     },
     {
       "check": "trade-orphans",
       "status": "INCONSISTENT",
-      "reason": "trades exist for strategies not in validation: ['low_vol_anomaly', 'pairs_trading', 'rsi_mean_reversion']"
-    },
-    {
-      "check": "cancel-rate",
-      "status": "INCONSISTENT",
-      "reason": "38/50 recent trades CANCELED (76%) \u2014 likely out-of-RTH submission loop"
+      "reason": "trades exist for strategies not in validation: ['closer']"
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
-  "as_of": "2026-05-30T08:47:45.220506+00:00",
-  "overall_grade": 5.01,
+  "as_of": "2026-06-03T21:15:55.481865+00:00",
+  "overall_grade": 3.46,
   "target_grade": 9.0,
   "weights": {
     "alpha_track": 0.22,
@@ -14,36 +14,36 @@
   },
   "components": {
     "alpha_track": {
-      "score": 10.0,
-      "reason": "live 30d Sharpe +3.39 across 50 trades \u2192 10.0/10"
+      "score": 1.0,
+      "reason": "only 1 trades in 30d (sample too small) \u2192 1/10"
     },
     "alpha_vs_spy": {
-      "score": 0.0,
-      "reason": "bot 30d -1.7% vs SPY +4.5% \u2192 excess -6.2pp \u2192 0.0/10"
+      "score": 5.0,
+      "reason": "benchmark.json lacks comparable fields \u2192 5.0/10"
     },
     "fee_discipline": {
-      "score": 0.6,
-      "reason": "3/50 trades from PASS strategies \u2192 0.6/10"
+      "score": 0.0,
+      "reason": "0/1 trades from PASS strategies \u2192 0.0/10"
     },
     "overfit_resistance": {
       "score": 9.1,
       "reason": "10/11 PASSes are also walk-forward ROBUST \u2192 9.1/10"
     },
     "execution_quality": {
-      "score": 2.2,
-      "reason": "submit ratio 54/245 = 22% (excl. 0 DRY) \u2192 2.2/10 (\u226580% target)"
+      "score": 2.1,
+      "reason": "submit ratio 34/164 = 21% (excl. 0 DRY) \u2192 2.1/10 (\u226580% target)"
     },
     "setup_health": {
-      "score": 0.0,
-      "reason": "0/20 clean cycles \u2192 0.0/10"
+      "score": 2.5,
+      "reason": "5/20 clean cycles \u2192 2.5/10"
     },
     "research_freshness": {
-      "score": 10.0,
-      "reason": "validation 0.0h old \u2192 10.0/10"
+      "score": 1.9,
+      "reason": "validation 108.5h old \u2192 1.9/10"
     },
     "data_quality": {
-      "score": 7.3,
-      "reason": "data-quality checks {'OK': 8, 'MISSING': 1, 'INCONSISTENT': 2} \u2192 7.3/10"
+      "score": 8.0,
+      "reason": "data-quality checks {'OK': 8, 'MISSING': 1, 'INCONSISTENT': 1} \u2192 8.0/10"
     }
   },
   "narrative": {
@@ -58,8 +58,9 @@
       "2 strategies failed walk-forward \u2014 their backtest Sharpe doesn't hold OOS."
     ],
     "next": [
-      "Submit ratio submit ratio 54/245 \u2014 investigate why proposals are being rejected.",
-      "Current grade 5.01/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (alpha_vs_spy)."
+      "Submit ratio submit ratio 34/164 \u2014 investigate why proposals are being rejected.",
+      "Live alpha is weak \u2014 the PASS strategies aren't yet translating to real returns; review execution drag (improvements panel, P1 LIVE BLEED).",
+      "Current grade 3.46/10 < target 9.0 \u2014 focus on the lowest-scoring axis next (fee_discipline)."
     ]
   }
 }
