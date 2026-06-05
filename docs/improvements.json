@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-06-03T21:15:55.473526+00:00",
+  "as_of": "2026-06-05T20:00:27.069297+00:00",
   "n_strategies": 22,
   "priority_counts": {
     "p1": 0,
@@ -10,7 +10,8 @@
     "p6": 4
   },
   "setup_issues": [
-    "recurring (11/20): [crypto_xsmom] execution failed"
+    "recurring (4/20): risk.compute_state failed",
+    "recurring (3/20): [crypto_xsmom] execution failed"
   ],
   "strategies": [
     {

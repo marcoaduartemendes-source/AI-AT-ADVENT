@@ -1,12 +1,13 @@
 {
-  "as_of": "2026-06-03T21:15:55.477944+00:00",
-  "score": 8.0,
+  "as_of": "2026-06-05T20:00:27.073117+00:00",
+  "score": 5.6,
   "counts": {
-    "OK": 8,
-    "MISSING": 1,
-    "INCONSISTENT": 1
+    "OK": 5,
+    "EMPTY": 1,
+    "STALE": 2,
+    "MISSING": 1
   },
-  "n_checks": 10,
+  "n_checks": 9,
   "rows": [
     {
       "file": "docs/cycle_status.json",
@@ -15,7 +16,8 @@
     },
     {
       "file": "docs/trades_recent.json",
-      "status": "OK",
+      "status": "EMPTY",
+      "reason": "list with 0 entries",
       "age_hours": 0.0
     },
     {
@@ -25,13 +27,15 @@
     },
     {
       "file": "docs/validation.json",
-      "status": "OK",
-      "age_hours": 0.0
+      "status": "STALE",
+      "reason": "46.7h old (expected refresh every 30h)",
+      "age_hours": 46.7
     },
     {
       "file": "docs/walk_forward.json",
-      "status": "OK",
-      "age_hours": 0.0
+      "status": "STALE",
+      "reason": "46.7h old (expected refresh every 30h)",
+      "age_hours": 46.7
     },
     {
       "file": "docs/improvements.json",
@@ -51,12 +55,7 @@
     {
       "file": "docs/index.html",
       "status": "OK",
-      "age_hours": 0.0
-    },
-    {
-      "check": "trade-orphans",
-      "status": "INCONSISTENT",
-      "reason": "trades exist for strategies not in validation: ['closer']"
+      "age_hours": 0.1
     }
   ]
 }
