@@ -22,10 +22,14 @@ class TestExecutionExcludesDry:
         assert g == 10.0
         assert "excl. 45 DRY" in reason
 
-    def test_all_dry_is_neutral_not_zero(self):
+    def test_all_dry_is_zero_not_neutral(self):
+        # 2026-06-05: an all-DRY book IS a failure (zero throughput is
+        # not "neutral"). The previous 5/10 fallback was masking the
+        # real silence as a passing grade — see the cap-starvation
+        # diagnosis in AUDIT.md. The metric now correctly scores it 0.
         g, reason = _grade_execution([_cyc(40, 0, 40)])
-        assert g == 5.0
-        assert "no live-submittable" in reason
+        assert g == 0.0
+        assert "silent" in reason.lower() or "zero" in reason.lower()
 
     def test_real_misses_still_score_low(self):
         # 10 live-submittable, only 2 placed (8 genuine failures), 0 DRY.

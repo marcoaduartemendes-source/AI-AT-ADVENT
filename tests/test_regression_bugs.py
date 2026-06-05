@@ -676,3 +676,34 @@ class TestActivityClassificationNotStale:
         from strategy_engine.orchestrator import Orchestrator
         o = self._mk(error="ValueError: boom", proposed=0)
         assert Orchestrator._classify_activity(o) == "ERROR"
+
+
+class TestExecutionGradeNoFalseHealth:
+    """Reproduces the bug where execution_quality fell back to 5/10
+    when there were no submittable proposals — masking a silent book
+    (zero throughput) as a passing grade. Failing the test (5/10 for
+    a dead book) communicates the bug; passing communicates the
+    invariant: 'no submissions ≠ healthy'.
+    """
+
+    def test_empty_cycle_history_scores_zero(self):
+        from common.self_grade import _grade_execution
+        g, _ = _grade_execution([])
+        assert g == 0.0
+
+    def test_all_dry_book_scores_zero_not_neutral(self):
+        from common.self_grade import _grade_execution
+        cycles = [{"timestamp": f"2026-06-05T0{i}:00:00+00:00",
+                   "proposals_total": 5, "proposals_submitted": 0,
+                   "proposals_dry": 5} for i in range(5)]
+        g, reason = _grade_execution(cycles)
+        assert g == 0.0
+        assert "silent" in reason.lower() or "zero" in reason.lower()
+
+    def test_real_submit_ratio_unchanged(self):
+        from common.self_grade import _grade_execution
+        cycles = [{"timestamp": f"2026-06-05T0{i}:00:00+00:00",
+                   "proposals_total": 10, "proposals_submitted": 8,
+                   "proposals_dry": 0} for i in range(5)]
+        g, _ = _grade_execution(cycles)
+        assert g == 8.0

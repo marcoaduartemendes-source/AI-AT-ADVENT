@@ -101,19 +101,21 @@ class RiskConfig:
         # single bad SPX day drains the book before per-strategy
         # freezes engage.
         #
-        # 2026-05-20: bumped EQUITY and ETF 0.45 → 0.60 each. With
-        # the user's additions of multifactor_equity (flagship),
-        # leveraged_momentum, thematic_growth, and intraday_mean_
-        # reversion on top of the existing ~10 equity/ETF sleeves,
-        # the 0.45 cap was binding so hard that every new entry got
-        # rejected with "no headroom" — the production cycle log
-        # showed thematic_growth proposing 12 names and ALL 12
-        # rejected at the cap, leveraged/sector/tsmom likewise.
-        # 0.60 still bounds the worst case (60% ETF + 60% EQUITY =
-        # 120% gross US-beta — capped further by leverage_cap) and
-        # restores headroom for the strategies the user funded.
-        "EQUITY":           0.60,
-        "ETF":              0.60,    # shared bucket with EQUITY
+        # 2026-06-05: 0.60 was STILL binding pathologically — sum of all
+        # ETF/EQUITY strategy target allocations is ~93% (17 strategies
+        # competing for a 60% bucket), and droplet cycle data showed 182
+        # of 182 rejections in 50 cycles were the ETF cap. After the
+        # iteration-priority fix, the top-3 conviction sleeves
+        # (risk_parity 22%, tsmom 16%, multifactor 14% = 52%) get filled
+        # but everything below position 3 perma-blocks. Raising to 0.90
+        # gives the proven core plus the 3x leveraged sleeves room to
+        # operate. Safety is preserved by (a) leverage_cap=2.0× gross
+        # backstop, (b) the kill-switch's MTD-loss CRITICAL trigger at
+        # −4%, (c) the trailing-stop CRITICAL trigger at −7% from
+        # 14-day high. EQUITY+ETF share a bucket, so 0.90 of equity
+        # gross US-beta is the worst case before the leverage cap binds.
+        "EQUITY":           0.90,
+        "ETF":              0.90,    # shared bucket with EQUITY
                                      # (same beta exposure)
         "CRYPTO_SPOT":      0.25,
         "CRYPTO_PERP":      0.20,

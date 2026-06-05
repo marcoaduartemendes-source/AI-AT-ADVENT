@@ -132,16 +132,20 @@ def _grade_execution(cycle_status) -> tuple[float, str]:
     broken" when it wasn't (2026-05-22: 1/50 = 2% while the one live
     strategy was submitting fine)."""
     if not isinstance(cycle_status, list) or not cycle_status:
-        return 5.0, "no cycle data → 5/10"
+        return 0.0, "no cycle data → 0/10 (unknown ≠ healthy)"
     recent = sorted(cycle_status,
                      key=lambda c: c.get("timestamp", ""))[-20:]
     total_p = sum(c.get("proposals_total", 0) for c in recent)
     total_dry = sum(c.get("proposals_dry", 0) for c in recent)
     total_s = sum(c.get("proposals_submitted", 0) for c in recent)
     submittable = total_p - total_dry
+    # 2026-06-05: the old "neutral 5/10 when no data" fallback masked the
+    # real problem (zero throughput) as a passing grade. Zero submittable
+    # proposals across 20 cycles IS the failure — score it accordingly so
+    # the dashboard's overall grade reflects reality, not optimism.
     if submittable <= 0:
-        return 5.0, (f"no live-submittable proposals in last 20 cycles "
-                     f"({total_dry} DRY-logged) → 5/10 (neutral)")
+        return 0.0, (f"zero submittable proposals across last 20 cycles "
+                     f"({total_dry} DRY-logged) → 0/10 — book is silent")
     ratio = total_s / submittable
     g = round(min(ratio, 1.0) * 10, 1)
     return g, (f"submit ratio {total_s}/{submittable} = {ratio:.0%} "
