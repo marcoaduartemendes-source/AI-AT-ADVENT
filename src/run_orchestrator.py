@@ -209,6 +209,7 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
         description="3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)",
         group="LEVERAGED",
+        leverage_x=3.0,
     ),
     # leveraged_champions: 3x exposure that DYNAMICALLY tracks the top-5
     # PASS strategies (mapped to liquid 3x ETF proxies), same regime gate
@@ -220,6 +221,7 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
         description="3x leverage tracking the top-5 PASS strategies (regime-gated, -15% stop)",
         group="LEVERAGED",
+        leverage_x=3.0,
     ),
     # 2026-06-03: leveraged_top4 — sister sleeve to leveraged_champions
     # but more concentrated (top-4 instead of top-5).
@@ -229,6 +231,7 @@ ALL_STRATEGIES = [
         target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
         description="3x leverage tracking the top-4 PASS strategies (concentrated)",
         group="LEVERAGED",
+        leverage_x=3.0,
     ),
     # 2026-06-03: 6 new institutional-grade alpha sleeves — each a
     # DISTINCT, academically-documented return premium so the book

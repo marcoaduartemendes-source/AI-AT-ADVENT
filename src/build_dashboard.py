@@ -146,6 +146,7 @@ def _strategy_meta() -> dict[str, dict]:
                 "asset_classes": list(m.asset_classes),
                 "description": getattr(m, "description", ""),
                 "group": getattr(m, "group", "OTHER"),
+                "leverage_x": float(getattr(m, "leverage_x", 1.0)),
             }
     except ImportError:
         pass
@@ -682,12 +683,21 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = No
     realized_color = "#166534" if realized > 0 else ("#7f1d1d" if realized < 0 else "#4b5563")
     unrealized_color = "#166534" if unrealized > 0 else ("#7f1d1d" if unrealized < 0 else "#4b5563")
     total_color = "#166534" if total > 0 else ("#7f1d1d" if total < 0 else "#4b5563")
-    if pnl.get("days_since") is not None:
-        last_label = f"{pnl['days_since']:g}d ago"
+    days_since = pnl.get("days_since")
+    if days_since is not None:
+        last_label = f"{days_since:g}d ago"
+        # Health colour for "Last trade": green ≤3d, amber 4-14d, red >14d
+        last_color = ("#166534" if days_since <= 3
+                      else "#b45309" if days_since <= 14
+                      else "#7f1d1d")
     else:
         last_label = "never"
+        last_color = "#7f1d1d"
     # Only rank strategies that have actually traded; idle ones show "—".
     rank_label = str(rank) if (rank is not None and pnl.get("n_closed", 0)) else "—"
+    lev = float((meta or {}).get("leverage_x", 1.0))
+    lev_color = "#7f1d1d" if lev > 1.5 else "#6b7280"
+    lev_label = f"{lev:g}x"
     return (
         f"<tr>"
         f"<td class=num style=\"color:#6b7280\">{rank_label}</td>"
@@ -695,13 +705,14 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = No
         + (f"<br><span class=desc>{html.escape(meta.get('description',''))}</span>" if meta else "")
         + f"</td>"
         f"<td>{html.escape(venue)}</td>"
+        f"<td class=num style=\"color:{lev_color};font-weight:600\">{lev_label}</td>"
         f"<td><span class=badge style=\"background:{mode_color}\">{mode_label}</span></td>"
         f"<td class=num>{pnl.get('n_closed', 0)}</td>"
         f"<td class=num>{_fmt_pct(pnl.get('win_rate', 0.0))}</td>"
         f"<td class=num style=\"color:{realized_color}\">{_fmt_money(realized)}</td>"
         f"<td class=num style=\"color:{unrealized_color}\">{_fmt_money(unrealized)}</td>"
         f"<td class=num style=\"color:{total_color};font-weight:600\">{_fmt_money(total)}</td>"
-        f"<td>{html.escape(last_label)}</td>"
+        f"<td style=\"color:{last_color};font-weight:500\">{html.escape(last_label)}</td>"
         f"</tr>"
     )
 
@@ -717,7 +728,7 @@ def _group_header_row(group: str, members: list[tuple[str, dict, dict, str]]) ->
     color = "#166534" if subtotal > 0 else ("#7f1d1d" if subtotal < 0 else "#4b5563")
     return (
         f'<tr data-group-header="1" style="background:#eef2f7">'
-        f'<td colspan=8 style="padding:8px 12px;font-weight:600;'
+        f'<td colspan=9 style="padding:8px 12px;font-weight:600;'
         f'color:#1f2937;font-size:13px;'
         f'border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">'
         f'{emoji}&nbsp;&nbsp;{html.escape(label)}'
@@ -1975,6 +1986,26 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     total_closed = sum(r[2].get("n_closed", 0) for r in rows)
     total_wins = sum(r[2].get("wins", 0) for r in rows)
     portfolio_winrate = (total_wins / total_closed) if total_closed else 0.0
+    # Activity-health rollup: how many strategies are actually trading.
+    # Helps the operator spot the "many sleeves dormant" failure mode at
+    # a glance instead of scanning the per-strategy "Last trade" column.
+    n_active = sum(
+        1 for r in rows
+        if r[2].get("days_since") is not None and r[2]["days_since"] <= 3
+    )
+    n_stale = sum(
+        1 for r in rows
+        if r[2].get("days_since") is not None
+        and 3 < r[2]["days_since"] <= 14
+    )
+    n_idle = sum(
+        1 for r in rows
+        if r[2].get("days_since") is None or r[2]["days_since"] > 14
+    )
+    n_never = sum(1 for r in rows if r[2].get("days_since") is None)
+    activity_color = ("#166534" if n_active >= 0.5 * len(rows)
+                      else "#b45309" if n_active >= 0.25 * len(rows)
+                      else "#7f1d1d")
 
     def _color_for(v: float) -> str:
         return "#166534" if v > 0 else ("#7f1d1d" if v < 0 else "#4b5563")
@@ -2023,7 +2054,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     body_rows = _grouped_body_rows(rows)
     if not rows:
         body_rows = (
-            "<tr><td colspan=10 style='text-align:center;color:#6b7280;"
+            "<tr><td colspan=11 style='text-align:center;color:#6b7280;"
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
@@ -2236,6 +2267,17 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     <div class="label">Gross leverage</div>
     <div class="value" style="color:{lev_color}">{lev_value}</div>
   </div>
+  <div class="stat" title="Strategies traded in the last 3d / 4-14d / never or &gt;14d. Helps spot dormant sleeves at a glance.">
+    <div class="label">Activity (3d / stale / idle)</div>
+    <div class="value" style="color:{activity_color};font-size:18px">
+      <span style="color:#166534">{n_active}</span>
+      <span style="color:#9ca3af">·</span>
+      <span style="color:#b45309">{n_stale}</span>
+      <span style="color:#9ca3af">·</span>
+      <span style="color:#7f1d1d">{n_idle}</span>
+      <span style="color:#9ca3af;font-size:11px;font-weight:400">({n_never} never)</span>
+    </div>
+  </div>
 </div>
 
 <table>
@@ -2244,6 +2286,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
       <th class=num title="Rank by total P&amp;L (traded strategies only)">#</th>
       <th>Strategy</th>
       <th>Venue</th>
+      <th class=num title="Notional leverage: 1x = unlevered, 3x = 3x ETF sleeves">Lev</th>
       <th>Mode</th>
       <th class=num>Closed</th>
       <th class=num>Win rate</th>

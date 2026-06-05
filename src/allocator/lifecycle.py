@@ -58,6 +58,11 @@ class StrategyMeta:
     # EVENT, LEVERAGED, OVERLAY, PREDICTION. Free-text — the dashboard
     # uses it only to bucket strategies into sections.
     group: str = "OTHER"
+    # Notional leverage: 1.0 for unlevered sleeves; 3.0 for the 3x ETF
+    # sleeves (leveraged_momentum/champions/top4). Display-only on the
+    # dashboard so the operator can see at a glance how much "real"
+    # market exposure each book carries vs its capital allocation.
+    leverage_x: float = 1.0
     enabled: bool = True                  # master kill — disabled won't even compute signals
 
 
