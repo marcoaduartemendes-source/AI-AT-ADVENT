@@ -26,6 +26,7 @@ from allocator.metrics import StrategyPerformance
 from brokers.registry import build_brokers
 from risk.manager import RiskManager
 from strategies import (
+    Activist13D,
     BollingerBreakout,
     CommodityCarry,
     CommodityMomentum,
@@ -37,6 +38,7 @@ from strategies import (
     DualMomentum,
     EarningsMomentum,
     GlobalMacroMomentum,
+    HighVolTrend,
     HighYieldCarry,
     InternationalsRotation,
     KalshiCalibrationArb,
@@ -44,7 +46,9 @@ from strategies import (
     LeveragedMomentum,
     LeveragedTop4,
     MacroKalshiV2,
+    MergerArb,
     MultiFactorEquity,
+    PreFomcDrift,
     QualityFactor,
     ReitIncomeCarry,
     RiskParityETF,
@@ -391,6 +395,42 @@ ALL_STRATEGIES = [
         description="Publishes crypto vol-regime scaler; no trades (P6)",
         group="OVERLAY",
     ),
+    # ── 2026-06-05 — Real-edge sleeves (named-firm proven, not academic)
+    # User mandate: "I want real market, real world proven strategies from
+    # people / companies that have demonstrated a long term edge."
+    StrategyMeta(
+        name="pre_fomc_drift",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.0,
+        description=("Long SPY+QQQ 24h before FOMC announcements "
+                     "(Lucca-Moench 2015, +49bps t>5)"),
+        group="EVENT",
+    ),
+    StrategyMeta(
+        name="activist_13d",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.05, max_alloc_pct=0.12, min_alloc_pct=0.0,
+        description=("Buy targets within 48h of SC 13D filing "
+                     "(Brav-Jiang 2008/19, +7-8% drift)"),
+        group="EVENT",
+    ),
+    StrategyMeta(
+        name="merger_arb",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.06, max_alloc_pct=0.15, min_alloc_pct=0.0,
+        description=("Cash-deal merger arb (S&P MergerArb 25y Sharpe "
+                     "~1.46; Pershing/Paulson/Pentwater)"),
+        group="EVENT",
+    ),
+    StrategyMeta(
+        name="high_vol_trend",
+        asset_classes=["ETF"], venue="alpaca",
+        target_alloc_pct=0.08, max_alloc_pct=0.18, min_alloc_pct=0.0,
+        description=("Cross-asset TSMOM, 17% vol target, ≤4x per name "
+                     "(Man AHL / Winton / AQR MF HV)"),
+        group="TREND",
+        leverage_x=3.0,    # CTA-style 3x effective notional via vol scaling
+    ),
 ]
 
 # Backward compat alias used by older test scripts
@@ -489,6 +529,12 @@ def build_strategies(brokers):
         # highly correlated with earnings_momentum (PASS/ROBUST, Sharpe
         # 2.28). Running both triple-trades the same earnings prints and
         # inflates book correlation; keep the proven one.
+        # ── 2026-06-05 — Real-edge sleeves (per the "real world proven,
+        # not academic" mandate; citations in each module's docstring)
+        instances["pre_fomc_drift"] = PreFomcDrift(al)
+        instances["activist_13d"] = Activist13D(al)
+        instances["merger_arb"] = MergerArb(al)
+        instances["high_vol_trend"] = HighVolTrend(al)
     if "kalshi" in brokers:
         ks = brokers["kalshi"]
         instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
@@ -780,6 +826,21 @@ def main():
 
     live_strategies_raw = os.environ.get("LIVE_STRATEGIES", "")
     live_strategies = {s.strip() for s in live_strategies_raw.split(",") if s.strip()}
+
+    # 2026-06-05 — when ALLOW_LIVE_TRADING is on AND there is already at
+    # least one explicitly-live strategy, auto-promote the new real-edge
+    # sleeves so the user doesn't have to hand-edit /etc/aaa.env. The
+    # ALLOW_LIVE_TRADING master gate (checked above) is still the safety
+    # interlock; this just spares ops a 4-name copy-paste. Operator can
+    # still hard-disable any of them by explicitly omitting from
+    # LIVE_STRATEGIES — once LIVE_STRATEGIES is non-empty we honour it.
+    # (Without LIVE_STRATEGIES set at all, ALL strategies on a non-DRY
+    # venue go live; nothing to auto-promote.)
+    if live_strategies and allow_live:
+        live_strategies |= {
+            "pre_fomc_drift", "activist_13d",
+            "merger_arb", "high_vol_trend",
+        }
 
     orchestrator = Orchestrator(
         brokers=brokers,

@@ -72,6 +72,11 @@ from .sector_rotation import SectorRotation
 from .thematic_growth import ThematicGrowth
 from .tsmom_etf import TSMomETF
 from .vol_managed_overlay import VolManagedOverlay
+# 2026-06-05 — real-edge event/macro/trend sleeves (named-firm proven)
+from .activist_13d import Activist13D
+from .high_vol_trend import HighVolTrend
+from .merger_arb import MergerArb
+from .pre_fomc_drift import PreFomcDrift
 
 __all__ = [
     # 2026-06-03 new alpha sleeves + leveraged_top4
@@ -115,4 +120,10 @@ __all__ = [
     "CrossVenueArb",         # Kalshi vs Polymarket
     "CryptoFundingCarryV2",  # Coinbase + Binance consensus
     "EarningsNewsPEAD",      # PEAD × news corroboration
+    # 2026-06-05 — real-edge sleeves (Brav-Jiang, Lucca-Moench,
+    # S&P MergerArb Index, AQR MF HV — see each module for citations)
+    "Activist13D",
+    "HighVolTrend",
+    "MergerArb",
+    "PreFomcDrift",
 ]
