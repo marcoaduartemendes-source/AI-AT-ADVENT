@@ -506,3 +506,66 @@ class TestMarketClosedIsNotAnError:
 
         orch._execute_proposal(proposal, decision, report, strat)
         assert len(report.errors) == 1   # a genuine failure still surfaces
+
+
+class TestConcentrationCapPriorityOrdering:
+    """Pins the 2026-06-05 fix: the per-strategy loop must process
+    strategies HIGHEST-CONVICTION-FIRST so the scarce per-asset-class cap
+    budget flows to the best risk-adjusted sleeves instead of whoever the
+    dict happened to iterate first.
+
+    The bug it prevents: tsmom_etf proposing 116 orders and getting 109
+    REJECTED at the ETF cap purely because lower-conviction strategies
+    consumed the budget ahead of it.
+    """
+
+    def _ordered_strategy(self, broker, call_log, nm):
+        class _Recorder(Strategy):
+            name = nm
+            venue = "alpaca"
+
+            def compute(self, ctx):
+                call_log.append(self.name)
+                return []
+        return _Recorder(broker)
+
+    def test_high_conviction_strategy_computes_first(self, monkeypatch):
+        import os
+        import tempfile
+        from strategy_engine.orchestrator import (
+            Orchestrator, OrchestratorConfig)
+        from risk.policies import RiskConfig
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from allocator.lifecycle import StrategyRegistry, StrategyMeta
+        from allocator.allocator import MetaAllocator
+
+        broker = MockBroker(venue="alpaca", cash_usd=100_000)
+        call_log: list[str] = []
+        # Register in deliberately "wrong" dict order (low conviction
+        # first) to prove the loop re-orders by allocation, not insertion.
+        strategies = {
+            "low_conv": self._ordered_strategy(broker, call_log, "low_conv"),
+            "high_conv": self._ordered_strategy(broker, call_log, "high_conv"),
+        }
+        tmp = tempfile.mkdtemp()
+        reg = StrategyRegistry(os.path.join(tmp, "alloc.db"))
+        reg.register(StrategyMeta(name="low_conv", asset_classes=["ETF"],
+                                  venue="alpaca", target_alloc_pct=0.05,
+                                  min_alloc_pct=0.0, max_alloc_pct=0.1))
+        reg.register(StrategyMeta(name="high_conv", asset_classes=["ETF"],
+                                  venue="alpaca", target_alloc_pct=0.30,
+                                  min_alloc_pct=0.0, max_alloc_pct=0.4))
+        risk = RiskManager(brokers={"alpaca": broker},
+                           config=RiskConfig(),
+                           db=EquitySnapshotDB(os.path.join(tmp, "risk.db")))
+        os.environ["TRADING_DB_PATH"] = os.path.join(tmp, "trades.db")
+        orch = Orchestrator(
+            brokers={"alpaca": broker}, registry=reg, risk_manager=risk,
+            allocator=MetaAllocator(reg), strategies=strategies,
+            config=OrchestratorConfig(dry_run=True))
+        orch.run_cycle()
+
+        # The higher-conviction strategy must have been computed first,
+        # regardless of dict insertion order.
+        assert call_log[:2] == ["high_conv", "low_conv"], (
+            f"expected high-conviction first, got {call_log}")

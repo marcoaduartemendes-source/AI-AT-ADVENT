@@ -627,7 +627,34 @@ class Orchestrator:
             return report
 
         latest_alloc = self.registry.latest_allocations()
-        for name, strategy in self.strategies.items():
+
+        # ── Concentration-cap priority ordering (2026-06-05) ──────────
+        # The per-asset-class cap (e.g. ETF ≤60% of equity) is a SHARED,
+        # SCARCE budget. Processing strategies in dict order meant whoever
+        # happened to be iterated first consumed the cap, and proven
+        # winners (risk_parity Sharpe 11, dual_momentum 10, multifactor 6)
+        # got their orders REJECTED at the cap purely by luck of ordering
+        # — the documented "tsmom proposed 116, 109 rejected" symptom.
+        # Fix: process strategies HIGHEST-CONVICTION-FIRST so the scarce
+        # cap budget flows to the best risk-adjusted sleeves. Conviction =
+        # the allocator's Sharpe-tilted target_pct (it already encodes
+        # rolling performance), falling back to the configured baseline.
+        # This is the "concentrate on winners" half of the alpha mandate:
+        # the long tail of correlated ETF sleeves now competes for what's
+        # left AFTER the champions are filled, instead of starving them.
+        def _conviction(item: tuple) -> float:
+            nm = item[0]
+            alloc = latest_alloc.get(nm, {})
+            pct = alloc.get("target_pct")
+            if pct is None:
+                meta = self.registry.meta(nm)
+                pct = meta.target_alloc_pct if meta else 0.0
+            return float(pct or 0.0)
+
+        ordered_strategies = sorted(
+            self.strategies.items(), key=_conviction, reverse=True
+        )
+        for name, strategy in ordered_strategies:
             outcome = StrategyOutcome(
                 strategy=name, venue=strategy.venue,
                 state=self.registry.get_state(name).value,

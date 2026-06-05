@@ -192,10 +192,19 @@ ALL_STRATEGIES = [
     # records PASS — see CLAUDE.md + common/strategy_validation.py.
     # leveraged_momentum: 3x ETFs gated on uptrend + low-vol regime
     # with a -15% hard stop; deliberately tiny so a wipeout is bounded.
+    # 2026-06-05 — "concentrate + leverage" mandate: the leveraged sleeves
+    # get more capital to actually beat the market, not track it. Safe
+    # because (a) the portfolio leverage_cap=2.0× gross-notional backstop
+    # in risk/policies.py bounds total exposure regardless of these
+    # numbers, (b) each sleeve stays DRY until validation.json records
+    # PASS, (c) each carries a −15% hard stop + 200d-SMA/low-vol regime
+    # gate + vol_scaler that zeros the book in CRISIS. Higher caps simply
+    # let the regime-gated winners take a bigger bite when conditions are
+    # favourable; the cap math is what makes the aggression survivable.
     StrategyMeta(
         name="leveraged_momentum",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        target_alloc_pct=0.03, max_alloc_pct=0.08, min_alloc_pct=0.0,
         description="3x leveraged ETF trend (TQQQ/UPRO/SOXL/TNA, regime-gated)",
         group="LEVERAGED",
         leverage_x=3.0,
@@ -207,17 +216,19 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="leveraged_champions",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        target_alloc_pct=0.03, max_alloc_pct=0.08, min_alloc_pct=0.0,
         description="3x leverage tracking the top-5 PASS strategies (regime-gated, -15% stop)",
         group="LEVERAGED",
         leverage_x=3.0,
     ),
     # 2026-06-03: leveraged_top4 — sister sleeve to leveraged_champions
-    # but more concentrated (top-4 instead of top-5).
+    # but more concentrated (top-4 instead of top-5). 2026-06-05: this is
+    # the flagship of the "concentrate + leverage" mandate — highest
+    # conviction, so it gets the largest leveraged allocation.
     StrategyMeta(
         name="leveraged_top4",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        target_alloc_pct=0.04, max_alloc_pct=0.10, min_alloc_pct=0.0,
         description="3x leverage tracking the top-4 PASS strategies (concentrated)",
         group="LEVERAGED",
         leverage_x=3.0,
