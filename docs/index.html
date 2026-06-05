@@ -161,7 +161,7 @@
 <div style="background:white;border:2px solid #7f1d1d;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;display:flex;flex-wrap:wrap;gap:18px;align-items:center"><span style="font-size:18px">🔴</span><span><strong>Last cycle:</strong> 46h ago (0.0s)</span><span><strong>Today:</strong> 0 cycles · 0 proposed · 0 submitted · 0 errors</span></div>
 
 <div class="ks-banner" style="background:#4b5563">
-  <span>❓ Kill switch: NO-DATA</span>
+  <span>❓ Kill switch: NO-DATA<small style="font-weight:400"></small></span>
   <small><time data-ts="kill-switch"></time></small>
   <span class="ks-actions">
     <a class="ks-btn ks-arm" target="_blank"
@@ -499,6 +499,34 @@ else stays paper-only until it proves an edge.</p>
         <th>Venue</th><th>Exception</th></tr>
   </thead>
   <tbody>
+<tr><td><time data-ts='error'>2026-06-05T19:39:58.764849+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 493, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulate failure
+</pre></details></td></tr>
+<tr><td><time data-ts='error'>2026-06-05T19:39:58.671531+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
+  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 493, in _run_cycle_body
+    state = self.risk.compute_state(persist=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
+    raise effect
+Exception: simulated broker outage
+</pre></details></td></tr>
 <tr><td><time data-ts='error'>2026-06-05T17:32:11.116423+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
   File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 493, in _run_cycle_body
     state = self.risk.compute_state(persist=True)
@@ -611,38 +639,10 @@ Exception: simulate failure
     raise effect
 Exception: simulated broker outage
 </pre></details></td></tr>
-<tr><td><time data-ts='error'>2026-06-05T15:00:50.379846+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulate failure<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
-  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 493, in _run_cycle_body
-    state = self.risk.compute_state(persist=True)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
-    return self._mock_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
-    return self._execute_mock_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
-    raise effect
-Exception: simulate failure
-</pre></details></td></tr>
-<tr><td><time data-ts='error'>2026-06-05T15:00:49.757753+00:00</time></td><td><code>orchestrator.compute_state</code></td><td></td><td></td><td><strong>Exception</strong>: simulated broker outage<details><summary>traceback</summary><pre style='font-size:11px;overflow-x:auto'>Traceback (most recent call last):
-  File &quot;/home/user/AI-AT-ADVENT/src/strategy_engine/orchestrator.py&quot;, line 493, in _run_cycle_body
-    state = self.risk.compute_state(persist=True)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1124, in __call__
-    return self._mock_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1128, in _mock_call
-    return self._execute_mock_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/usr/lib/python3.11/unittest/mock.py&quot;, line 1183, in _execute_mock_call
-    raise effect
-Exception: simulated broker outage
-</pre></details></td></tr>
   </tbody>
 </table>
 
-<footer>Generated <time data-ts="generated">2026-06-05 15:39 ET</time></footer>
+<footer>Generated <time data-ts="generated">2026-06-05 15:43 ET</time></footer>
 
 </body>
 </html>

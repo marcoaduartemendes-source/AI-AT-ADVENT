@@ -2169,6 +2169,17 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 
     ks = (risk.get("kill_switch") or "UNKNOWN").upper()
     ks_color, ks_emoji = _KS_COLOR.get(ks, _KS_COLOR["UNKNOWN"])
+    # When the switch is latched, the #1 operator question is "why is
+    # nothing trading?" — answer it inline so it's never a mystery again.
+    if ks == "KILL":
+        ks_explainer = ("&nbsp;— ALL new orders are HALTED while latched. "
+                        "This is why no trades are flowing. Reset to resume "
+                        "(positions are NOT auto-closed by the latch).")
+    elif ks == "CRITICAL":
+        ks_explainer = ("&nbsp;— closing-only mode: new entries blocked, "
+                        "exits still allowed.")
+    else:
+        ks_explainer = ""
 
     body_rows = _grouped_body_rows(rows)
     if not rows:
@@ -2338,7 +2349,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_system_status_line(cycles_recent, heartbeat)}
 
 <div class="ks-banner" style="background:{ks_color}">
-  <span>{ks_emoji} Kill switch: {html.escape(ks)}</span>
+  <span>{ks_emoji} Kill switch: {html.escape(ks)}<small style="font-weight:400">{ks_explainer}</small></span>
   <small><time data-ts="kill-switch">{html.escape(ks_at)}</time></small>
   <span class="ks-actions">
     <a class="ks-btn ks-arm" target="_blank"
