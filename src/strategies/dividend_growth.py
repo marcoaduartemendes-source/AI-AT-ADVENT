@@ -39,7 +39,10 @@ logger = logging.getLogger(__name__)
 
 LOOKBACK_DAYS = 90
 TOP_N = 2
-COOLDOWN_DAYS = 14
+COOLDOWN_DAYS = 7    # 2026-06-05: 14→7d to roughly double the rebalance
+                     # cadence per the user's "more active" mandate.
+                     # Still slow enough to keep fee drag bounded on a
+                     # quality-dividend rotation (long-tenor signal).
 TRADE_SIZE_USD = 10000.0   # per-position cap raised for paper-trading experimentation
 
 

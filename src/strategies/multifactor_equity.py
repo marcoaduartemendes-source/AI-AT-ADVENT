@@ -79,7 +79,10 @@ W_REVERSAL = 0.20
 TOP_DECILE_FRAC = 0.10      # long the top 10% by composite
 EXIT_RANK_FRAC = 0.33       # held name only sold if it leaves top 33%
 MAX_PER_SECTOR = 2
-REBALANCE_COOLDOWN_DAYS = 7
+REBALANCE_COOLDOWN_DAYS = 4   # 2026-06-05: 7→4d. The flagship factor
+                              # model should react to signal changes
+                              # within ~3 trading days, not a full week.
+                              # Rank-hysteresis still prevents thrash.
 MIN_NAMES = 3               # don't trade a degenerate 1-2 name book
 
 

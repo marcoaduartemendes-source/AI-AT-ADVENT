@@ -32,7 +32,13 @@ logger = logging.getLogger(__name__)
 
 # Annualization for daily-bar realized vol
 _ANN = math.sqrt(252)
-_MIN_REBALANCE_DELTA_PCT = 0.02  # 2% deviation tolerance
+_MIN_REBALANCE_DELTA_PCT = 0.01  # 2026-06-05: 2%→1% deviation tolerance.
+                                 # Tighter band ≈ rebalances ~2× more often.
+                                 # Still wide vs ETF spreads (~bps) so fee
+                                 # drag stays bounded; the moderate-activity
+                                 # mandate. All Weather literature reports
+                                 # tighter bands marginally improve risk-
+                                 # adjusted return in trending regimes.
 
 
 class RiskParityETF(Strategy):

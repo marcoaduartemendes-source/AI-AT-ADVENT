@@ -180,7 +180,11 @@ THEME_WEIGHT: dict[str, float] = {
 MOM_LOOKBACK = 126            # ~6 months trading days
 TREND_SMA = 200               # eligibility: above 200d SMA
 TOP_PER_THEME = 2             # hold top-2 momentum names per theme
-REBALANCE_COOLDOWN_DAYS = 14  # quarterly-ish churn; keep fees low
+REBALANCE_COOLDOWN_DAYS = 7   # 2026-06-05: 14→7d. Thematic baskets
+                              # are volatile; quicker rebalances now that
+                              # the cap-starvation fix lets them actually
+                              # fill. Still wide vs single-name equity
+                              # spreads to keep fee drag bounded.
 
 
 class ThematicGrowth(Strategy):

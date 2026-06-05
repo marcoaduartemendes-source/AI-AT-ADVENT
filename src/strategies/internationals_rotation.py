@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 LOOKBACK_DAYS = 90
 TOP_N = 2
 RELATIVE_STRENGTH_BPS = 200    # international must beat SPY by ≥ 2%
-COOLDOWN_DAYS = 14
+COOLDOWN_DAYS = 7    # 2026-06-05: 14→7d (moderate activity bump).
 TRADE_SIZE_USD = 10000.0   # per-position cap raised for paper-trading experimentation
 
 
