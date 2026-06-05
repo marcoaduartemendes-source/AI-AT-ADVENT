@@ -227,6 +227,22 @@ class EquitySnapshotDB:
             return float(row["peak"])
         return None
 
+    def last_equity(self) -> float | None:
+        """Most recent persisted equity snapshot, or None if the table is
+        empty. Used as the credible-equity fallback when a live broker
+        account fetch fails (returns $0) — a transient API failure must
+        never be read as a real-equity figure by the drawdown / kill
+        calc. Persisted snapshots are gated on venues_ok, so the last row
+        is by construction a healthy reading."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT equity_usd FROM equity_snapshots "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if row and row["equity_usd"] is not None:
+            return float(row["equity_usd"])
+        return None
+
     def recent_returns(self, n: int = 60) -> list[float]:
         """Last `n` snapshot-to-snapshot pct returns.
 
@@ -452,8 +468,33 @@ class RiskManager:
                 "transient API blip from false-firing the kill switch."
             )
 
-        peak = max(self.db.peak_equity(), equity)
-        dd_pct = (peak - equity) / peak if peak > 0 else 0.0
+        # ── Credible-equity guard (2026-06-05) ───────────────────────
+        # A failed broker get_account() leaves `equity` at $0 (or a
+        # partial sum when one of several venues fails). Feeding that
+        # into the drawdown calc reads as a ~100% loss and INSTANTLY
+        # latches the kill switch — exactly what happened 2026-05-04
+        # (equity=$0.00, dd=100%, peak=$101,820) and froze the entire
+        # book for a MONTH. The Sprint-A5 fix stopped *persisting* the
+        # bad reading but still let it fire the kill switch in the same
+        # cycle. Fix: when the live equity read isn't credible (zero or
+        # a degraded-venue partial), fall back to the last healthy
+        # persisted snapshot for the drawdown / kill decision so a
+        # transient API blip can never be misread as a wipeout.
+        equity_credible = equity > 0 and venues_ok
+        equity_for_risk = equity
+        if not equity_credible:
+            fallback = self.db.last_equity()
+            if fallback and fallback > 0:
+                logger.warning(
+                    f"[risk] equity read not credible "
+                    f"(${equity:.2f}, venues_ok={venues_ok}) — using last "
+                    f"healthy snapshot ${fallback:.2f} for drawdown/kill "
+                    f"calc to avoid a false kill-switch trip."
+                )
+                equity_for_risk = fallback
+
+        peak = max(self.db.peak_equity(), equity_for_risk)
+        dd_pct = (peak - equity_for_risk) / peak if peak > 0 else 0.0
 
         # Realized vol: annualized stdev of recent returns, assuming 5-min cadence
         # (with hourly cron there are ~12 returns/day, ~252 trading days/year)
@@ -515,7 +556,11 @@ class RiskManager:
         # > monthly_loss_limit_pct should escalate to CRITICAL
         # (closing-only) — protects against repeated per-strategy
         # failures stacking before the global kill fires.
-        mtd_loss_pct = self._month_to_date_loss_pct(equity)
+        # Use the credible equity here too — a $0 / partial broker read
+        # would otherwise compute a 50-100% MTD loss and escalate to
+        # CRITICAL (closing-only), the same false-trip the drawdown guard
+        # above prevents.
+        mtd_loss_pct = self._month_to_date_loss_pct(equity_for_risk)
         if (mtd_loss_pct is not None
                 and mtd_loss_pct >= self.config.monthly_loss_limit_pct
                 and ks_state in (KillSwitchState.NORMAL,
@@ -544,8 +589,11 @@ class RiskManager:
             trail_high = self.db.trailing_high(
                 self.config.trailing_stop_lookback_days
             )
-            if trail_high is not None and trail_high > 0 and equity > 0:
-                trail_dd = (trail_high - equity) / trail_high
+            # equity_for_risk (not raw equity) so a failed/partial broker
+            # read can't read as a trailing-stop breach → false CRITICAL.
+            if (trail_high is not None and trail_high > 0
+                    and equity_for_risk > 0):
+                trail_dd = (trail_high - equity_for_risk) / trail_high
                 if (trail_dd >= self.config.trailing_stop_critical_pct
                         and ks_state in (KillSwitchState.NORMAL,
                                           KillSwitchState.WARNING)):

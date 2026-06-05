@@ -184,6 +184,76 @@ class TestRiskStateFromCycle:
         assert state.kill_switch == KillSwitchState.KILL
 
 
+class TestFailedEquityReadDoesNotFalseKill:
+    """Reproduces the 2026-05-04 incident: a broker get_account() failure
+    left equity at $0, which the drawdown calc read as a 100% loss and
+    INSTANTLY latched the kill switch — freezing the entire book for a
+    MONTH (max real drawdown over that window was 2.8%).
+
+    Failing the test (a $0 equity read → KILL) communicates the bug;
+    passing communicates the invariant: a non-credible equity read falls
+    back to the last healthy snapshot and NEVER fires the kill switch.
+    """
+
+    def test_zero_equity_from_broker_failure_does_not_kill(self, tmp_path):
+        from brokers.base import BrokerError
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        # A healthy prior snapshot exists (the real account is fine).
+        db.record_snapshot(101_820, note="healthy")
+
+        broker = MockBroker(venue="alpaca", cash_usd=101_820,
+                            equity_usd=101_820)
+
+        def _boom():
+            raise BrokerError("HTTP 503 account endpoint unavailable")
+        broker.get_account = _boom    # simulate transient API failure
+
+        rm = RiskManager(
+            brokers={"alpaca": broker},
+            config=RiskConfig(warning_dd_pct=0.05, critical_dd_pct=0.10,
+                              kill_dd_pct=0.15),
+            db=db,
+        )
+        state = rm.compute_state(persist=True)
+        # The bug: equity=$0 → dd=100% → KILL. The fix: fall back to the
+        # $101,820 healthy snapshot → dd≈0 → NORMAL.
+        assert state.kill_switch == KillSwitchState.NORMAL, (
+            f"a failed equity read must NOT fire the kill switch; "
+            f"got {state.kill_switch}")
+
+    def test_partial_venue_failure_does_not_kill(self, tmp_path):
+        """Two venues; one fails its account fetch. The surviving venue's
+        partial equity must not be read as a drawdown that kills."""
+        from brokers.base import BrokerError
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from tests.mock_broker import MockBroker
+
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        db.record_snapshot(100_000, note="healthy (both venues)")
+
+        ok = MockBroker(venue="alpaca", cash_usd=50_000, equity_usd=50_000)
+        bad = MockBroker(venue="coinbase", cash_usd=50_000,
+                         equity_usd=50_000)
+
+        def _boom():
+            raise BrokerError("coinbase 429 rate limited")
+        bad.get_account = _boom
+
+        rm = RiskManager(
+            brokers={"alpaca": ok, "coinbase": bad},
+            config=RiskConfig(warning_dd_pct=0.05, critical_dd_pct=0.10,
+                              kill_dd_pct=0.15),
+            db=db,
+        )
+        state = rm.compute_state(persist=True)
+        # Partial equity ($50k of $100k) would read as 50% drawdown →
+        # KILL. The credible-equity guard must prevent it.
+        assert state.kill_switch == KillSwitchState.NORMAL
+
+
 class TestKillSwitchLatch:
     """2026-05-22 safety fix: the kill switch was a pure function of
     current drawdown, so a KILL auto-cleared the instant equity recovered
