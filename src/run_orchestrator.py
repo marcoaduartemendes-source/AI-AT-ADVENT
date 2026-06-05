@@ -30,29 +30,19 @@ from strategies import (
     BollingerBreakout,
     CommodityCarry,
     CommodityMomentum,
-    CrossVenueArb,
-    CryptoBreakout,
     CryptoVolRegimeOverlay,
-    DefensiveValue,
     DividendGrowth,
     DualMomentum,
     EarningsMomentum,
-    GlobalMacroMomentum,
     HighVolTrend,
-    HighYieldCarry,
     InternationalsRotation,
-    KalshiCalibrationArb,
     LeveragedChampions,
     LeveragedMomentum,
     LeveragedTop4,
-    MacroKalshiV2,
     MergerArb,
     MultiFactorEquity,
     PreFomcDrift,
-    QualityFactor,
-    ReitIncomeCarry,
     RiskParityETF,
-    SizePremiumTrend,
     ThematicGrowth,
     TSMomETF,
     VolManagedOverlay,
@@ -130,29 +120,31 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.22, max_alloc_pct=0.32, min_alloc_pct=0.15,
+        # CIO 2026-06-05: 22→20% — trim by 2pp to fund underweight
+        # dual_momentum / internationals_rotation / bollinger_breakout.
+        target_alloc_pct=0.20, max_alloc_pct=0.30, min_alloc_pct=0.12,
         description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
         group="DEFENSIVE",
     ),
-    StrategyMeta(
-        name="kalshi_calibration_arb",
-        asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
-        description="Favorite-longshot bias arb on Kalshi (P1)",
-        group="PREDICTION",
-    ),
+    # kalshi_calibration_arb RETIRED 2026-06-05 (CIO Tier-4 cull) — NO_DATA
+    # backtest in 18 months; Kalshi liquidity too thin to size meaningfully.
     # ── Phase 2 (crypto_basis_trade eliminated 2026-06-03 — NO_DATA / fee-neg)
     StrategyMeta(
         name="tsmom_etf",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.16, max_alloc_pct=0.28, min_alloc_pct=0.06,
+        # CIO Tier-3: walk-forward WEAK (overfit risk). Halve allocation
+        # 16→8% and monitor — was also the #1 victim of the ETF cap
+        # (93% rejection); now unblocked by the 60→90% cap raise.
+        target_alloc_pct=0.08, max_alloc_pct=0.18, min_alloc_pct=0.03,
         description="12-1m time-series momentum on 7-ETF basket (P2)",
         group="TREND",
     ),
     StrategyMeta(
         name="commodity_carry",
         asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
-        target_alloc_pct=0.06, max_alloc_pct=0.18, min_alloc_pct=0.02,
+        # CIO Tier-1: Sharpe 1.28 modest but ROBUST — trim 6→3% to
+        # right-size relative to the much-higher-Sharpe core sleeves.
+        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.01,
         description="Top-N backwardated commodity futures (P2)",
         group="CARRY",
     ),
@@ -187,7 +179,10 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="multifactor_equity",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.14, max_alloc_pct=0.28, min_alloc_pct=0.06,
+        # CIO Tier-1: 14→16% — the ONLY sleeve actually filling live
+        # (3/3 submit ratio in droplet data). Sharpe 5.92, ROBUST.
+        # Flagship; bump up.
+        target_alloc_pct=0.16, max_alloc_pct=0.30, min_alloc_pct=0.08,
         description="Multi-factor (mom+lowvol+reversal) x-sectional equity (flagship)",
         group="FACTOR",
     ),
@@ -240,48 +235,15 @@ ALL_STRATEGIES = [
     # 2026-06-03: 6 new institutional-grade alpha sleeves — each a
     # DISTINCT, academically-documented return premium so the book
     # diversification finally improves. Register SMALL + DRY until PASS.
-    StrategyMeta(
-        name="global_macro_momentum",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
-        description="Country-ETF cross-sectional momentum (Asness 2013)",
-        group="MACRO",
-    ),
-    StrategyMeta(
-        name="quality_factor",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
-        description="Long QUAL+USMV defensive factor (AQR Quality Minus Junk)",
-        group="FACTOR",
-    ),
-    StrategyMeta(
-        name="defensive_value",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.025, max_alloc_pct=0.08, min_alloc_pct=0.0,
-        description="Long VTV+IDV+USMV (value+defensive composite)",
-        group="FACTOR",
-    ),
-    StrategyMeta(
-        name="high_yield_carry",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.0,
-        description="HYG/JNK credit carry, trend-gated (rotates to SHY)",
-        group="CARRY",
-    ),
-    StrategyMeta(
-        name="reit_income_carry",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.0,
-        description="VNQ/SCHH real-estate yield, trend-gated",
-        group="CARRY",
-    ),
-    StrategyMeta(
-        name="size_premium_trend",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.0,
-        description="IWM size premium with 200d-SMA trend gate (Fama-French SMB)",
-        group="FACTOR",
-    ),
+    # 2026-06-05 (CIO Tier-4 cull): 6 academic Fama-French-style sleeves
+    # RETIRED — user explicitly rejected academic factor zoo. The proven
+    # multifactor_equity flagship (PASS/ROBUST, Sharpe 5.92) covers the
+    # same exposure with operational edge; running redundant siblings
+    # just wasted ~16% of capital on undifferentiated US-equity beta.
+    # Retired: global_macro_momentum, quality_factor, defensive_value,
+    # high_yield_carry, reit_income_carry, size_premium_trend.
+    # internationals_rotation (PASS/ROBUST Sharpe 4.91) provides the
+    # country-momentum exposure that global_macro_momentum duplicated.
     # thematic_growth: curated 2026 themes (AI compute, AI power,
     # cybersec, defense, GLP-1, robotics, quantum) — within-theme
     # 6m-momentum rank picks the winners; cross-theme by conviction.
@@ -301,7 +263,10 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="dual_momentum",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.0,
+        # CIO Tier-1: Sharpe 10.15 (#2 in the book), ROBUST, Antonacci
+        # documented strategy. 3→8% — massively underweighted; this is
+        # the diversifying engine of the book.
+        target_alloc_pct=0.08, max_alloc_pct=0.18, min_alloc_pct=0.03,
         description="Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier",
         group="TREND",
     ),
@@ -309,7 +274,9 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="commodity_momentum",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        # CIO Tier-3: Sharpe 5.36 but walk-forward WEAK. Halve to 1%
+        # and watch — high backtest Sharpe didn't survive OOS.
+        target_alloc_pct=0.01, max_alloc_pct=0.04, min_alloc_pct=0.0,
         description="Cross-sectional 12-1m momentum on commodity ETFs (CTA)",
         group="TREND",
     ),
@@ -324,7 +291,9 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="bollinger_breakout",
         asset_classes=["EQUITY"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
+        # CIO Tier-1: Sharpe 3.41 ROBUST. Underfunded at 0.5%; bump to
+        # 3% to put real capital behind a cleanly-documented signal.
+        target_alloc_pct=0.03, max_alloc_pct=0.08, min_alloc_pct=0.01,
         description="Momentum continuation on 20d Bollinger upper-band breaks (P4)",
         group="TREND",
     ),
@@ -341,7 +310,9 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="dividend_growth",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
+        # CIO Tier-1: Sharpe 3.00 ROBUST. Boring carry that works;
+        # bump 0.5→2% for a meaningful contribution.
+        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.005,
         description="Quality-dividend ETF rotation by 90d return (P4)",
         group="CARRY",
     ),
@@ -352,25 +323,17 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="internationals_rotation",
         asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
+        # CIO Tier-1: Sharpe 4.91 ROBUST. Real US-equity diversifier.
+        # 0.5→3% — replaces the retired global_macro_momentum which
+        # duplicated this exposure without operational edge.
+        target_alloc_pct=0.03, max_alloc_pct=0.08, min_alloc_pct=0.01,
         description="International country-ETF momentum vs SPY (P4b)",
         group="MACRO",
     ),
-    # ── Phase 5 — strategies consuming the new data feeds (Sprint C)
-    StrategyMeta(
-        name="macro_kalshi_v2",
-        asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.04, max_alloc_pct=0.1, min_alloc_pct=0.01,
-        description="Kalshi-vs-CME Fed-rate divergence (P5, CME-fed)",
-        group="PREDICTION",
-    ),
-    StrategyMeta(
-        name="cross_venue_arb",
-        asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
-        description="Kalshi vs Polymarket cross-venue arbitrage (P5)",
-        group="PREDICTION",
-    ),
+    # ── Phase 5 strategies RETIRED 2026-06-05 (CIO Tier-4 cull):
+    # macro_kalshi_v2 — NO_DATA in 18mo, Kalshi too thin to size.
+    # cross_venue_arb — Kalshi↔Polymarket arb is a sub-100ms latency
+    # game; retail-grade ~500ms execution cannot win it.
     # crypto_funding_carry_v2 ELIMINATED 2026-06-05 — perp funding is
     # fee-negative (v1 scored −17 Sharpe, RoV −0.05%); the multi-venue
     # consensus gate never validated that it overcomes the bleed.
@@ -380,14 +343,8 @@ ALL_STRATEGIES = [
     # ── Phase 6 — advanced crypto strategies (2026-05-08).
     # crypto_pairs_trading ELIMINATED 2026-06-05 — BTC/ETH cointegration
     # is unstable and the spot market too efficient; unvalidatable.
-    # crypto_breakout (Donchian) survives as the directional crypto sleeve.
-    StrategyMeta(
-        name="crypto_breakout",
-        asset_classes=["CRYPTO_SPOT"], venue="coinbase",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
-        description="Donchian 30d-high breakout w/ trail-stop (P6)",
-        group="CRYPTO",
-    ),
+    # crypto_breakout RETIRED 2026-06-05 (CIO Tier-4 cull) — crypto trend
+    # has decayed sharply 2024-25; venue is right but the signal is dead.
     StrategyMeta(
         name="crypto_vol_regime_overlay",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
@@ -479,9 +436,8 @@ def build_strategies(brokers):
         #     validated that it fixes the bleed.
         #   crypto_pairs_trading — BTC/ETH cointegration is unstable and
         #     the spot market too efficient; unvalidatable, 0.5% sleeve.
-        # crypto_breakout (Donchian) is the surviving directional crypto
-        # sleeve — trend-following has the best-documented crypto edge.
-        instances["crypto_breakout"] = CryptoBreakout(cb)
+        # crypto_breakout RETIRED 2026-06-05 (CIO Tier-4 cull) — crypto
+        # trend signal has decayed sharply 2024-25.
         instances["crypto_vol_regime_overlay"] = CryptoVolRegimeOverlay(cb)
     if "alpaca" in brokers:
         al = brokers["alpaca"]
@@ -518,13 +474,11 @@ def build_strategies(brokers):
         instances["dual_momentum"] = DualMomentum(al)
         # bond_carry ELIMINATED 2026-06-03 — no alpha.
         instances["commodity_momentum"] = CommodityMomentum(al)
-        # 6 new institutional-grade alpha sleeves (2026-06-03):
-        instances["global_macro_momentum"] = GlobalMacroMomentum(al)
-        instances["quality_factor"] = QualityFactor(al)
-        instances["defensive_value"] = DefensiveValue(al)
-        instances["high_yield_carry"] = HighYieldCarry(al)
-        instances["reit_income_carry"] = ReitIncomeCarry(al)
-        instances["size_premium_trend"] = SizePremiumTrend(al)
+        # 6 academic-style alpha sleeves RETIRED 2026-06-05 (CIO Tier-4
+        # cull): global_macro_momentum, quality_factor, defensive_value,
+        # high_yield_carry, reit_income_carry, size_premium_trend. Real
+        # alpha comes from multifactor_equity flagship +
+        # internationals_rotation; the rest was redundant US-equity beta.
         # earnings_news_pead ELIMINATED 2026-06-05 — duplicate PEAD signal
         # highly correlated with earnings_momentum (PASS/ROBUST, Sharpe
         # 2.28). Running both triple-trades the same earnings prints and
@@ -535,14 +489,11 @@ def build_strategies(brokers):
         instances["activist_13d"] = Activist13D(al)
         instances["merger_arb"] = MergerArb(al)
         instances["high_vol_trend"] = HighVolTrend(al)
-    if "kalshi" in brokers:
-        ks = brokers["kalshi"]
-        instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
-        # macro_kalshi (v1) ELIMINATED 2026-06-05 — NO_DATA and fully
-        # superseded by macro_kalshi_v2 (CME-fed Fed-rate divergence).
-        # Phase 5 — strategies consuming the new Sprint-3 data feeds
-        instances["macro_kalshi_v2"] = MacroKalshiV2(ks)
-        instances["cross_venue_arb"] = CrossVenueArb(ks)
+    # Kalshi: all 4 strategies RETIRED 2026-06-05 (CIO Tier-4 cull) —
+    # NO_DATA verdicts across the board, Kalshi liquidity too thin to
+    # size meaningfully, cross-venue arb is a latency game retail can't
+    # win. Re-wire when a viable Kalshi sleeve emerges. The adapter
+    # itself remains in build_brokers() for read-only book inspection.
     return instances
 
 
