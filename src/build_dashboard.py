@@ -2175,6 +2175,35 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
         ks_explainer = ("&nbsp;— ALL new orders are HALTED while latched. "
                         "This is why no trades are flowing. Reset to resume "
                         "(positions are NOT auto-closed by the latch).")
+        # Stale-latch detector: a KILL that has sat latched for many hours
+        # while drawdown is nowhere near the kill threshold is almost
+        # certainly spurious (a manual arm or transient that recovered).
+        # Surfacing this prevents the book sitting frozen for days unnoticed
+        # — the exact failure that halted trading for a week in May/Jun 2026.
+        cur_dd = float(risk.get("drawdown_pct") or 0.0)
+        kill_dd = float((risk.get("config") or {}).get("kill_dd") or 0.15)
+        latched_hours = None
+        ks_at_raw = risk.get("kill_switch_at")
+        if ks_at_raw:
+            try:
+                _dt = datetime.fromisoformat(
+                    str(ks_at_raw).replace("Z", "+00:00"))
+                if _dt.tzinfo is None:
+                    _dt = _dt.replace(tzinfo=UTC)
+                latched_hours = (datetime.now(UTC) - _dt).total_seconds() / 3600
+            except (ValueError, TypeError):
+                pass
+        # Likely spurious if drawdown is below half the kill threshold.
+        if cur_dd < kill_dd * 0.5:
+            age_str = (f"{latched_hours/24:.1f} days" if latched_hours
+                       and latched_hours >= 24
+                       else (f"{latched_hours:.0f}h" if latched_hours
+                             else "unknown duration"))
+            ks_explainer += (
+                f"&nbsp;&nbsp;⚠ LIKELY STALE: drawdown is only "
+                f"{cur_dd*100:.1f}% (kill threshold {kill_dd*100:.0f}%) "
+                f"and it's been latched {age_str}. Almost certainly safe "
+                f"to reset.")
     elif ks == "CRITICAL":
         ks_explainer = ("&nbsp;— closing-only mode: new entries blocked, "
                         "exits still allowed.")
