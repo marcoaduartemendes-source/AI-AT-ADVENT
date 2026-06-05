@@ -99,6 +99,20 @@ class StrategyOutcome:
     # Why-failed-to-submit reasons. Same idea for execution errors.
     execute_errors: list[str] = field(default_factory=list)
     error: str = ""                     # populated if compute() raised
+    # ── Activity classification (2026-06-05) ─────────────────────────
+    # The dashboard used to label every quiet strategy "stale", which
+    # conflated three very different situations. These fields let it
+    # tell the truth: a risk-parity book HOLDING positions for weeks is
+    # working as designed; a strategy whose every proposal is REJECTED
+    # at the concentration cap is BLOCKED; one that simply has no signal
+    # is WAITING. held_* describe the positions the strategy currently
+    # owns (per the ledger attribution), so "last trade 25d ago" can be
+    # shown as "holding 5 names, $48k" instead of a scary dead label.
+    held_positions: int = 0
+    held_usd: float = 0.0
+    # One of: HOLDING, WAITING, BLOCKED, IDLE, FROZEN, VENUE_CLOSED,
+    # NO_ALLOC, ERROR, TRADING. Empty until classified at cycle end.
+    activity: str = ""
 
 
 @dataclass
@@ -336,6 +350,9 @@ class Orchestrator:
                     "reject_reasons": o.reject_reasons,
                     "execute_errors": o.execute_errors,
                     "error": o.error,
+                    "activity": o.activity,
+                    "held_positions": o.held_positions,
+                    "held_usd": round(o.held_usd, 2),
                 } for n, o in (report.strategy_outcomes or {}).items()
             },
         }
@@ -619,6 +636,7 @@ class Orchestrator:
             strategy_state = self.registry.get_state(name)
             if strategy_state in (StrategyState.FROZEN, StrategyState.RETIRED):
                 outcome.skip_reasons.append(f"state={strategy_state.value}")
+                outcome.activity = "FROZEN"
                 logger.debug(f"[{name}] skipped — state={strategy_state.value}")
                 continue
 
@@ -663,6 +681,7 @@ class Orchestrator:
                 outcome.skip_reasons.append(
                     f"venue_closed ({venue_window_str(strategy.venue)})"
                 )
+                outcome.activity = "VENUE_CLOSED"
                 continue
 
             ctx = StrategyContext(
@@ -685,6 +704,25 @@ class Orchestrator:
                 scout_signals=scout_signals.get(strategy.venue, {}),
                 pending_orders=self._pending_orders_for(strategy.venue),
             )
+
+            # Record what this strategy currently HOLDS so the dashboard
+            # can distinguish "holding for weeks (working)" from "dead".
+            # ctx.open_positions is the per-strategy ledger attribution.
+            try:
+                held = [
+                    p for p in (ctx.open_positions or {}).values()
+                    if ((p.get("quantity", 0) or 0) if hasattr(p, "get") else 0) > 0
+                ]
+                outcome.held_positions = len(held)
+                outcome.held_usd = float(sum(
+                    abs((p.get("quantity", 0) or 0)
+                        * (p.get("current_price")
+                           or p.get("avg_entry_price")
+                           or p.get("entry_price") or 0))
+                    for p in held if hasattr(p, "get")
+                ))
+            except Exception:
+                pass
 
             try:
                 proposals = strategy.compute(ctx)
@@ -754,10 +792,51 @@ class Orchestrator:
             outcome.execute_errors = list(
                 self._cycle_execute_errors.get(name, [])
             )[-10:]
+            outcome.activity = self._classify_activity(outcome)
 
         # Telemetry persistence is in the run_cycle() finally block
         # so it ALWAYS runs (including early-returns above).
         return report
+
+    @staticmethod
+    def _classify_activity(o: StrategyOutcome) -> str:
+        """Turn a per-strategy cycle outcome into a single honest status.
+
+        The dashboard previously labelled every quiet strategy "stale",
+        which hid three very different realities. This collapses the
+        counters into one word the operator can trust:
+
+          TRADING  — submitted at least one order this cycle
+          BLOCKED  — produced proposals but every one was rejected
+                     (concentration cap, risk veto, wash-trade) → real
+                     friction worth investigating
+          HOLDING  — no proposals but the strategy owns positions; a
+                     low-turnover book (risk-parity, dual-momentum)
+                     correctly sitting tight, NOT dead
+          WAITING  — no proposals and flat: regime gate not met / no
+                     signal / awaiting data
+          NO_ALLOC — allocator gave it $0 this cycle
+          ERROR    — compute() raised
+
+        Precedence is deliberate: a real submit beats everything; a full
+        block beats a partial; holding beats flat.
+        """
+        if o.error:
+            return "ERROR"
+        if o.submitted > 0:
+            return "TRADING"
+        if o.proposed > 0 and o.rejected >= o.proposed:
+            return "BLOCKED"
+        if o.proposed > 0:
+            # Some approved/dry-logged but none filled — still "trading"
+            # intent; surface as TRADING so it isn't mistaken for idle.
+            return "TRADING"
+        # No proposals from here on.
+        if o.target_alloc_usd <= 0:
+            return "NO_ALLOC"
+        if o.held_positions > 0:
+            return "HOLDING"
+        return "WAITING"
 
     def _venue_health_snapshot(self) -> dict[str, str]:
         """Per-venue reachability status for the dashboard. 'ok' if the
@@ -820,6 +899,9 @@ class Orchestrator:
                             "reject_reasons": o.reject_reasons,
                             "execute_errors": o.execute_errors,
                             "error": o.error,
+                            "activity": o.activity,
+                            "held_positions": o.held_positions,
+                            "held_usd": round(o.held_usd, 2),
                         } for n, o in report.strategy_outcomes.items()
                     }),
                 ),

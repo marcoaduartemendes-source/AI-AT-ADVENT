@@ -627,3 +627,52 @@ class TestUnattributedPnLFixed:
         monkeypatch.setattr(bd, "_open_lots_by_symbol", lambda: {})   # no ledger
         out = bd._live_unrealized_by_strategy()
         assert out == {"<unattributed: no ledger entry>": 42.0}
+
+
+class TestActivityClassificationNotStale:
+    """Reproduces the bug where the dashboard labelled every quiet
+    strategy 'stale', conflating a low-turnover book correctly HOLDING
+    positions with one whose every order is being REJECTED at the
+    concentration cap and one that simply has no signal.
+
+    Failing the test (a HOLDING book classified the same as a flat one)
+    communicates the bug; passing communicates the invariant: activity
+    is derived from real cycle counters, not from time-since-last-trade.
+    """
+
+    def _mk(self, **kw):
+        from strategy_engine.orchestrator import StrategyOutcome
+        return StrategyOutcome(strategy="x", venue="alpaca", **kw)
+
+    def test_holding_book_is_not_waiting(self):
+        from strategy_engine.orchestrator import Orchestrator
+        # No proposals this cycle but the strategy owns 4 positions —
+        # this is a risk-parity/dual-momentum book sitting tight, NOT dead.
+        held = self._mk(proposed=0, target_alloc_usd=5000, held_positions=4)
+        flat = self._mk(proposed=0, target_alloc_usd=5000, held_positions=0)
+        assert Orchestrator._classify_activity(held) == "HOLDING"
+        assert Orchestrator._classify_activity(flat) == "WAITING"
+        # The two must be distinguishable — the whole point of the fix.
+        assert Orchestrator._classify_activity(held) != \
+               Orchestrator._classify_activity(flat)
+
+    def test_fully_rejected_is_blocked_not_idle(self):
+        from strategy_engine.orchestrator import Orchestrator
+        # Produced 5 proposals, all rejected (e.g. ETF concentration cap).
+        o = self._mk(proposed=5, rejected=5)
+        assert Orchestrator._classify_activity(o) == "BLOCKED"
+
+    def test_submit_beats_everything(self):
+        from strategy_engine.orchestrator import Orchestrator
+        o = self._mk(proposed=3, submitted=1, rejected=2, held_positions=9)
+        assert Orchestrator._classify_activity(o) == "TRADING"
+
+    def test_zero_allocation_is_no_alloc(self):
+        from strategy_engine.orchestrator import Orchestrator
+        o = self._mk(proposed=0, target_alloc_usd=0.0)
+        assert Orchestrator._classify_activity(o) == "NO_ALLOC"
+
+    def test_compute_error_is_error(self):
+        from strategy_engine.orchestrator import Orchestrator
+        o = self._mk(error="ValueError: boom", proposed=0)
+        assert Orchestrator._classify_activity(o) == "ERROR"

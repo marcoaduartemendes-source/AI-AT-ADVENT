@@ -581,6 +581,38 @@ def _recent_cycles(limit: int = 5) -> list[dict]:
     return out
 
 
+def _latest_activity_by_strategy(cycles: list[dict]) -> dict[str, dict]:
+    """Pull the most recent ACTIVITY classification per strategy from the
+    cycle-diagnostics ring buffer.
+
+    Walks cycles newest→oldest and takes the first non-empty `activity`
+    for each strategy, so a strategy that was skipped (VENUE_CLOSED) on
+    the very last tick still shows its last *meaningful* status. Returns
+    {strategy: {activity, held_positions, held_usd, reject_reasons}}.
+    """
+    out: dict[str, dict] = {}
+    # cycles arrive oldest→newest from _recent_cycles; reverse to prefer
+    # the freshest meaningful status.
+    for cyc in reversed(cycles or []):
+        for name, o in (cyc.get("strategy_outcomes") or {}).items():
+            if not isinstance(o, dict):
+                continue
+            act = o.get("activity") or ""
+            if name in out and out[name].get("activity"):
+                continue  # already have a fresher meaningful status
+            # Skip pure VENUE_CLOSED until we've found something better,
+            # but keep it as a fallback so the cell isn't blank.
+            if not act:
+                continue
+            out.setdefault(name, {
+                "activity": act,
+                "held_positions": o.get("held_positions", 0),
+                "held_usd": o.get("held_usd", 0.0),
+                "reject_reasons": o.get("reject_reasons", []) or [],
+            })
+    return out
+
+
 def _risk_snapshot() -> dict:
     """Latest equity + kill-switch event from risk_state.db."""
     out = {
@@ -712,9 +744,56 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = No
         f"<td class=num style=\"color:{realized_color}\">{_fmt_money(realized)}</td>"
         f"<td class=num style=\"color:{unrealized_color}\">{_fmt_money(unrealized)}</td>"
         f"<td class=num style=\"color:{total_color};font-weight:600\">{_fmt_money(total)}</td>"
+        f"<td>{_activity_badge(pnl)}</td>"
         f"<td style=\"color:{last_color};font-weight:500\">{html.escape(last_label)}</td>"
         f"</tr>"
     )
+
+
+# Activity status → (background, text colour, label). The dashboard's
+# honesty fix: distinguishes a correctly-HOLDING low-turnover book from a
+# BLOCKED one whose orders are all rejected, from a WAITING (no-signal)
+# one — instead of lumping all three under a scary "stale".
+_ACTIVITY_STYLE: dict[str, tuple[str, str]] = {
+    "TRADING":      ("#dcfce7", "#166534"),
+    "HOLDING":      ("#dbeafe", "#1e40af"),
+    "BLOCKED":      ("#fee2e2", "#991b1b"),
+    "WAITING":      ("#f3f4f6", "#6b7280"),
+    "NO_ALLOC":     ("#fef9c3", "#854d0e"),
+    "FROZEN":       ("#e5e7eb", "#374151"),
+    "VENUE_CLOSED": ("#f3f4f6", "#9ca3af"),
+    "ERROR":        ("#fee2e2", "#991b1b"),
+}
+
+
+def _activity_badge(pnl: dict) -> str:
+    """Render the live activity status as a coloured chip, with a tooltip
+    that explains HOLDING (held positions) or BLOCKED (reject reason)."""
+    act = (pnl or {}).get("activity") or ""
+    if not act:
+        return '<span style="color:#d1d5db">—</span>'
+    bg, fg = _ACTIVITY_STYLE.get(act, ("#f3f4f6", "#6b7280"))
+    held_n = (pnl or {}).get("held_positions", 0) or 0
+    held_usd = (pnl or {}).get("held_usd", 0.0) or 0.0
+    title = act
+    sub = ""
+    if act == "HOLDING" and held_n:
+        sub = f"{held_n}@{_fmt_money(held_usd)}"
+        title = f"Holding {held_n} positions worth {_fmt_money(held_usd)} — low-turnover, working as designed"
+    elif act == "BLOCKED":
+        rr = (pnl or {}).get("reject_reasons") or []
+        title = "All proposals rejected: " + ("; ".join(rr[-2:]) if rr else "risk/cap veto")
+    elif act == "WAITING":
+        title = "No signal / regime gate not met — flat, awaiting entry"
+    elif act == "NO_ALLOC":
+        title = "Allocator gave $0 this cycle"
+    badge = (
+        f'<span class=badge style="background:{bg};color:{fg}" '
+        f'title="{html.escape(title)}">{html.escape(act)}</span>'
+    )
+    if sub:
+        badge += f'<br><span class=desc>{html.escape(sub)}</span>'
+    return badge
 
 
 def _group_header_row(group: str, members: list[tuple[str, dict, dict, str]]) -> str:
@@ -739,7 +818,7 @@ def _group_header_row(group: str, members: list[tuple[str, dict, dict, str]]) ->
         f'<td class=num style="color:{color};font-weight:600;'
         f'border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">'
         f'{_fmt_money(subtotal)}</td>'
-        f'<td style="border-top:1px solid #e5e7eb;'
+        f'<td colspan=2 style="border-top:1px solid #e5e7eb;'
         f'border-bottom:1px solid #e5e7eb"></td></tr>'
     )
 
@@ -1937,6 +2016,28 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
                 "last_trade_at": None, "days_since": None,
             }
         pnl[s]["unrealized_pnl_usd"] = u
+    # Fold the latest live ACTIVITY classification (HOLDING / BLOCKED /
+    # WAITING / TRADING / …) from the most recent cycle into the
+    # per-strategy view. This is the fix for "everything looks stale":
+    # a low-turnover book HOLDING positions is no longer indistinguishable
+    # from a strategy whose every order is being rejected at the cap.
+    activity_by_strategy = _latest_activity_by_strategy(cycles_recent)
+    # Only enrich strategies still in the registry or with ledger history —
+    # don't resurrect retired strategies that merely linger in the cycle
+    # ring buffer.
+    _known = set(metas.keys()) | set(pnl.keys())
+    for s, info in activity_by_strategy.items():
+        if s not in _known:
+            continue
+        pnl.setdefault(s, {
+            "n_trades": 0, "n_closed": 0, "wins": 0, "losses": 0,
+            "win_rate": 0.0, "realized_pnl_usd": 0.0,
+            "last_trade_at": None, "days_since": None,
+        })
+        pnl[s]["activity"] = info.get("activity", "")
+        pnl[s]["held_positions"] = info.get("held_positions", 0)
+        pnl[s]["held_usd"] = info.get("held_usd", 0.0)
+        pnl[s]["reject_reasons"] = info.get("reject_reasons", [])
     live_strategies = {
         s.strip() for s in os.environ.get("LIVE_STRATEGIES", "").split(",")
         if s.strip()
@@ -2054,7 +2155,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     body_rows = _grouped_body_rows(rows)
     if not rows:
         body_rows = (
-            "<tr><td colspan=11 style='text-align:center;color:#6b7280;"
+            "<tr><td colspan=12 style='text-align:center;color:#6b7280;"
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
@@ -2293,6 +2394,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
       <th class=num>Realized</th>
       <th class=num>Unrealized</th>
       <th class=num>Total P&amp;L</th>
+      <th title="Live status from the last cycle: TRADING (submitted), HOLDING (owns positions, low-turnover), BLOCKED (proposals rejected at cap/risk), WAITING (no signal), NO_ALLOC, FROZEN">Status</th>
       <th>Last trade</th>
     </tr>
   </thead>
