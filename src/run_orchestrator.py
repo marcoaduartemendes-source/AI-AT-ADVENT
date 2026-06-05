@@ -31,29 +31,23 @@ from strategies import (
     CommodityMomentum,
     CrossVenueArb,
     CryptoBreakout,
-    CryptoPairsTrading,
     CryptoVolRegimeOverlay,
-    CryptoFundingCarryV2,
     DefensiveValue,
     DividendGrowth,
     DualMomentum,
     EarningsMomentum,
-    EarningsNewsPEAD,
     GlobalMacroMomentum,
     HighYieldCarry,
     InternationalsRotation,
-    IntradayMeanReversion,
     KalshiCalibrationArb,
     LeveragedChampions,
     LeveragedMomentum,
     LeveragedTop4,
-    MacroKalshi,
     MacroKalshiV2,
     MultiFactorEquity,
     QualityFactor,
     ReitIncomeCarry,
     RiskParityETF,
-    SectorRotation,
     SizePremiumTrend,
     ThematicGrowth,
     TSMomETF,
@@ -165,13 +159,8 @@ ALL_STRATEGIES = [
     # running all three triple-trades the same earnings prints and
     # inflates correlation. Weight reallocated to v2 + earnings_momentum.
     # The pead.py module is kept in-tree for backtest reference only.
-    StrategyMeta(
-        name="macro_kalshi",
-        asset_classes=["PREDICTION"], venue="kalshi",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Kalshi macro events vs implied probabilities (P3)",
-        group="PREDICTION",
-    ),
+    # macro_kalshi (v1) ELIMINATED 2026-06-05 — NO_DATA, superseded by
+    # macro_kalshi_v2 (CME-fed). Module stays in-tree for revival.
     # ELIMINATED 2026-05-22 (user mandate "eliminate strategies that
     # aren't working"): crypto_xsmom, gap_trading, low_vol_anomaly,
     # pairs_trading, rsi_mean_reversion, turn_of_month all FAILed the
@@ -288,18 +277,10 @@ ALL_STRATEGIES = [
         description="Thematic basket (AI compute/power, cyber, defense, GLP-1, robotics)",
         group="FACTOR",
     ),
-    # intraday_mean_reversion: the "HFT" the user requested, honestly
-    # labelled — 5-min-bar mean reversion on SPY/QQQ/IWM. Cannot be
-    # backtested from daily Yahoo data, so the validation panel will
-    # show NO_DATA and it stays paper until 90+ days of paper Sharpe
-    # justify promotion. See strategies/intraday_mean_reversion.py.
-    StrategyMeta(
-        name="intraday_mean_reversion",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.015, max_alloc_pct=0.04, min_alloc_pct=0.0,
-        description="Intraday VWAP fade on liquid ETFs (5-min bars)",
-        group="MEAN_REVERSION",
-    ),
+    # intraday_mean_reversion ELIMINATED 2026-06-05 — 5-min VWAP fade
+    # competes in the HFT arena where a cron bot has no latency edge, and
+    # it can't be backtested from daily data (NO_DATA) so it could never
+    # earn promotion. Module stays in-tree for revival.
     # cross_asset_trend ELIMINATED 2026-06-03 — failed alpha generation.
     # dual_momentum: Antonacci dual momentum — crisis-alpha diversifier.
     StrategyMeta(
@@ -321,13 +302,9 @@ ALL_STRATEGIES = [
     # paper $100k). Allocator's Sharpe-tilt will reallocate to
     # winners over the first 30-60 days. Each starts at 4%.
     # (rsi_mean_reversion ELIMINATED 2026-05-22 — validation FAIL.)
-    StrategyMeta(
-        name="sector_rotation",
-        asset_classes=["ETF"], venue="alpaca",
-        target_alloc_pct=0.02, max_alloc_pct=0.06, min_alloc_pct=0.005,
-        description="Top-N SPDR sector ETFs by 90d return (P4)",
-        group="TREND",
-    ),
+    # sector_rotation ELIMINATED 2026-06-05 — validation FAIL (Sharpe
+    # −10.3/−1.05 in 1y/2y, positive only in the 5y window) + walk-forward
+    # OVERFIT_SUSPECT. Sector momentum is heavily arbitraged.
     # (pairs_trading ELIMINATED 2026-05-22 — validation FAIL.)
     StrategyMeta(
         name="bollinger_breakout",
@@ -379,34 +356,16 @@ ALL_STRATEGIES = [
         description="Kalshi vs Polymarket cross-venue arbitrage (P5)",
         group="PREDICTION",
     ),
-    StrategyMeta(
-        name="crypto_funding_carry_v2",
-        asset_classes=["CRYPTO_PERP"], venue="coinbase",
-        # Smaller than v1 (12%) until we have paper-P&L data showing
-        # the multi-venue gate adds Sharpe rather than just shrinking
-        # opportunity. Champion tier auto-promotes if it earns it.
-        target_alloc_pct=0.06, max_alloc_pct=0.15, min_alloc_pct=0.02,
-        description="Funding carry gated on Coinbase+Binance consensus (P5)",
-        group="CRYPTO",
-    ),
-    StrategyMeta(
-        name="earnings_news_pead",
-        asset_classes=["EQUITY"], venue="alpaca",
-        # +2% baseline (was 3%) to absorb part of retired pead v1.
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="PEAD gated on RSS news corroboration (P5)",
-        group="EVENT",
-    ),
+    # crypto_funding_carry_v2 ELIMINATED 2026-06-05 — perp funding is
+    # fee-negative (v1 scored −17 Sharpe, RoV −0.05%); the multi-venue
+    # consensus gate never validated that it overcomes the bleed.
+    # earnings_news_pead ELIMINATED 2026-06-05 — duplicate PEAD signal
+    # highly correlated with earnings_momentum (PASS/ROBUST); running both
+    # triple-trades the same earnings prints.
     # ── Phase 6 — advanced crypto strategies (2026-05-08).
-    # All three default to DRY: opt into real money by adding the
-    # name to LIVE_STRATEGIES + ensuring ALLOW_LIVE_TRADING=1.
-    StrategyMeta(
-        name="crypto_pairs_trading",
-        asset_classes=["CRYPTO_SPOT", "CRYPTO_PERP"], venue="coinbase",
-        target_alloc_pct=0.005, max_alloc_pct=0.015, min_alloc_pct=0.0,
-        description="Stat-arb on BTC/ETH and ETH/SOL price ratios (P6)",
-        group="CRYPTO",
-    ),
+    # crypto_pairs_trading ELIMINATED 2026-06-05 — BTC/ETH cointegration
+    # is unstable and the spot market too efficient; unvalidatable.
+    # crypto_breakout (Donchian) survives as the directional crypto sleeve.
     StrategyMeta(
         name="crypto_breakout",
         asset_classes=["CRYPTO_SPOT"], venue="coinbase",
@@ -463,10 +422,14 @@ def build_strategies(brokers):
         # crypto_funding_carry + crypto_basis_trade ELIMINATED 2026-06-03 — no alpha.
         instances["commodity_carry"] = CommodityCarry(cb)
         # crypto_xsmom ELIMINATED 2026-05-22 (validation FAIL).
-        # Phase 5 — multi-venue consensus version
-        instances["crypto_funding_carry_v2"] = CryptoFundingCarryV2(cb)
-        # Phase 6 — advanced crypto strategies
-        instances["crypto_pairs_trading"] = CryptoPairsTrading(cb)
+        # ── 2026-06-05 ELIMINATED (alpha review):
+        #   crypto_funding_carry_v2 — perp funding is fee-negative (v1
+        #     scored −17 Sharpe, RoV −0.05%); the multi-venue gate never
+        #     validated that it fixes the bleed.
+        #   crypto_pairs_trading — BTC/ETH cointegration is unstable and
+        #     the spot market too efficient; unvalidatable, 0.5% sleeve.
+        # crypto_breakout (Donchian) is the surviving directional crypto
+        # sleeve — trend-following has the best-documented crypto edge.
         instances["crypto_breakout"] = CryptoBreakout(cb)
         instances["crypto_vol_regime_overlay"] = CryptoVolRegimeOverlay(cb)
     if "alpaca" in brokers:
@@ -479,7 +442,9 @@ def build_strategies(brokers):
         instances["vol_managed_overlay"] = VolManagedOverlay(al)
         # Phase 4 — experimental sleeve. (rsi_mean_reversion,
         # pairs_trading ELIMINATED 2026-05-22 — validation FAIL.)
-        instances["sector_rotation"] = SectorRotation(al)
+        # sector_rotation ELIMINATED 2026-06-05 — validation FAIL
+        # (Sharpe −10.3/−1.05 in 1y/2y, positive only in the 5y window)
+        # + walk-forward OVERFIT_SUSPECT. Textbook overfit.
         instances["bollinger_breakout"] = BollingerBreakout(al)
         instances["earnings_momentum"] = EarningsMomentum(al)
         instances["dividend_growth"] = DividendGrowth(al)
@@ -494,7 +459,10 @@ def build_strategies(brokers):
         instances["leveraged_champions"] = LeveragedChampions(al)
         instances["leveraged_top4"] = LeveragedTop4(al)
         instances["thematic_growth"] = ThematicGrowth(al)
-        instances["intraday_mean_reversion"] = IntradayMeanReversion(al)
+        # intraday_mean_reversion ELIMINATED 2026-06-05 — 5-min VWAP fade
+        # competes in the HFT arena where a cron bot has no latency edge,
+        # and it can't be backtested from daily data (NO_DATA) so it could
+        # never earn promotion. Honest cut.
         # cross_asset_trend ELIMINATED 2026-06-03 — no alpha.
         instances["dual_momentum"] = DualMomentum(al)
         # bond_carry ELIMINATED 2026-06-03 — no alpha.
@@ -506,12 +474,15 @@ def build_strategies(brokers):
         instances["high_yield_carry"] = HighYieldCarry(al)
         instances["reit_income_carry"] = ReitIncomeCarry(al)
         instances["size_premium_trend"] = SizePremiumTrend(al)
-        # Phase 5 — Alpaca-side new-feed strategy
-        instances["earnings_news_pead"] = EarningsNewsPEAD(al)
+        # earnings_news_pead ELIMINATED 2026-06-05 — duplicate PEAD signal
+        # highly correlated with earnings_momentum (PASS/ROBUST, Sharpe
+        # 2.28). Running both triple-trades the same earnings prints and
+        # inflates book correlation; keep the proven one.
     if "kalshi" in brokers:
         ks = brokers["kalshi"]
         instances["kalshi_calibration_arb"] = KalshiCalibrationArb(ks)
-        instances["macro_kalshi"] = MacroKalshi(ks)
+        # macro_kalshi (v1) ELIMINATED 2026-06-05 — NO_DATA and fully
+        # superseded by macro_kalshi_v2 (CME-fed Fed-rate divergence).
         # Phase 5 — strategies consuming the new Sprint-3 data feeds
         instances["macro_kalshi_v2"] = MacroKalshiV2(ks)
         instances["cross_venue_arb"] = CrossVenueArb(ks)

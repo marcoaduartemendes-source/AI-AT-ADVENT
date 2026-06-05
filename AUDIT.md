@@ -255,3 +255,33 @@ becomes a problem.
 | Wash-trade errors per cycle | 8-12 | 0 |
 | Strategy view of pending orders | ❌ | ✅ |
 | Stale orders cleared automatically | ❌ | ✅ (after 30 min) |
+
+## 2026-06-05 — Professional alpha review (roster prune 32 → 26)
+
+The dashboard showed many sleeves stale ≥25 days / never traded and a
+sub-market live track. Root cause is **execution, not just selection**:
+`self_grade.json` records only 1 live trade in 30d, a ~20% submit ratio,
+and a mostly-DRY book — you can't beat the market when you're barely in
+it. Alongside the execution fixes, the roster was pruned of low-alpha
+sleeves on hard validation/walk-forward evidence (`docs/validation.json`
+2026-05-30, `docs/walk_forward.json`).
+
+Eliminated (un-wired from `ALL_STRATEGIES` + `build_strategies`; modules
+kept in-tree for revival):
+
+| Strategy | Evidence |
+|---|---|
+| `sector_rotation` | validation FAIL (Sharpe −10.3/−1.05 in 1y/2y, +ve only in 5y) + walk-forward OVERFIT_SUSPECT |
+| `crypto_funding_carry_v2` | perp funding fee-negative (v1 −17 Sharpe, RoV −0.05%); multi-venue gate never validated |
+| `crypto_pairs_trading` | BTC/ETH cointegration unstable, spot too efficient; unvalidatable 0.5% sleeve |
+| `intraday_mean_reversion` | 5-min HFT arena, no latency edge for a cron bot; NO_DATA → can't earn promotion |
+| `macro_kalshi` (v1) | NO_DATA, fully superseded by `macro_kalshi_v2` (CME-fed) |
+| `earnings_news_pead` | duplicate PEAD signal correlated with `earnings_momentum` (PASS/ROBUST); triple-trades earnings |
+
+Retained core (PASS + walk-forward ROBUST): `risk_parity_etf` (Sharpe
+11.6), `dual_momentum` (10.1), `multifactor_equity` (5.9),
+`commodity_carry`, `commodity_momentum`, `bollinger_breakout`,
+`dividend_growth`, `internationals_rotation`, `thematic_growth`,
+`earnings_momentum`. The 7 institutional sleeves (quality/value/size/
+macro-momentum/carry + leveraged_top4) stay DRY until the next research
+run validates them on the droplet (Yahoo is geo-blocked from CI/sandbox).
