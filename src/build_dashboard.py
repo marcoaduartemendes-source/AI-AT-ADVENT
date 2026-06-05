@@ -147,6 +147,8 @@ def _strategy_meta() -> dict[str, dict]:
                 "description": getattr(m, "description", ""),
                 "group": getattr(m, "group", "OTHER"),
                 "leverage_x": float(getattr(m, "leverage_x", 1.0)),
+                "target_alloc_pct": float(getattr(m, "target_alloc_pct", 0.0)),
+                "max_alloc_pct": float(getattr(m, "max_alloc_pct", 0.0)),
             }
     except ImportError:
         pass
@@ -609,6 +611,8 @@ def _latest_activity_by_strategy(cycles: list[dict]) -> dict[str, dict]:
                 "held_positions": o.get("held_positions", 0),
                 "held_usd": o.get("held_usd", 0.0),
                 "reject_reasons": o.get("reject_reasons", []) or [],
+                "target_alloc_usd": o.get("target_alloc_usd", 0.0),
+                "target_alloc_pct": o.get("target_alloc_pct", 0.0),
             })
     return out
 
@@ -730,6 +734,17 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = No
     lev = float((meta or {}).get("leverage_x", 1.0))
     lev_color = "#7f1d1d" if lev > 1.5 else "#6b7280"
     lev_label = f"{lev:g}x"
+    # Allocated capital: prefer the live per-cycle figure; fall back to
+    # the configured target_pct (× $100k paper book) so the column is
+    # populated even before the first cycle records an allocation.
+    alloc_usd = (pnl or {}).get("target_alloc_usd") or 0.0
+    alloc_pct = ((pnl or {}).get("target_alloc_pct")
+                 or (meta or {}).get("target_alloc_pct") or 0.0)
+    if not alloc_usd and alloc_pct:
+        alloc_usd = alloc_pct * 100_000.0   # paper-book baseline estimate
+    alloc_label = (f"{_fmt_money(alloc_usd)}"
+                   if alloc_usd else
+                   (f"{alloc_pct*100:.1f}%" if alloc_pct else "—"))
     return (
         f"<tr>"
         f"<td class=num style=\"color:#6b7280\">{rank_label}</td>"
@@ -738,6 +753,7 @@ def _row_html(name: str, meta: dict, pnl: dict, mode: str, rank: int | None = No
         + f"</td>"
         f"<td>{html.escape(venue)}</td>"
         f"<td class=num style=\"color:{lev_color};font-weight:600\">{lev_label}</td>"
+        f"<td class=num title=\"target {alloc_pct*100:.1f}%\">{alloc_label}</td>"
         f"<td><span class=badge style=\"background:{mode_color}\">{mode_label}</span></td>"
         f"<td class=num>{pnl.get('n_closed', 0)}</td>"
         f"<td class=num>{_fmt_pct(pnl.get('win_rate', 0.0))}</td>"
@@ -807,7 +823,7 @@ def _group_header_row(group: str, members: list[tuple[str, dict, dict, str]]) ->
     color = "#166534" if subtotal > 0 else ("#7f1d1d" if subtotal < 0 else "#4b5563")
     return (
         f'<tr data-group-header="1" style="background:#eef2f7">'
-        f'<td colspan=9 style="padding:8px 12px;font-weight:600;'
+        f'<td colspan=10 style="padding:8px 12px;font-weight:600;'
         f'color:#1f2937;font-size:13px;'
         f'border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">'
         f'{emoji}&nbsp;&nbsp;{html.escape(label)}'
@@ -2038,6 +2054,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
         pnl[s]["held_positions"] = info.get("held_positions", 0)
         pnl[s]["held_usd"] = info.get("held_usd", 0.0)
         pnl[s]["reject_reasons"] = info.get("reject_reasons", [])
+        pnl[s]["target_alloc_usd"] = info.get("target_alloc_usd", 0.0)
+        pnl[s]["target_alloc_pct"] = info.get("target_alloc_pct", 0.0)
     live_strategies = {
         s.strip() for s in os.environ.get("LIVE_STRATEGIES", "").split(",")
         if s.strip()
@@ -2155,7 +2173,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     body_rows = _grouped_body_rows(rows)
     if not rows:
         body_rows = (
-            "<tr><td colspan=12 style='text-align:center;color:#6b7280;"
+            "<tr><td colspan=13 style='text-align:center;color:#6b7280;"
             "padding:24px'>No strategies registered or no trades yet.</td></tr>"
         )
 
@@ -2388,6 +2406,7 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
       <th>Strategy</th>
       <th>Venue</th>
       <th class=num title="Notional leverage: 1x = unlevered, 3x = 3x ETF sleeves">Lev</th>
+      <th class=num title="Capital allocated to this strategy (target). The allocator Sharpe-tilts around this baseline; the live figure comes from the last cycle.">Alloc $</th>
       <th>Mode</th>
       <th class=num>Closed</th>
       <th class=num>Win rate</th>
