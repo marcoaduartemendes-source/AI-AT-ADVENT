@@ -21,6 +21,8 @@ from scouts.crypto_scout import CryptoScout
 from scouts.equities_scout import EquitiesScout
 from scouts.hedge_fund_13f_scout import HedgeFund13FScout
 from scouts.activist_13d_scout import Activist13DScout
+from scouts.edgar_8k_scout import Edgar8KScout
+from scouts.insider_cluster_scout import InsiderClusterScout
 from scouts.merger_arb_scout import MergerArbScout
 from scouts.macro_scout import MacroScout
 from scouts.prediction_scout import PredictionScout
@@ -49,6 +51,10 @@ def init_scouts(bus: SignalBus) -> list[ScoutAgent]:
         Activist13DScout(bus=bus),
         # Event scout — announced M&A deals; feeds merger_arb strategy
         MergerArbScout(bus=bus),
+        # Event scout — Form 4 insider cluster buys; feeds insider_cluster
+        InsiderClusterScout(bus=bus),
+        # Event scout — Claude reads fresh 8-Ks; feeds llm_8k_event
+        Edgar8KScout(bus=bus),
     ]
 
 

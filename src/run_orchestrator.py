@@ -35,10 +35,12 @@ from strategies import (
     DualMomentum,
     EarningsMomentum,
     HighVolTrend,
+    InsiderCluster,
     InternationalsRotation,
     LeveragedChampions,
     LeveragedMomentum,
     LeveragedTop4,
+    Llm8KEvent,
     MergerArb,
     MultiFactorEquity,
     PreFomcDrift,
@@ -388,6 +390,28 @@ ALL_STRATEGIES = [
         group="TREND",
         leverage_x=3.0,    # CTA-style 3x effective notional via vol scaling
     ),
+    # ── 2026-06-05 — Novel-alpha sleeves. The thesis of both: our edge
+    # is SMALLNESS + AI. Capacity-constrained signals (insider clusters
+    # concentrate in small/mid-caps Citadel can't size into) and an
+    # LLM-native signal (Claude reads every 8-K; no human desk can).
+    # Both registered SMALL on the paper venue so live fills prove or
+    # kill the thesis cheaply — novel alpha has no backtest by nature.
+    StrategyMeta(
+        name="insider_cluster",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.03, max_alloc_pct=0.08, min_alloc_pct=0.0,
+        description=("≥3 insiders open-market buying within 7d "
+                     "(Cohen-Malloy-Pomorski JF 2012, ~7%/yr)"),
+        group="EVENT",
+    ),
+    StrategyMeta(
+        name="llm_8k_event",
+        asset_classes=["EQUITY"], venue="alpaca",
+        target_alloc_pct=0.02, max_alloc_pct=0.05, min_alloc_pct=0.0,
+        description=("Claude reads fresh 8-Ks; trades VERY_BULLISH "
+                     "material events (Lopez-Lira & Tang lineage)"),
+        group="EVENT",
+    ),
 ]
 
 # Backward compat alias used by older test scripts
@@ -489,6 +513,9 @@ def build_strategies(brokers):
         instances["activist_13d"] = Activist13D(al)
         instances["merger_arb"] = MergerArb(al)
         instances["high_vol_trend"] = HighVolTrend(al)
+        # 2026-06-05 — novel-alpha sleeves (smallness + AI as the edge)
+        instances["insider_cluster"] = InsiderCluster(al)
+        instances["llm_8k_event"] = Llm8KEvent(al)
     # Kalshi: all 4 strategies RETIRED 2026-06-05 (CIO Tier-4 cull) —
     # NO_DATA verdicts across the board, Kalshi liquidity too thin to
     # size meaningfully, cross-venue arb is a latency game retail can't
@@ -944,6 +971,25 @@ def main():
         ping_fail("orchestrator", message=f"{summary}; first_error={report.errors[0]}")
     else:
         ping_success("orchestrator", message=summary)
+
+    # Book-vitals watchdog — pages on the "healthy zombie" conditions
+    # (stale kill latch / silent book) that heartbeats can't see because
+    # the process itself is alive and exiting 0. See common/watchdog.py
+    # for the May-June 2026 month-long-freeze incident this prevents.
+    try:
+        from common.watchdog import check_book_vitals
+        if report.risk:
+            # Latch age = start of the current contiguous KILL run (the
+            # cooldown re-records latched KILLs daily, so the LAST event
+            # timestamp under-reports a month-old latch as ≤24h).
+            check_book_vitals(
+                kill_switch=report.risk.kill_switch.value,
+                kill_switch_at=risk_manager.db.latch_armed_at(),
+                drawdown_pct=report.risk.drawdown_pct,
+                kill_dd_pct=risk_manager.config.kill_dd_pct,
+            )
+    except Exception as e:
+        logger.warning(f"watchdog check failed (non-fatal): {e}")
 
     # Always return 0 when the cycle completed.
     # Reasoning: per-strategy errors (record_trade hiccup, broker

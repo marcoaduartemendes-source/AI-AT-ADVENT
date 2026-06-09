@@ -318,6 +318,36 @@ class EquitySnapshotDB:
             ).fetchone()
         return dict(row) if row else None
 
+    def latch_armed_at(self) -> str | None:
+        """Timestamp of the FIRST event in the current contiguous KILL
+        run, i.e. when the latch was actually armed.
+
+        The cooldown re-records a latched KILL roughly daily, so the
+        LAST event's timestamp under-reports latch age (≤ ~24h even for
+        a month-old latch — exactly what hid the May-June 2026 freeze).
+        The watchdog's stale-latch age must use this instead.
+        Returns None when the latest event isn't a KILL.
+        """
+        with self._conn() as c:
+            last = c.execute(
+                "SELECT id, state FROM kill_switch_events "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if not last or last["state"] != "KILL":
+                return None
+            # Newest non-KILL row strictly before the current run.
+            boundary = c.execute(
+                "SELECT MAX(id) AS bid FROM kill_switch_events "
+                "WHERE state != 'KILL' AND id < ?", (last["id"],)
+            ).fetchone()
+            bid = boundary["bid"] if boundary and boundary["bid"] else 0
+            first = c.execute(
+                "SELECT timestamp FROM kill_switch_events "
+                "WHERE state = 'KILL' AND id > ? ORDER BY id ASC LIMIT 1",
+                (bid,),
+            ).fetchone()
+        return first["timestamp"] if first else None
+
 
 # ─── Risk manager ────────────────────────────────────────────────────────
 

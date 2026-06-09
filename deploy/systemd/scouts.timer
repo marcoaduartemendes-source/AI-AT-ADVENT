@@ -1,9 +1,15 @@
 [Unit]
-Description=AI-AT-ADVENT scout sweep (every 30 min)
+Description=AI-AT-ADVENT scout sweep (every 15 min)
 Requires=scouts.service
 
 [Timer]
-OnCalendar=*:0/30
+# 2026-06-05: 30 → 15 min. The event scouts (13D filings, 8-K LLM reads,
+# insider clusters) capture drift that starts at the FILING timestamp —
+# halving the poll interval halves the average entry lag and captures
+# more of the documented post-filing move. API budget check: EDGAR is
+# free/unmetered at fair-use rates; FMP-backed scouts cache 30-60 min
+# internally so their request count is unchanged.
+OnCalendar=*:0/15
 Persistent=true
 AccuracySec=10s
 Unit=scouts.service

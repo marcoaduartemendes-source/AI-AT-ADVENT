@@ -77,6 +77,9 @@ from .activist_13d import Activist13D
 from .high_vol_trend import HighVolTrend
 from .merger_arb import MergerArb
 from .pre_fomc_drift import PreFomcDrift
+# 2026-06-05 — novel-alpha sleeves (capacity-constrained / LLM-native)
+from .insider_cluster import InsiderCluster
+from .llm_8k_event import Llm8KEvent
 
 __all__ = [
     # 2026-06-03 new alpha sleeves + leveraged_top4
@@ -126,4 +129,8 @@ __all__ = [
     "HighVolTrend",
     "MergerArb",
     "PreFomcDrift",
+    # 2026-06-05 — novel alpha: insider clusters (Cohen-Malloy-Pomorski)
+    # + LLM-read 8-K events (Lopez-Lira & Tang lineage)
+    "InsiderCluster",
+    "Llm8KEvent",
 ]

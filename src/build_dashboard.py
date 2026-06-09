@@ -22,6 +22,7 @@ paper or live money and kill switch").
 from __future__ import annotations
 
 import html
+import json
 import logging
 import os
 import sqlite3
@@ -482,6 +483,35 @@ def _recent_trades(limit: int = 50) -> list[dict]:
     except sqlite3.Error as e:
         logger.warning(f"recent_trades read failed: {e}")
     return out
+
+
+def _render_watchdog_banner() -> str:
+    """Red banner when docs/watchdog.json reports a silent-failure
+    condition (stale kill latch / silent book). The watchdog exists
+    because the May-June 2026 month-long freeze was invisible to every
+    crash-oriented monitor — this banner is its on-page voice."""
+    try:
+        p = Path("docs/watchdog.json")
+        if not p.exists():
+            return ""
+        data = json.loads(p.read_text())
+        if data.get("status") != "ALERT":
+            return ""
+        items = "".join(
+            f"<li><strong>{html.escape(f.get('key', '?'))}</strong>: "
+            f"{html.escape(f.get('message', ''))}</li>"
+            for f in (data.get("findings") or [])
+        )
+        return (
+            '<div style="background:#7f1d1d;color:white;padding:12px 16px;'
+            'border-radius:8px;margin-bottom:16px">'
+            "🐶 <strong>Watchdog alert — the book may be silently frozen"
+            "</strong><ul style='margin:6px 0 0;padding-left:20px;"
+            f"font-size:13px'>{items}</ul></div>"
+        )
+    except Exception as e:  # noqa: BLE001 — display-only, never fatal
+        logger.debug(f"watchdog banner render failed: {e}")
+        return ""
 
 
 def _read_heartbeat() -> dict | None:
@@ -2376,6 +2406,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {_render_nav()}
 {_render_grade_hero(self_grade)}
 {_system_status_line(cycles_recent, heartbeat)}
+
+{_render_watchdog_banner()}
 
 <div class="ks-banner" style="background:{ks_color}">
   <span>{ks_emoji} Kill switch: {html.escape(ks)}<small style="font-weight:400">{ks_explainer}</small></span>
