@@ -195,3 +195,32 @@ class TestLlm8KEventStrategy:
         s = Llm8KEvent(broker=broker)
         out = s.compute(_ctx({}, open_positions=positions))
         assert any(p.is_closing and p.symbol == "ACME" for p in out)
+
+
+class TestNewBacktestsRegistered:
+    """The 2026-06-09 self-grade work: high_vol_trend + pre_fomc_drift
+    get real backtests so they can earn PASS verdicts (fee_discipline
+    counts only PASS-strategy trades); the 4 feed-dependent event
+    sleeves get honest UNBACKTESTABLE notes instead of the generic
+    'no backtest defined'."""
+
+    def test_backtestable_sleeves_in_dispatch(self):
+        from backtests.runner import _STRATEGY_BACKTESTS
+        assert "high_vol_trend" in _STRATEGY_BACKTESTS
+        assert "pre_fomc_drift" in _STRATEGY_BACKTESTS
+
+    def test_event_sleeves_have_honest_notes(self):
+        from backtests.runner import UNBACKTESTABLE
+        for name in ("activist_13d", "merger_arb",
+                     "insider_cluster", "llm_8k_event"):
+            assert name in UNBACKTESTABLE
+            assert "feed" in UNBACKTESTABLE[name] or \
+                   "LLM" in UNBACKTESTABLE[name]
+
+    def test_fomc_calendar_sane(self):
+        from backtests.runner import _FOMC_DECISION_DAYS
+        from collections import Counter
+        years = Counter(d[:4] for d in _FOMC_DECISION_DAYS)
+        # The Fed holds exactly 8 scheduled meetings per year.
+        assert all(n == 8 for n in years.values()), years
+        assert sorted(_FOMC_DECISION_DAYS) == _FOMC_DECISION_DAYS

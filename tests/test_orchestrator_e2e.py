@@ -569,3 +569,48 @@ class TestConcentrationCapPriorityOrdering:
         # regardless of dict insertion order.
         assert call_log[:2] == ["high_conv", "low_conv"], (
             f"expected high-conviction first, got {call_log}")
+
+
+class TestUnfundedWalletIsNotASystemError:
+    """Pins the 2026-06-09 setup_health fix: an unfunded venue wallet
+    ("Coinbase USD wallet too low: $0.00") dirtied 50/50 droplet cycles
+    and zeroed setup_health for weeks even though the code worked. It
+    must be classified as a REJECTION (operator condition), never a
+    cycle error."""
+
+    def test_wallet_too_low_is_soft_defer(self):
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+        from brokers.base import BrokerError
+        from strategy_engine.orchestrator import CycleReport
+
+        broker = MockBroker(venue="coinbase", cash_usd=100_000)
+
+        def _boom(*a, **k):
+            raise BrokerError(
+                "Coinbase USD wallet too low: $0.00 available "
+                "(need >$1 after 5% buffer). Fund the wallet.")
+        broker.place_order = _boom
+
+        strat = _DummyStrategy(broker, [])
+        strat.venue = "coinbase"
+        orch, _ = _make_orchestrator(
+            brokers={"coinbase": broker},
+            strategies={"_dummy": strat}, dry_run=False)
+        orch._cycle_reject_reasons = {}
+        orch._cycle_execute_errors = {}
+
+        report = CycleReport(timestamp=datetime.now(UTC))
+        proposal = TradeProposal(
+            strategy="_dummy", venue="coinbase", symbol="BTC-USD",
+            side=OrderSide.BUY, order_type=OrderType.MARKET,
+            notional_usd=1000, confidence=0.9, reason="test")
+        decision = SimpleNamespace(approved_notional_usd=1000.0)
+
+        orch._execute_proposal(proposal, decision, report, strat)
+        # The invariant: a clean cycle (no errors) with one rejection.
+        assert report.errors == [], (
+            "unfunded wallet must not dirty the cycle")
+        assert report.proposals_rejected == 1
+        assert any("unfunded" in r for r in
+                   orch._cycle_reject_reasons.get("_dummy", []))

@@ -56,31 +56,62 @@ def _equity_at_or_before(conn: sqlite3.Connection, cutoff: datetime
 def _portfolio_returns(risk_db: str) -> dict:
     """Trailing portfolio return per window from equity_snapshots."""
     out: dict = {"current_equity": None, "windows": {}}
-    if not Path(risk_db).exists():
-        return out
     try:
-        with sqlite3.connect(risk_db) as conn:
-            latest = conn.execute(
-                "SELECT timestamp, equity_usd FROM equity_snapshots "
-                "ORDER BY timestamp DESC LIMIT 1"
-            ).fetchone()
-            if not latest:
-                return out
-            now_ts = datetime.fromisoformat(latest[0])
-            now_eq = float(latest[1])
+        if Path(risk_db).exists():
+            with sqlite3.connect(risk_db) as conn:
+                latest = conn.execute(
+                    "SELECT timestamp, equity_usd FROM equity_snapshots "
+                    "ORDER BY timestamp DESC LIMIT 1"
+                ).fetchone()
+                if latest:
+                    now_ts = datetime.fromisoformat(latest[0])
+                    now_eq = float(latest[1])
+                    out["current_equity"] = round(now_eq, 2)
+                    for days in _WINDOWS:
+                        start_eq = _equity_at_or_before(
+                            conn, now_ts - timedelta(days=days)
+                        )
+                        if start_eq and start_eq > 0:
+                            out["windows"][str(days)] = round(
+                                (now_eq / start_eq - 1.0) * 100, 3
+                            )
+                        else:
+                            out["windows"][str(days)] = None
+    except sqlite3.Error as e:
+        logger.warning(f"benchmark: equity read failed: {e}")
+
+    if out["current_equity"] is not None:
+        return out
+
+    # ── Supabase failover (2026-06-09). An empty/fresh risk_state.db
+    # (GH-Actions cache miss, new checkout) used to null out the whole
+    # portfolio section, which self_grade scored as a neutral 5/10
+    # "benchmark.json lacks comparable fields" — silently hiding the
+    # real alpha-vs-SPY number behind an infra hiccup. The mirrored
+    # Supabase history is the durable source the risk manager already
+    # trusts for the same reason; use it here too.
+    try:
+        from common.supabase_store import SupabaseStore
+        store = SupabaseStore()
+        latest_sb = store.latest_equity()
+        if latest_sb:
+            now_ts = datetime.fromisoformat(
+                latest_sb[0].replace("Z", "+00:00"))
+            now_eq = float(latest_sb[1])
             out["current_equity"] = round(now_eq, 2)
             for days in _WINDOWS:
-                start_eq = _equity_at_or_before(
-                    conn, now_ts - timedelta(days=days)
-                )
+                cutoff = (now_ts - timedelta(days=days)).isoformat()
+                start_eq = store.equity_at_or_before(cutoff)
                 if start_eq and start_eq > 0:
                     out["windows"][str(days)] = round(
                         (now_eq / start_eq - 1.0) * 100, 3
                     )
                 else:
                     out["windows"][str(days)] = None
-    except sqlite3.Error as e:
-        logger.warning(f"benchmark: equity read failed: {e}")
+            logger.info("benchmark: portfolio windows served from "
+                        "Supabase failover (local equity history empty)")
+    except Exception as e:  # noqa: BLE001 — failover is best-effort
+        logger.debug(f"benchmark: supabase failover unavailable: {e}")
     return out
 
 

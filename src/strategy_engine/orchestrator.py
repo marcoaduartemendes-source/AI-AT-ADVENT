@@ -1479,6 +1479,24 @@ class Orchestrator:
                 self._cycle_reject_reasons.setdefault(
                     proposal.strategy, []).append("market closed — deferred")
                 return
+            # Unfunded venue wallet is an OPERATOR condition, not a system
+            # failure. The May-2026 droplet history shows 50/50 cycles
+            # dirtied by "Coinbase USD wallet too low: $0.00" — which
+            # zeroed setup_health (0/20 clean cycles) for weeks even
+            # though the code was working perfectly. Surface it as a
+            # rejection with a fund-the-wallet hint instead of an error.
+            _msg = str(e).lower()
+            if ("wallet too low" in _msg or "insufficient funds" in _msg
+                    or "insufficient balance" in _msg):
+                logger.warning(
+                    f"[{proposal.strategy}] {proposal.venue} wallet "
+                    f"unfunded — skipping {proposal.symbol} BUY. Fund the "
+                    f"venue (or remove its strategies from LIVE) to clear.")
+                self._cycle_reject_reasons.setdefault(
+                    proposal.strategy, []).append(
+                    f"venue unfunded: {str(e)[:120]}")
+                report.proposals_rejected += 1
+                return
             report.errors.append(f"[{proposal.strategy}] execution failed: {e}")
             logger.exception(f"[{proposal.strategy}] place_order raised")
             self._cycle_execute_errors.setdefault(

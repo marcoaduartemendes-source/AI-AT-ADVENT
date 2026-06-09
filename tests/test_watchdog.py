@@ -19,6 +19,8 @@ def _isolate_watchdog_file(tmp_path, monkeypatch):
     """Redirect docs/watchdog.json + alerts so tests never touch repo
     state or fire real notifications."""
     monkeypatch.setattr(wd, "WATCHDOG_PATH", tmp_path / "watchdog.json")
+    monkeypatch.setattr(wd, "VALIDATION_PATH",
+                        tmp_path / "validation.json")
     fired = []
     import common.alerts as alerts_mod
     monkeypatch.setattr(alerts_mod, "alert",
@@ -134,3 +136,30 @@ class TestAlertDedupe:
         wd.check_book_vitals(**kwargs)   # same cycle 5 minutes later
         assert len(fired) == n_after_first, (
             "persistent finding must not re-page every cycle")
+
+
+class TestStaleResearch:
+    def test_week_old_validation_alerts(self, tmp_path):
+        import json
+        old = (datetime.now(UTC) - timedelta(days=7)).isoformat()
+        (tmp_path / "validation.json").write_text(
+            json.dumps({"as_of": old, "strategies": {}}))
+        out = wd.check_book_vitals(
+            kill_switch="NORMAL", kill_switch_at=None,
+            drawdown_pct=0.01, kill_dd_pct=0.15,
+            trades_db_path=_trades_db(tmp_path, datetime.now(UTC)),
+        )
+        assert any(f["key"] == "stale_research" for f in out["findings"])
+
+    def test_fresh_validation_is_quiet(self, tmp_path):
+        import json
+        fresh = (datetime.now(UTC) - timedelta(hours=10)).isoformat()
+        (tmp_path / "validation.json").write_text(
+            json.dumps({"as_of": fresh, "strategies": {}}))
+        out = wd.check_book_vitals(
+            kill_switch="NORMAL", kill_switch_at=None,
+            drawdown_pct=0.01, kill_dd_pct=0.15,
+            trades_db_path=_trades_db(tmp_path, datetime.now(UTC)),
+        )
+        assert not any(f["key"] == "stale_research"
+                       for f in out["findings"])

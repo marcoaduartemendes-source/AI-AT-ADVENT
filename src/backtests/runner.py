@@ -50,6 +50,27 @@ UNBACKTESTABLE: dict[str, str] = {
         "intraday strategy: requires 5-min-bar history; Yahoo daily "
         "bars cannot honestly backtest it (would be misleading)"
     ),
+    # Event-driven sleeves whose triggers don't exist in price history.
+    # An honest backtest needs the historical event feed (13D filings,
+    # deal announcements, Form 4 clusters, LLM scores at filing time);
+    # reconstructing those without point-in-time data would be lookahead
+    # fiction. They prove themselves on live paper fills instead.
+    "activist_13d": (
+        "event strategy: requires historical SC 13D filing feed; "
+        "price-only backtest would be lookahead fiction"
+    ),
+    "merger_arb": (
+        "event strategy: requires historical deal-announcement feed "
+        "with point-in-time spreads"
+    ),
+    "insider_cluster": (
+        "event strategy: requires historical Form 4 cluster feed at "
+        "filing-time granularity"
+    ),
+    "llm_8k_event": (
+        "LLM-scored events: no historical LLM scores exist; the live "
+        "paper ledger is the only honest test"
+    ),
 }
 
 
@@ -1002,9 +1023,144 @@ def backtest_leveraged_top4(window_days):
     return _backtest_leveraged_pairs("leveraged_top4", pairs, window_days)
 
 
+def backtest_high_vol_trend(window_days):
+    """Cross-asset TSMOM at 17% vol target, ≤4x per name — mirrors
+    strategies/high_vol_trend.py (12-1m trend gate, 60d realized-vol
+    leverage scaling, 10-ETF universe). Backtest added 2026-06-09 so
+    the sleeve can earn a real PASS/FAIL verdict — without one it could
+    never count toward fee_discipline, dragging the self-grade on every
+    trade it made."""
+    from strategies.high_vol_trend import (
+        MAX_LEVERAGE_PER_NAME, SKIP_RECENT, TREND_LOOKBACK, UNIVERSE,
+        VOL_LOOKBACK, VOL_TARGET_ANN,
+    )
+    need = TREND_LOOKBACK + SKIP_RECENT + 30
+    hist = {s: _yahoo_history(s, window_days + need) for s in UNIVERSE}
+    hist = {s: h for s, h in hist.items() if len(h) >= need}
+    if len(hist) < 5:
+        return BacktestSummary(strategy="high_vol_trend",
+                               window_days=window_days,
+                               note="No Yahoo data")
+    per_name_base = 3000.0 / len(UNIVERSE)
+    ann = np.sqrt(252)
+
+    def _t(i):
+        tgt = {}
+        for s, h in hist.items():
+            if i >= len(h):
+                continue
+            t1 = h[i - SKIP_RECENT - 1, 4]
+            t12 = h[i - TREND_LOOKBACK - SKIP_RECENT, 4]
+            if t12 <= 0:
+                continue
+            trend = t1 / t12 - 1.0
+            if trend <= 0:
+                tgt[s] = 0.0
+                continue
+            closes = h[i - VOL_LOOKBACK - 1:i, 4]
+            rets = np.diff(np.log(closes[closes > 0]))
+            sd = float(rets.std(ddof=1)) if len(rets) > 10 else 0.0
+            if sd <= 0:
+                continue
+            lev = min(VOL_TARGET_ANN / (sd * ann), MAX_LEVERAGE_PER_NAME)
+            tgt[s] = per_name_base * lev
+        return tgt or None
+
+    return _rebalance_to_targets("high_vol_trend", hist, _t, window_days)
+
+
+# Scheduled FOMC decision days (second meeting day), public record /
+# federalreserve.gov calendars. Used by backtest_pre_fomc_drift; update
+# annually when the Fed publishes the next year's calendar.
+_FOMC_DECISION_DAYS = [
+    # 2021
+    "2021-01-27", "2021-03-17", "2021-04-28", "2021-06-16",
+    "2021-07-28", "2021-09-22", "2021-11-03", "2021-12-15",
+    # 2022
+    "2022-01-26", "2022-03-16", "2022-05-04", "2022-06-15",
+    "2022-07-27", "2022-09-21", "2022-11-02", "2022-12-14",
+    # 2023
+    "2023-02-01", "2023-03-22", "2023-05-03", "2023-06-14",
+    "2023-07-26", "2023-09-20", "2023-11-01", "2023-12-13",
+    # 2024
+    "2024-01-31", "2024-03-20", "2024-05-01", "2024-06-12",
+    "2024-07-31", "2024-09-18", "2024-11-07", "2024-12-18",
+    # 2025
+    "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18",
+    "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
+    # 2026 (scheduled)
+    "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+    "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+]
+
+
+def backtest_pre_fomc_drift(window_days):
+    """Pre-FOMC drift (Lucca-Moench JF 2015) on SPY+QQQ daily bars.
+
+    Approximation note: the live strategy holds T-24h → T-15min before
+    the 14:00 ET announcement. Daily bars can't slice intraday, so the
+    backtest holds close(T-2) → close(T-1) — fully inside the pre-
+    announcement window and deliberately EXCLUDING the announcement
+    move itself. Conservative: captures less of the documented drift
+    than the live implementation does."""
+    syms = ["SPY", "QQQ"]
+    hist = {s: _yahoo_history(s, window_days + 40) for s in syms}
+    hist = {s: h for s, h in hist.items() if len(h) >= 60}
+    if len(hist) < 2:
+        return BacktestSummary(strategy="pre_fomc_drift",
+                               window_days=window_days,
+                               note="No Yahoo data")
+    per_name = 3000.0 / len(syms)
+    cutoff_ts = datetime.now(UTC).timestamp() - window_days * 86400
+    fomc_ts = []
+    for d in _FOMC_DECISION_DAYS:
+        ts = datetime.fromisoformat(d + "T14:00:00+00:00").timestamp()
+        if ts >= cutoff_ts:
+            fomc_ts.append(ts)
+
+    trades: list[dict] = []
+    entry_volume = 0.0
+    for s, h in hist.items():
+        bar_ts = h[:, 0]
+        for ts in fomc_ts:
+            # T-1 = last bar strictly before the decision day's open.
+            idx_t1 = int(np.searchsorted(bar_ts, ts - 12 * 3600) - 1)
+            idx_t2 = idx_t1 - 1
+            if idx_t2 < 0 or idx_t1 >= len(h):
+                continue
+            entry_p = float(h[idx_t2, 4])
+            exit_p = float(h[idx_t1, 4])
+            if entry_p <= 0 or exit_p <= 0:
+                continue
+            qty = per_name / entry_p
+            fees = (per_name + qty * exit_p) * _FEE_RATE
+            open_t = datetime.fromtimestamp(h[idx_t2, 0], tz=UTC).isoformat()
+            close_t = datetime.fromtimestamp(h[idx_t1, 0], tz=UTC).isoformat()
+            entry_volume += per_name
+            trades.append({
+                "strategy": "pre_fomc_drift", "side": "BUY",
+                "product_id": s, "amount_usd": per_name, "quantity": qty,
+                "entry_price": entry_p, "open_time": open_t,
+                "reason": "pre-FOMC window entry",
+            })
+            trades.append({
+                "strategy": "pre_fomc_drift", "side": "SELL",
+                "product_id": s, "amount_usd": qty * exit_p,
+                "quantity": qty, "entry_price": entry_p,
+                "exit_price": exit_p, "open_time": open_t,
+                "close_time": close_t,
+                "pnl_usd": qty * (exit_p - entry_p) - fees,
+                "exit_reason": "pre-announcement exit",
+            })
+    return _equity_curve_to_summary("pre_fomc_drift", window_days,
+                                     trades, entry_volume)
+
+
 _STRATEGY_BACKTESTS = {
     "tsmom_etf": backtest_tsmom_etf,
     "dual_momentum": backtest_dual_momentum,
+    "high_vol_trend": backtest_high_vol_trend,
+    "pre_fomc_drift": backtest_pre_fomc_drift,
     "global_macro_momentum": backtest_global_macro_momentum,
     "quality_factor": backtest_quality_factor,
     "defensive_value": backtest_defensive_value,

@@ -233,6 +233,40 @@ class SupabaseStore:
                 continue
         return out
 
+    def latest_equity(self) -> tuple[str, float] | None:
+        """(timestamp, equity_usd) of the newest snapshot, or None.
+        Used by the benchmark builder when local SQLite is empty (fresh
+        checkout / GH-Actions cache miss) so alpha-vs-SPY never degrades
+        to 'lacks comparable fields'."""
+        if not self.is_configured():
+            return None
+        rows = self._select(
+            "equity_snapshots",
+            "select=timestamp,equity_usd&order=timestamp.desc&limit=1")
+        for r in rows:
+            try:
+                return str(r["timestamp"]), float(r["equity_usd"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        return None
+
+    def equity_at_or_before(self, cutoff_iso: str) -> float | None:
+        """Closest snapshot at/just-before `cutoff_iso` — the window
+        anchor for trailing-return math. One tiny indexed query per
+        window instead of pulling the whole history over REST."""
+        if not self.is_configured():
+            return None
+        rows = self._select(
+            "equity_snapshots",
+            f"select=equity_usd&timestamp=lte.{cutoff_iso}"
+            f"&order=timestamp.desc&limit=1")
+        for r in rows:
+            try:
+                return float(r["equity_usd"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        return None
+
     def insert_allocation(self, row: dict[str, Any]) -> bool:
         """Row matches `allocations` table columns."""
         return self._post("allocations", row)

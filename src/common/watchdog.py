@@ -39,6 +39,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 WATCHDOG_PATH = Path("docs/watchdog.json")
+VALIDATION_PATH = Path("docs/validation.json")
 
 # A latched KILL older than this with benign drawdown → stale-latch page.
 STALE_LATCH_HOURS = 24.0
@@ -179,6 +180,37 @@ def check_book_vitals(
                         ),
                     })
             # No trades EVER + NORMAL state is a cold-start, not a page.
+
+        # ── STALE_RESEARCH ────────────────────────────────────────────
+        # research.timer runs daily; validation.json silently going
+        # stale (observed: 6+ days in June 2026) zeroes the
+        # research_freshness grade axis AND blocks new strategies from
+        # ever earning PASS. Same silent-failure family as the rest.
+        try:
+            vpath = VALIDATION_PATH
+            if vpath.exists():
+                vdata = json.loads(vpath.read_text())
+                vas_of = vdata.get("as_of")
+                if vas_of:
+                    vdt = datetime.fromisoformat(
+                        str(vas_of).replace("Z", "+00:00"))
+                    if vdt.tzinfo is None:
+                        vdt = vdt.replace(tzinfo=UTC)
+                    stale_h = (now - vdt).total_seconds() / 3600
+                    if stale_h > 48:
+                        findings.append({
+                            "key": "stale_research",
+                            "severity": "warning",
+                            "message": (
+                                f"validation.json is {stale_h/24:.1f} days "
+                                f"old (research.timer should refresh it "
+                                f"daily at 06:30). Check: systemctl status "
+                                f"research.timer && journalctl -u "
+                                f"research.service -n 50"
+                            ),
+                        })
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[watchdog] research-staleness check failed: {e}")
 
         # ── Alert (deduped) + persist ─────────────────────────────────
         for f in findings:
