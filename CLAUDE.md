@@ -14,6 +14,7 @@ A live multi-asset systematic trading bot. **Real money is at stake** when `ALLO
 4. **Don't touch real broker accounts.** All tests use `tests/mock_broker.py`. If a test would hit a real API, it's wrong — patch `requests.get` / `requests.post` instead.
 5. **Comments explain WHY, not WHAT.** Many comments in this repo reference specific historical bugs (the "phantom-loss" PnL, the "770 stuck PENDING orders", the "wash-trade rejection storm"). When you fix a bug, leave a comment naming the failure mode.
 6. **Audit-fix annotations are load-bearing.** Lines tagged `# audit fix:` document an invariant. Don't remove the comment when refactoring; refactor the code to keep the invariant.
+7. **Never commit sandbox-built `docs/index.html` or runtime `docs/*.json`** (cycle_status, self_grade, benchmark, trades_recent, watchdog, …). A dev sandbox has empty DBs, so its dashboard build shows $0 everywhere; committing it clobbers the droplet's live page on the next `git reset --hard` deploy (observed 2026-06-09: "all my values disappeared"). `update.sh` snapshots/restores these across deploys as a backstop, but the rule stands: only the droplet's own services write those artifacts. If you changed `build_dashboard.py`, verify with a local build, then `git checkout -- docs/` before committing.
 
 ## Where the dragons are
 

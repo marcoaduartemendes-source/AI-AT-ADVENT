@@ -70,16 +70,25 @@ cp -a "$INSTALL_DIR/docs/." "$_docs_bak/" 2>/dev/null || true
 sudo -u "$SERVICE_USER" git reset --hard "origin/$BRANCH" --quiet
 NEW="$(sudo -u "$SERVICE_USER" git rev-parse HEAD)"
 
-# Restore live runtime JSON (NOT index.html — that's rebuilt fresh
-# by dashboard.service from these inputs).
+# Restore live runtime JSON.
 for f in cycle_status trades_recent benchmark validation walk_forward \
          improvements self_grade data_quality auto_overrides \
-         hedge_fund_13f; do
+         hedge_fund_13f watchdog; do
     if [[ -f "$_docs_bak/$f.json" ]]; then
         cp -a "$_docs_bak/$f.json" "$INSTALL_DIR/docs/$f.json" 2>/dev/null || true
         chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/docs/$f.json" 2>/dev/null || true
     fi
 done
+# 2026-06-09: ALSO restore index.html. The reset just swapped in
+# whatever copy is committed (possibly a sandbox build with all-zero
+# values) and dashboard.service only rebuilds on its next tick — the
+# operator saw "all my values disappeared" in that window. Keeping the
+# pre-deploy page up until the fresh rebuild lands means a deploy can
+# never blank the dashboard, even transiently.
+if [[ -f "$_docs_bak/index.html" ]]; then
+    cp -a "$_docs_bak/index.html" "$INSTALL_DIR/docs/index.html" 2>/dev/null || true
+    chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/docs/index.html" 2>/dev/null || true
+fi
 rm -rf "$_docs_bak"
 
 # 2026-05-30: do NOT early-exit when the code SHA is unchanged. The old
