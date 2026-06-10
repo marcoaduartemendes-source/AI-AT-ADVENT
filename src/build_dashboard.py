@@ -391,6 +391,62 @@ _LEVERAGED_ETF_FACTOR: dict[str, float] = {
 }
 
 
+def _venue_cash() -> dict[str, dict]:
+    """Live per-venue cash + equity from each broker's account.
+
+    Added 2026-06-10 after a $5-6k Coinbase deposit was invisible to the
+    bot (ACH hold / portfolio scoping) and the operator had no way to
+    see what the bot sees — they were debugging via SSH heredocs. The
+    dashboard now answers "did my deposit land?" directly: {venue:
+    {cash_usd, equity_usd}}. Empty dict when creds are missing.
+    """
+    out: dict[str, dict] = {}
+    try:
+        from brokers.registry import build_brokers
+        for venue, adapter in (build_brokers() or {}).items():
+            try:
+                acct = adapter.get_account()
+                out[venue] = {
+                    "cash_usd": round(float(acct.cash_usd or 0), 2),
+                    "equity_usd": round(float(acct.equity_usd or 0), 2),
+                }
+            except Exception as e:  # noqa: BLE001 — per-venue best effort
+                out[venue] = {"error": str(e)[:80]}
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"venue cash read failed: {e}")
+    return out
+
+
+def _render_venue_cash(cash: dict[str, dict]) -> str:
+    """Per-venue cash chips — the bot's actual tradeable cash view."""
+    if not cash:
+        return ""
+    chips = []
+    for venue, d in sorted(cash.items()):
+        if "error" in d:
+            chips.append(
+                f'<span style="background:#fee2e2;color:#991b1b;'
+                f'padding:4px 10px;border-radius:6px;font-size:12px">'
+                f'{html.escape(venue)}: unreachable</span>')
+            continue
+        c = d.get("cash_usd", 0.0)
+        color = "#166534" if c >= 50 else "#b45309"
+        chips.append(
+            f'<span style="background:#f3f4f6;padding:4px 10px;'
+            f'border-radius:6px;font-size:12px">'
+            f'{html.escape(venue)}: <strong style="color:{color}">'
+            f'{_fmt_money(c)}</strong> tradeable cash'
+            f' · {_fmt_money(d.get("equity_usd", 0.0))} equity</span>')
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px" '
+        'title="What the bot can actually trade with, per venue, read '
+        'live from each broker API. A deposit that has not cleared (ACH '
+        'hold) or sits in an unscoped portfolio shows $0 here even if '
+        'the venue UI shows a balance.">'
+        + "".join(chips) + "</div>"
+    )
+
+
 def _portfolio_leverage(equity_usd: float) -> float | None:
     """Gross ECONOMIC leverage = Σ(|market_value| × etf_leverage_factor)
     ÷ equity across every live broker position. None when no brokers/
@@ -2513,6 +2569,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </div>
 
 {_render_mode_diagnostic(diag, venue_modes_summary)}
+
+{_render_venue_cash(_venue_cash())}
 
 <div class="totals">
   <div class="stat" style="grid-column: span 2; border: 2px solid {pnl_color};">
