@@ -1773,6 +1773,96 @@ else stays paper-only until it proves an edge.</p>
 </table>"""
 
 
+def _render_equity_curve() -> str:
+    """"Where did the money go?" — the full equity history since
+    inception as an inline SVG, with inception/peak/current annotations.
+
+    Added 2026-06-10 after the operator had to reconstruct the account's
+    story from kill-switch event rows. The curve makes the timeline
+    self-evident: every freeze, drawdown and recovery is visible at a
+    glance, and the headline states net P&L since inception in dollars
+    — no SQL required.
+    """
+    risk_db = os.environ.get("RISK_DB_PATH", "data/risk_state.db")
+    if not Path(risk_db).exists():
+        return ""
+    try:
+        with sqlite3.connect(risk_db) as conn:
+            rows = conn.execute(
+                "SELECT timestamp, equity_usd FROM equity_snapshots "
+                "ORDER BY timestamp ASC"
+            ).fetchall()
+    except sqlite3.Error as e:
+        logger.debug(f"equity curve read failed: {e}")
+        return ""
+    pts = []
+    for ts, eq in rows:
+        try:
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            v = float(eq)
+            if v > 0:
+                pts.append((dt, v))
+        except (ValueError, TypeError):
+            continue
+    if len(pts) < 5:
+        return ""
+    # Downsample to ≤ 400 points (SVG stays light at any history size).
+    if len(pts) > 400:
+        step = len(pts) / 400.0
+        pts = [pts[int(i * step)] for i in range(400)] + [pts[-1]]
+
+    eqs = [p[1] for p in pts]
+    first, last, peak = eqs[0], eqs[-1], max(eqs)
+    trough = min(eqs)
+    net = last - first
+    net_pct = (last / first - 1) * 100 if first else 0.0
+    color = "#166534" if net >= 0 else "#7f1d1d"
+
+    w, h, pad = 900, 180, 8
+    lo, hi = trough * 0.998, peak * 1.002
+    rng = (hi - lo) or 1.0
+
+    def _xy(i: int, v: float) -> tuple[float, float]:
+        x = pad + (w - 2 * pad) * (i / max(len(pts) - 1, 1))
+        y = h - pad - (h - 2 * pad) * ((v - lo) / rng)
+        return round(x, 1), round(y, 1)
+
+    line = " ".join(f"{x},{y}" for x, y in
+                    (_xy(i, v) for i, (_, v) in enumerate(pts)))
+    # Baseline at inception equity so above/below water is obvious.
+    _, y0 = _xy(0, first)
+    peak_i = eqs.index(peak)
+    px, py = _xy(peak_i, peak)
+    start_lbl = pts[0][0].strftime("%b %d")
+    end_lbl = pts[-1][0].strftime("%b %d")
+    return f"""
+<h2 id="equity-curve">Money since inception</h2>
+<div class="stat" style="padding:16px">
+  <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:8px;font-size:13px">
+    <span>Inception ({html.escape(start_lbl)}): <strong>{_fmt_money(first)}</strong></span>
+    <span>Peak: <strong>{_fmt_money(peak)}</strong></span>
+    <span>Current ({html.escape(end_lbl)}): <strong>{_fmt_money(last)}</strong></span>
+    <span style="color:{color}">Net since inception:
+      <strong>{_fmt_money(net)} ({net_pct:+.2f}%)</strong></span>
+  </div>
+  <svg viewBox="0 0 {w} {h}" style="width:100%;height:auto"
+       preserveAspectRatio="none" role="img"
+       aria-label="Equity curve since inception">
+    <line x1="{pad}" y1="{y0}" x2="{w - pad}" y2="{y0}"
+          stroke="#d1d5db" stroke-dasharray="4 4" stroke-width="1"/>
+    <polyline points="{line}" fill="none" stroke="{color}"
+              stroke-width="1.8"/>
+    <circle cx="{px}" cy="{py}" r="3" fill="#2563eb"/>
+  </svg>
+  <div style="font-size:11px;color:#6b7280;margin-top:4px">
+    Dashed line = inception equity (above water / below water at a
+    glance). Blue dot = all-time peak. Source: equity_snapshots
+    (every healthy cycle).
+  </div>
+</div>
+"""
+
+
 def _render_benchmark(bench: dict | None) -> str:
     """Portfolio trailing return vs SPY / QQQ / BTC over 7/14/30d."""
     if not bench:
@@ -2495,6 +2585,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </table>
 
 {_render_cycle_diagnostics(cycles_recent)}
+
+{_render_equity_curve()}
 
 {_render_benchmark(benchmark)}
 
