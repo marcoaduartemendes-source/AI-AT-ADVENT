@@ -9,7 +9,8 @@ Claude Code) review.
 
 Cadence (managed by deploy/systemd/research-loop.timer):
   • Daily at 07:00 UTC (after the 06:30 research backtests refresh
-    validation.json) — Sonnet, ≤6K input + 2K output ≈ $0.05.
+    validation.json) — Fable 5 (fallback: Opus 4.8 → Sonnet 4.6),
+    ≈$0.20-0.50/run. The best reasoning IS the product here.
 
 Safety rails:
   1. NEVER emits code patches. Proposals are plain English; concrete
@@ -41,9 +42,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("research_loop")
 
-DAILY_MODEL = "claude-sonnet-4-6"
-DAILY_MAX_TOKENS = 2400
-DAILY_INPUT_CAP_CHARS = 24_000   # ≈ 6K input tokens
+# Model chain (2026-06-11): Fable 5 first — at ONE call/night the cost
+# delta vs Sonnet is pennies (~$6-15/mo vs ~$1.60/mo) while reasoning
+# quality is the entire product of this loop. Fable requires 30-day
+# data retention (orgs configured for ZDR get a 400 on every request)
+# and may emit stop_reason="refusal"; on either, fall back down the
+# chain so the nightly run always produces something.
+DEFAULT_MODEL_CHAIN = ["claude-fable-5", "claude-opus-4-8",
+                       "claude-sonnet-4-6"]
+# Fable 5 thinking is ALWAYS ON and bills/draws from max_tokens — a
+# small cap would let the thinking consume the budget and truncate the
+# JSON answer. 16K leaves room for deep reasoning + the ~2K response.
+DAILY_MAX_TOKENS = 16_000
+DAILY_INPUT_CAP_CHARS = 24_000   # ≈ 6K input tokens (≈8K on Fable's tokenizer)
+
+# $/MTok (input, output) — for the run-cost line on the dashboard.
+_PRICING = {
+    "claude-fable-5": (10.0, 50.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+}
 
 QUEUE_PATH = Path("docs/research_proposals.json")
 DIGEST_PATH = Path("docs/research_proposals.md")
@@ -245,65 +263,101 @@ def _truncate_evidence(ev: dict, max_chars: int) -> str:
     return raw[:max_chars]
 
 
-def _call_claude(evidence: dict) -> tuple[dict | None, float]:
-    """Returns (parsed_dict, estimated_usd_cost). Returns (None, 0) on
-    any failure — the timer just produces a no-op."""
+def _model_chain() -> list[str]:
+    """RESEARCH_LOOP_MODEL env var overrides the head of the chain; the
+    standard fallbacks always follow so a misconfigured override can't
+    silence the loop."""
+    override = os.environ.get("RESEARCH_LOOP_MODEL", "").strip()
+    chain = list(DEFAULT_MODEL_CHAIN)
+    if override and override not in chain:
+        chain.insert(0, override)
+    elif override:
+        chain.remove(override)
+        chain.insert(0, override)
+    return chain
+
+
+def _call_claude(evidence: dict) -> tuple[dict | None, float, str]:
+    """Returns (parsed_dict, estimated_usd_cost, model_used). Returns
+    (None, 0, "") on total failure — the timer just produces a no-op.
+
+    Walks the model chain: Fable 5 first (the best reasoning is the
+    product here), falling back on model-unavailable errors (ZDR orgs
+    400 on every Fable request), refusals, and parse failures.
+    """
     if not os.environ.get("ANTHROPIC_API_KEY"):
         logger.warning("ANTHROPIC_API_KEY not set — skipping research loop")
-        return None, 0.0
+        return None, 0.0, ""
     try:
         import anthropic
     except ImportError:
         logger.warning("anthropic package missing — skipping research loop")
-        return None, 0.0
+        return None, 0.0, ""
 
     payload = _truncate_evidence(evidence, DAILY_INPUT_CAP_CHARS)
     user_msg = (
         "Below is the bot's current telemetry as JSON. Produce the queue.\n\n"
         f"```json\n{payload}\n```"
     )
-    try:
-        client = anthropic.Anthropic()
-        msg = client.messages.create(
-            model=DAILY_MODEL,
-            max_tokens=DAILY_MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
+    client = anthropic.Anthropic()
+    for model in _model_chain():
+        try:
+            msg = client.messages.create(
+                model=model,
+                max_tokens=DAILY_MAX_TOKENS,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+        except (anthropic.BadRequestError, anthropic.NotFoundError,
+                anthropic.PermissionDeniedError) as e:
+            # Model not available to this org (ZDR retention, no access,
+            # bad ID) — fall down the chain.
+            logger.warning(f"{model} unavailable ({e.__class__.__name__}) "
+                           f"— trying next model")
+            continue
+        except Exception as e:  # noqa: BLE001 — network/5xx etc.
+            logger.warning(f"Claude call failed on {model}: {e}")
+            return None, 0.0, ""
+
+        # Fable 5 can decline via stop_reason="refusal" (HTTP 200).
+        # Telemetry analysis shouldn't trip it, but handle it: try the
+        # next model rather than producing nothing.
+        if getattr(msg, "stop_reason", "") == "refusal":
+            logger.warning(f"{model} returned refusal — trying next model")
+            continue
+
+        text = "".join(
+            b.text for b in msg.content
+            if getattr(b, "type", "") == "text"
         )
-    except Exception as e:
-        logger.warning(f"Claude call failed: {e}")
-        return None, 0.0
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            logger.warning(f"{model} response missing JSON — trying next")
+            continue
+        try:
+            parsed = json.loads(m.group(0))
+        except json.JSONDecodeError as e:
+            logger.warning(f"{model} JSON parse failed: {e} — trying next")
+            continue
 
-    text = "".join(
-        b.text for b in msg.content
-        if getattr(b, "type", "") == "text"
-    )
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if not m:
-        logger.warning("Claude response missing JSON object")
-        return None, 0.0
-    try:
-        parsed = json.loads(m.group(0))
-    except json.JSONDecodeError as e:
-        logger.warning(f"Claude response JSON parse failed: {e}")
-        return None, 0.0
-
-    # Sonnet 4.5 (approx 2026 pricing): ~$3/Mtok in, ~$15/Mtok out.
-    cost = (
-        msg.usage.input_tokens * 3.0 / 1_000_000
-        + msg.usage.output_tokens * 15.0 / 1_000_000
-    )
-    return parsed, cost
+        in_rate, out_rate = _PRICING.get(model, (10.0, 50.0))
+        cost = (
+            msg.usage.input_tokens * in_rate / 1_000_000
+            + msg.usage.output_tokens * out_rate / 1_000_000
+        )
+        return parsed, cost, model
+    logger.warning("research_loop: every model in the chain failed")
+    return None, 0.0, ""
 
 
 # ── Output writers ───────────────────────────────────────────────────
 
 
-def _write_queue(parsed: dict, cost: float) -> None:
+def _write_queue(parsed: dict, cost: float, model: str) -> None:
     """Newest-on-top JSON queue the dashboard renders."""
     enriched = {
         "as_of": datetime.now(UTC).isoformat(),
-        "model": DAILY_MODEL,
+        "model": model,
         "cost_usd": round(cost, 4),
         **parsed,
     }
@@ -312,7 +366,7 @@ def _write_queue(parsed: dict, cost: float) -> None:
         json.dumps(enriched, indent=2), encoding="utf-8")
 
 
-def _write_digest(parsed: dict, cost: float) -> None:
+def _write_digest(parsed: dict, cost: float, model: str) -> None:
     """Human-friendly markdown the operator can open on a phone."""
     now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines = [f"# Research-loop digest — {now_str}", ""]
@@ -350,7 +404,7 @@ def _write_digest(parsed: dict, cost: float) -> None:
         lines.append("")
     lines.append(
         f"_LLM cost this run: ${round(cost, 4)} "
-        f"(model: {DAILY_MODEL})_")
+        f"(model: {model})_")
     DIGEST_PATH.parent.mkdir(parents=True, exist_ok=True)
     DIGEST_PATH.write_text("\n".join(lines), encoding="utf-8")
 
@@ -403,13 +457,13 @@ def main() -> int:
         print(json.dumps(evidence, default=str, indent=2)[:4000])
         return 0
 
-    parsed, cost = _call_claude(evidence)
+    parsed, cost, model = _call_claude(evidence)
     if parsed is None:
         logger.info("research_loop: no output this cycle")
         return 0
 
-    _write_queue(parsed, cost)
-    _write_digest(parsed, cost)
+    _write_queue(parsed, cost, model)
+    _write_digest(parsed, cost, model)
     _append_history(parsed, cost)
     _alert_if_high_priority(parsed)
     n = len(parsed.get("proposals") or [])

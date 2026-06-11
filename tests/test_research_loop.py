@@ -81,9 +81,10 @@ class TestNoApiKeyIsNoOp:
 
     def test_missing_key_returns_empty(self, in_tmp, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        parsed, cost = rl._call_claude({"as_of": "x"})
+        parsed, cost, model = rl._call_claude({"as_of": "x"})
         assert parsed is None
         assert cost == 0.0
+        assert model == ""
 
     def test_main_exits_zero_without_key(self, in_tmp, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -108,7 +109,7 @@ class TestWriters:
             }],
             "new_strategy_ideas": [],
         }
-        rl._write_queue(parsed, cost=0.05)
+        rl._write_queue(parsed, cost=0.05, model="claude-fable-5")
         loaded = json.loads(rl.QUEUE_PATH.read_text())
         assert loaded["proposals"][0]["title"] == "Fund Coinbase wallet"
         assert loaded["cost_usd"] == 0.05
@@ -122,7 +123,7 @@ class TestWriters:
                            "rationale": "r", "proposed_action": "a",
                            "expected_impact": "i", "risk": "k"}],
         }
-        rl._write_digest(parsed, cost=0.02)
+        rl._write_digest(parsed, cost=0.02, model="claude-fable-5")
         body = rl.DIGEST_PATH.read_text()
         assert "HIGH" in body
         assert "Fund Coinbase wallet" in body
@@ -194,3 +195,36 @@ class TestSafetyRails:
                      if not any(safe in p for safe in
                                 ("research_proposals", "research_history"))]
         assert forbidden == [], f"unexpected writes: {forbidden}"
+
+
+class TestModelChain:
+    """Pins the 2026-06-11 model upgrade: Fable 5 leads the chain (the
+    best reasoning is the product at 1 call/night), with Opus → Sonnet
+    fallbacks so a ZDR org or refusal can't silence the loop."""
+
+    def test_default_chain_leads_with_fable(self, monkeypatch):
+        monkeypatch.delenv("RESEARCH_LOOP_MODEL", raising=False)
+        chain = rl._model_chain()
+        assert chain[0] == "claude-fable-5"
+        assert "claude-opus-4-8" in chain
+        assert "claude-sonnet-4-6" in chain
+
+    def test_env_override_takes_head(self, monkeypatch):
+        monkeypatch.setenv("RESEARCH_LOOP_MODEL", "claude-opus-4-8")
+        chain = rl._model_chain()
+        assert chain[0] == "claude-opus-4-8"
+        # Fallbacks still present — a bad override can't silence the loop.
+        assert "claude-sonnet-4-6" in chain
+
+    def test_unknown_override_prepended_with_fallbacks(self, monkeypatch):
+        monkeypatch.setenv("RESEARCH_LOOP_MODEL", "claude-mythos-5")
+        chain = rl._model_chain()
+        assert chain[0] == "claude-mythos-5"
+        assert chain[1:] == list(rl.DEFAULT_MODEL_CHAIN)
+
+    def test_queue_records_model_used(self, in_tmp):
+        rl._write_queue({"summary": "x", "proposals": []},
+                        cost=0.21, model="claude-fable-5")
+        import json
+        loaded = json.loads(rl.QUEUE_PATH.read_text())
+        assert loaded["model"] == "claude-fable-5"
