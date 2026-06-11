@@ -1,0 +1,16 @@
+[Unit]
+Description=AI-AT-ADVENT weekly strategy-parameter sweep
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+
+[Timer]
+# Sunday 05:00 UTC — before Monday's research run and outside market
+# hours. Weekly cadence on purpose: parameter changes should be rare,
+# evidence-heavy decisions; sweeping daily would invite curve-fitting
+# churn. Results land in docs/tuning.json, which the nightly research
+# loop folds into Claude's evidence bundle.
+OnCalendar=Sun *-*-* 05:00:00
+Persistent=true
+Unit=tuning.service
+
+[Install]
+WantedBy=timers.target

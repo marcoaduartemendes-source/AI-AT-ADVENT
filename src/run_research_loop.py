@@ -154,6 +154,10 @@ def _assemble_evidence() -> dict:
         "walk_forward": _load_json("docs/walk_forward.json"),
         "benchmark": _load_json("docs/benchmark.json"),
         "watchdog": _load_json("docs/watchdog.json"),
+        # Weekly parameter-sweep results (run_tuning.py) — lets the
+        # agent propose tunable changes backed by hard Sharpe
+        # comparisons instead of hunches.
+        "tuning": _load_json("docs/tuning.json"),
         "cycle_status_tail": _tail_cycles(
             _load_json("docs/cycle_status.json"), n=10),
         "recent_trades": _recent_trades(

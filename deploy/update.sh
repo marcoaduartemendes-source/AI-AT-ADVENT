@@ -162,6 +162,14 @@ if [[ -f "/etc/systemd/system/research-loop.timer" ]]; then
     systemctl enable --now research-loop.timer 2>/dev/null || true
 fi
 
+# 2026-06-11 — Enable the weekly parameter-sweep timer. Sweeps strategy
+# tunables (vol targets, leverage caps, lookbacks) through the backtest
+# harness and writes docs/tuning.json, which the nightly research loop
+# feeds to Claude as evidence. Proposals only — never applies changes.
+if [[ -f "/etc/systemd/system/tuning.timer" ]]; then
+    systemctl enable --now tuning.timer 2>/dev/null || true
+fi
+
 echo "[5/6] Restarting orchestrator timer"
 systemctl start orchestrator.timer
 

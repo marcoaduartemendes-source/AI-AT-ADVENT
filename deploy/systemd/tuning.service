@@ -1,0 +1,33 @@
+[Unit]
+Description=AI-AT-ADVENT weekly parameter sweep (proposals only)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+# Each sweep = candidates × 2 backtest windows of Yahoo-fed history;
+# the full registry runs in minutes. 30-min hard ceiling.
+TimeoutStartSec=1800
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_tuning.py'
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+ReadWritePaths=/opt/ai-at-advent/data /opt/ai-at-advent/docs
+
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
