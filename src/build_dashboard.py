@@ -1644,17 +1644,25 @@ def _render_hedge_funds(hf: dict | None) -> str:
 
 
 def _render_nav() -> str:
-    """Sticky in-page nav so the user can jump to any panel."""
-    return ('<div class="nav">'
-            '<strong style="color:#111827">JUMP →</strong>'
-            '<a href="#grade">Self-grade</a>'
-            '<a href="#improvements">Action queue</a>'
-            '<a href="#validation">Validation</a>'
-            '<a href="#hedge-funds">Hedge funds</a>'
-            '<a href="#data-quality">Data quality</a>'
-            '<a href="#strategies">Strategies</a>'
-            '<a href="#trades">Trades</a>'
-            "</div>")
+    """Tab bar — the 2026-06-11 investment-grade reorg. The page used to
+    be one ~15-section scroll the operator called "very confusing"; it's
+    now four tabs in the shape professional terminals use (Bloomberg
+    PORT / fund tear-sheets): Performance first, then holdings, then
+    research, with plumbing diagnostics tucked into Operations. Active
+    tab persists across the 30s auto-refresh via URL hash + localStorage
+    (see the inline script at the foot of the page)."""
+    tabs = [
+        ("performance", "📈 Performance"),
+        ("strategies", "📋 Strategies"),
+        ("research", "🧠 Research"),
+        ("operations", "🔧 Operations"),
+    ]
+    btns = "".join(
+        f'<button class="tab-btn" data-tab="{key}" '
+        f'onclick="showTab(\'{key}\')">{label}</button>'
+        for key, label in tabs
+    )
+    return f'<div class="nav tab-bar">{btns}</div>'
 
 
 def _read_improvements() -> dict | None:
@@ -2522,6 +2530,38 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     snapshot_at = _to_et(risk.get("snapshot_at"))
     ks_at = _to_et(risk.get("kill_switch_at") or None) if risk.get("kill_switch_at") else ""
 
+    # Investment-grade header discipline: a screaming full-width banner
+    # for a NORMAL kill switch is noise — professional terminals show
+    # healthy status as a quiet pill and reserve the banner for alarms.
+    _ks_actions = (
+        '<span class="ks-actions">'
+        '<a class="ks-btn ks-arm" target="_blank" '
+        'href="https://github.com/marcoaduartemendes-source/ai-at-advent/'
+        'actions/workflows/kill_switch.yml" '
+        'title="Arm the kill switch — closes every position next cycle.">'
+        '🛑 ARM KILL</a>'
+        '<a class="ks-btn ks-reset" target="_blank" '
+        'href="https://github.com/marcoaduartemendes-source/ai-at-advent/'
+        'actions/workflows/kill_switch.yml" '
+        'title="Reset to NORMAL — trading resumes next cycle.">✅ RESET</a>'
+        '</span>'
+    )
+    if ks in ("NORMAL", "WARNING"):
+        ks_html = (
+            f'<span class="ks-pill" style="background:{ks_color}" '
+            f'title="Kill switch state — ARM/RESET controls are in the '
+            f'Operations tab">{ks_emoji} Kill switch: {html.escape(ks)}'
+            f'</span>'
+        )
+    else:
+        ks_html = (
+            f'<div class="ks-banner" style="background:{ks_color}">'
+            f'<span>{ks_emoji} Kill switch: {html.escape(ks)}'
+            f'<small style="font-weight:400">{ks_explainer}</small></span>'
+            f'<small><time data-ts="kill-switch">{html.escape(ks_at)}</time>'
+            f'</small>{_ks_actions}</div>'
+        )
+
     html_doc = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2644,6 +2684,22 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
                  background: #eef2ff; color: #4338ca; font-size: 10px;
                  font-weight: 600; text-transform: uppercase;
                  letter-spacing: 0.05em; margin-left: 6px; vertical-align: middle; }}
+  /* ── 2026-06-11 investment-grade reorg: tabs ─────────────────── */
+  .tab-bar {{ gap: 4px; padding: 8px 0; }}
+  .tab-btn {{ appearance: none; border: 1px solid transparent;
+              background: transparent; color: #4b5563; font: inherit;
+              font-size: 13px; font-weight: 600; padding: 7px 16px;
+              border-radius: 8px 8px 0 0; cursor: pointer; }}
+  .tab-btn:hover {{ background: #e5e7eb; color: #111827; }}
+  .tab-btn.active {{ background: white; color: #111827;
+                     border-color: #e5e7eb; border-bottom-color: white;
+                     box-shadow: 0 -1px 3px rgba(15,23,42,0.06); }}
+  .tabpanel {{ display: none; }}
+  .tabpanel.active {{ display: block; animation: fadein 120ms ease; }}
+  @keyframes fadein {{ from {{ opacity: 0.4; }} to {{ opacity: 1; }} }}
+  .ks-pill {{ display: inline-flex; align-items: center; gap: 6px;
+              padding: 4px 12px; border-radius: 9999px; font-size: 12px;
+              font-weight: 600; color: white; vertical-align: middle; }}
   @media (max-width: 720px) {{
     body {{ margin: 12px auto; padding: 0 10px; }}
     .grade-hero {{ grid-template-columns: 1fr; }}
@@ -2658,31 +2714,19 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </head>
 <body>
 
-<h1>AI-AT-ADVENT — Performance Control</h1>
+<div style="display:flex;align-items:center;justify-content:space-between;
+            flex-wrap:wrap;gap:8px">
+  <h1 style="margin:0">AI-AT-ADVENT <span style="color:#6b7280;
+      font-weight:400;font-size:15px">· Portfolio Control</span></h1>
+  {ks_html if ks in ("NORMAL", "WARNING") else ""}
+</div>
 <div class="meta">
   Snapshot: <time data-ts="snapshot">{html.escape(snapshot_at)}</time>
-  · Updated every 5 min · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
+  · auto-refresh 30s · <a href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions" target=_blank>Workflows</a>
 </div>
-{_render_nav()}
-{_render_grade_hero(self_grade)}
-{_system_status_line(cycles_recent, heartbeat)}
 
 {_render_watchdog_banner()}
-
-<div class="ks-banner" style="background:{ks_color}">
-  <span>{ks_emoji} Kill switch: {html.escape(ks)}<small style="font-weight:400">{ks_explainer}</small></span>
-  <small><time data-ts="kill-switch">{html.escape(ks_at)}</time></small>
-  <span class="ks-actions">
-    <a class="ks-btn ks-arm" target="_blank"
-       href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions/workflows/kill_switch.yml"
-       title="Open the kill_switch workflow with action=arm preselected. Triggers an immediate close of every position on the next cycle.">🛑 ARM KILL</a>
-    <a class="ks-btn ks-reset" target="_blank"
-       href="https://github.com/marcoaduartemendes-source/ai-at-advent/actions/workflows/kill_switch.yml"
-       title="Reset kill switch to NORMAL — strategies resume trading on the next cycle.">✅ RESET</a>
-  </span>
-</div>
-
-{_render_mode_diagnostic(diag, venue_modes_summary)}
+{ks_html if ks not in ("NORMAL", "WARNING") else ""}
 
 {_render_venue_cash(_venue_cash())}
 
@@ -2690,6 +2734,10 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   <div class="stat" style="grid-column: span 2; border: 2px solid {pnl_color};">
     <div class="label">Total P&amp;L (realized + unrealized)</div>
     <div class="value" style="color:{pnl_color}; font-size: 28px;">{_fmt_money(total_pnl)}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Portfolio equity</div>
+    <div class="value">{_fmt_money(risk.get('equity_usd', 0.0))}</div>
   </div>
   <div class="stat">
     <div class="label">Realized P&amp;L</div>
@@ -2701,24 +2749,17 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
     <div class="value" style="color:{unrealized_color}">{_fmt_money(total_unrealized)}</div>
   </div>
   <div class="stat">
-    <div class="label">Portfolio equity</div>
-    <div class="value">{_fmt_money(risk.get('equity_usd', 0.0))}</div>
-  </div>
-  <div class="stat">
-    <div class="label">Closed trades</div>
-    <div class="value">{total_closed:,}</div>
-  </div>
-  <div class="stat">
-    <div class="label">Win rate</div>
-    <div class="value">{_fmt_pct(portfolio_winrate)}</div>
-  </div>
-  <div class="stat">
     <div class="label">Drawdown from peak</div>
     <div class="value">{_fmt_pct(risk.get('drawdown_pct', 0.0))}</div>
   </div>
   <div class="stat" title="Gross notional / equity across all live broker positions. Cap {_lev_cap:.1f}×.">
     <div class="label">Gross leverage</div>
     <div class="value" style="color:{lev_color}">{lev_value}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Win rate · closed</div>
+    <div class="value">{_fmt_pct(portfolio_winrate)}
+      <span style="font-size:12px;color:#6b7280">· {total_closed:,}</span></div>
   </div>
   <div class="stat" title="Strategies traded in the last 3d / 4-14d / never or &gt;14d. Helps spot dormant sleeves at a glance.">
     <div class="label">Activity (3d / stale / idle)</div>
@@ -2733,6 +2774,16 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
   </div>
 </div>
 
+{_render_nav()}
+
+<div id="tab-performance" class="tabpanel">
+{_render_equity_curve()}
+{_render_benchmark(benchmark)}
+{_render_grade_hero(self_grade)}
+{_render_portfolio_intel(portfolio_intel)}
+</div>
+
+<div id="tab-strategies" class="tabpanel">
 <table>
   <thead>
     <tr>
@@ -2755,32 +2806,56 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 {body_rows}
   </tbody>
 </table>
-
-{_render_cycle_diagnostics(cycles_recent)}
-
-{_render_research_proposals()}
-
-{_render_equity_curve()}
-
-{_render_benchmark(benchmark)}
-
 {_render_validation(validation)}
-
-{_render_improvements(improvements)}
-
-{_render_hedge_funds(hedge_funds)}
-
-{_render_portfolio_intel(portfolio_intel)}
-
-{_render_data_quality(data_quality)}
-
-{_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
-
 {_render_recent_trades(trades_recent)}
+</div>
 
+<div id="tab-research" class="tabpanel">
+{_render_research_proposals()}
+{_render_improvements(improvements)}
+{_render_hedge_funds(hedge_funds)}
+</div>
+
+<div id="tab-operations" class="tabpanel">
+{ks_html if ks in ("NORMAL", "WARNING") else ""}
+<div style="margin:10px 0">{_ks_actions}</div>
+{_system_status_line(cycles_recent, heartbeat)}
+{_render_mode_diagnostic(diag, venue_modes_summary)}
+{_render_cycle_diagnostics(cycles_recent)}
+{_render_data_quality(data_quality)}
+{_render_suggestions(_suggest_actions(cycles_recent, trades_recent, diag))}
 {_render_errors_section(errors)}
+</div>
 
 <footer>Generated <time data-ts="generated">{generated_at}</time></footer>
+
+<script>
+/* Tab switching with persistence across the 30s auto-refresh: active
+   tab is stored in BOTH the URL hash and localStorage, so a meta
+   refresh (or a hash-stripping proxy) can't bounce the operator back
+   to the default tab mid-investigation. */
+function showTab(name) {{
+  document.querySelectorAll('.tabpanel').forEach(function(p) {{
+    p.classList.toggle('active', p.id === 'tab-' + name);
+  }});
+  document.querySelectorAll('.tab-btn').forEach(function(b) {{
+    b.classList.toggle('active', b.dataset.tab === name);
+  }});
+  try {{ localStorage.setItem('aaa_tab', name); }} catch (e) {{}}
+  if (history.replaceState) {{
+    history.replaceState(null, '', '#' + name);
+  }}
+}}
+(function() {{
+  var valid = ['performance', 'strategies', 'research', 'operations'];
+  var fromHash = (location.hash || '').replace('#', '');
+  var stored = null;
+  try {{ stored = localStorage.getItem('aaa_tab'); }} catch (e) {{}}
+  var tab = valid.indexOf(fromHash) >= 0 ? fromHash
+          : (valid.indexOf(stored) >= 0 ? stored : 'performance');
+  showTab(tab);
+}})();
+</script>
 
 </body>
 </html>

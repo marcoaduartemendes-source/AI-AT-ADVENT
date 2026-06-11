@@ -113,8 +113,9 @@ def test_dashboard_renders_strategies_ranked_by_pnl(populated_dbs, tmp_path):
     assert "$100.00" in html      # tsmom_etf
     assert "-$100.00" in html     # rsi_mean_reversion
 
-    # Win/loss aggregation: two closed trades, one win, one loss
-    assert "Closed trades" in html
+    # Win/loss aggregation card (the 2026-06-11 reorg merged the closed-
+    # trade count into the "Win rate · closed" KPI card)
+    assert "Win rate · closed" in html
 
     # Ordering: tsmom_etf (+$100) ranks above rsi_mean_reversion (-$100).
     # Both rows are tabular; the strategy with higher P&L should appear
