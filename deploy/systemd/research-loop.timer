@@ -1,0 +1,16 @@
+[Unit]
+Description=AI-AT-ADVENT autonomous research-loop (nightly LLM review)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+
+[Timer]
+# 07:00 UTC daily — 30 minutes AFTER research.timer (06:30) so the LLM
+# reads the freshest validation/walk-forward verdicts of the day. The
+# bot's own evidence is the agent's input; running before research
+# would feed it yesterday's numbers and propose against stale data.
+# Persistent=true catches up if the box was off at 07:00.
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+Unit=research-loop.service
+
+[Install]
+WantedBy=timers.target

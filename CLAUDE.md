@@ -16,6 +16,19 @@ A live multi-asset systematic trading bot. **Real money is at stake** when `ALLO
 6. **Audit-fix annotations are load-bearing.** Lines tagged `# audit fix:` document an invariant. Don't remove the comment when refactoring; refactor the code to keep the invariant.
 7. **Never commit sandbox-built `docs/index.html` or runtime `docs/*.json`** (cycle_status, self_grade, benchmark, trades_recent, watchdog, …). A dev sandbox has empty DBs, so its dashboard build shows $0 everywhere; committing it clobbers the droplet's live page on the next `git reset --hard` deploy (observed 2026-06-09: "all my values disappeared"). `update.sh` snapshots/restores these across deploys as a backstop, but the rule stands: only the droplet's own services write those artifacts. If you changed `build_dashboard.py`, verify with a local build, then `git checkout -- docs/` before committing.
 
+## The nightly research loop
+
+`src/run_research_loop.py` runs autonomously at 07:00 UTC daily (after
+`research.timer` refreshes verdicts). Reads the bot's own telemetry,
+asks Claude for a ranked queue of proposals, writes
+`docs/research_proposals.{json,md}` + appends `data/research_history.jsonl`,
+and pages on HIGH-priority items. Costs ~$0.05/run.
+
+**Hard rule, enforced by tests:** the agent **NEVER** writes code,
+modifies `LIVE_STRATEGIES`, or touches risk/allocator state. It only
+proposes. The dashboard renders the queue; a human (or supervised
+Claude Code session) acts on it.
+
 ## Where the dragons are
 
 - **`src/strategy_engine/orchestrator.py`** is 1000+ lines. Touch with care. The order of operations in `run_cycle()` matters: poll fills → risk → cancel stale → allocate → per-strategy.

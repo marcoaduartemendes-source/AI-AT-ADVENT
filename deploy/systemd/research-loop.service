@@ -1,0 +1,39 @@
+[Unit]
+Description=AI-AT-ADVENT autonomous research-loop (one nightly Claude call)
+Documentation=https://github.com/marcoaduartemendes-source/AI-AT-ADVENT
+After=network-online.target research.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aaa
+Group=aaa
+WorkingDirectory=/opt/ai-at-advent
+# One Claude call per night. Sonnet, ≤2400 output tokens, ≤6K input —
+# typically ~$0.05/run, ~$1.50/month. Hard 5-min timeout so a stuck
+# HTTP call can never wedge the timer.
+TimeoutStartSec=300
+ExecStart=/usr/bin/env bash -c 'set -a; . /etc/aaa.env; set +a; exec /opt/ai-at-advent/.venv/bin/python src/run_research_loop.py'
+
+# Same hardening profile as the daily research timer. Writes only
+# docs/research_proposals.{json,md} and data/research_history.jsonl.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+ReadWritePaths=/opt/ai-at-advent/data /opt/ai-at-advent/docs
+
+# Don't auto-restart — a persistent failure shows up as a stale
+# research_proposals.json on the dashboard, which the watchdog
+# could flag later if we extend it.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

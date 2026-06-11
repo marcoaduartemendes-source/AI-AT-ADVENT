@@ -153,6 +153,15 @@ if [[ -f "/etc/systemd/system/research.timer" ]]; then
     systemctl enable --now research.timer 2>/dev/null || true
 fi
 
+# 2026-06-10 — Enable the autonomous research-loop timer so Claude
+# reviews the bot's own telemetry nightly and writes a ranked queue
+# of proposals to docs/research_proposals.{json,md} for the operator's
+# morning review. Safe by construction: the agent never writes code,
+# never touches LIVE_STRATEGIES, and only proposes.
+if [[ -f "/etc/systemd/system/research-loop.timer" ]]; then
+    systemctl enable --now research-loop.timer 2>/dev/null || true
+fi
+
 echo "[5/6] Restarting orchestrator timer"
 systemctl start orchestrator.timer
 

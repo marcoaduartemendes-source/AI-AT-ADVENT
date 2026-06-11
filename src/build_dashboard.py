@@ -1829,6 +1829,120 @@ else stays paper-only until it proves an edge.</p>
 </table>"""
 
 
+def _render_research_proposals() -> str:
+    """Research-loop digest — Claude's nightly review of the bot.
+
+    Renders the latest docs/research_proposals.json as a high-signal
+    panel: the summary, weakest-axis call-out, and HIGH-priority items
+    inline; the rest as collapsible. Empty when the agent hasn't run
+    or the file is unparseable. Added 2026-06-10."""
+    try:
+        p = Path("docs/research_proposals.json")
+        if not p.exists():
+            return ""
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001 — display-only
+        logger.debug(f"research_proposals render failed: {e}")
+        return ""
+
+    as_of = str(data.get("as_of") or "")
+    summary = data.get("summary") or ""
+    axis = data.get("weakest_grade_axis") or {}
+    props = data.get("proposals") or []
+    ideas = data.get("new_strategy_ideas") or []
+    cost = data.get("cost_usd") or 0
+    model = data.get("model") or "?"
+
+    def _row(p: dict) -> str:
+        pri = (p.get("priority") or "MED").upper()
+        bg, fg = {
+            "HIGH": ("#fee2e2", "#991b1b"),
+            "MEDIUM": ("#fef3c7", "#92400e"),
+            "LOW": ("#e0e7ff", "#3730a3"),
+        }.get(pri, ("#f3f4f6", "#374151"))
+        cat = html.escape(p.get("category") or "?")
+        title = html.escape(p.get("title") or "(untitled)")
+        rationale = html.escape(p.get("rationale") or "")
+        action = html.escape(p.get("proposed_action") or "")
+        impact = html.escape(p.get("expected_impact") or "")
+        risk = html.escape(p.get("risk") or "")
+        return (
+            f'<div style="background:white;border:1px solid #e5e7eb;'
+            f'border-radius:8px;padding:12px;margin:8px 0">'
+            f'<div style="display:flex;gap:8px;align-items:center;'
+            f'margin-bottom:6px">'
+            f'<span style="background:{bg};color:{fg};padding:2px 8px;'
+            f'border-radius:6px;font-size:11px;font-weight:600">{pri}</span>'
+            f'<span style="background:#eef2ff;color:#4338ca;'
+            f'padding:2px 8px;border-radius:6px;font-size:11px">{cat}</span>'
+            f'<strong style="font-size:14px">{title}</strong></div>'
+            f'<div style="font-size:13px;color:#374151;margin:4px 0">'
+            f'<strong>Why.</strong> {rationale}</div>'
+            f'<div style="font-size:13px;color:#374151;margin:4px 0">'
+            f'<strong>Action.</strong> {action}</div>'
+            f'<div style="font-size:12px;color:#6b7280;margin-top:6px">'
+            f'<strong>Impact:</strong> {impact} · '
+            f'<strong>Risk:</strong> {risk}</div>'
+            f'</div>'
+        )
+
+    high = [p for p in props
+            if (p.get("priority") or "").upper() == "HIGH"]
+    other = [p for p in props
+             if (p.get("priority") or "").upper() != "HIGH"]
+    high_html = "".join(_row(p) for p in high)
+    other_html = "".join(_row(p) for p in other)
+    if other_html:
+        other_html = (
+            f'<details><summary style="cursor:pointer;color:#4338ca;'
+            f'font-size:13px;margin:8px 0">'
+            f'Show {len(other)} more proposal(s)</summary>'
+            f'{other_html}</details>')
+
+    ideas_html = ""
+    if ideas:
+        rows = []
+        for idea in ideas:
+            rows.append(
+                f'<li><strong>{html.escape(idea.get("name") or "?")}</strong> '
+                f'(<em>{html.escape(idea.get("implementability") or "?")}</em>): '
+                f'{html.escape(idea.get("thesis") or "")} '
+                f'<span style="color:#6b7280">— edge: '
+                f'{html.escape(idea.get("documented_edge") or "—")}; '
+                f'data: {html.escape(idea.get("data_required") or "—")}</span>'
+                f'</li>')
+        ideas_html = (
+            '<details style="margin-top:10px"><summary style="cursor:pointer;'
+            'color:#4338ca;font-size:13px">'
+            f'New strategy ideas ({len(ideas)})</summary>'
+            f'<ul style="font-size:13px;line-height:1.55">{"".join(rows)}</ul>'
+            '</details>')
+
+    axis_html = ""
+    if axis.get("axis") is not None:
+        axis_html = (
+            f'<div style="font-size:13px;color:#374151;margin:6px 0">'
+            f'<strong>Weakest grade axis:</strong> '
+            f'<code>{html.escape(str(axis.get("axis")))}</code> '
+            f'({axis.get("score")}/10) — '
+            f'{html.escape(str(axis.get("why") or ""))}</div>')
+
+    return f"""
+<h2 id="research-loop">🧠 Nightly research-loop</h2>
+<div class="stat" style="padding:14px">
+  <div style="font-size:12px;color:#6b7280;margin-bottom:6px">
+    Last run: {html.escape(as_of)} · model: {html.escape(model)} ·
+    cost: ${cost}
+  </div>
+  <div style="font-size:13px;color:#1f2937;margin:6px 0">{html.escape(summary)}</div>
+  {axis_html}
+  {high_html}
+  {other_html}
+  {ideas_html}
+</div>
+"""
+
+
 def _render_equity_curve() -> str:
     """"Where did the money go?" — the full equity history since
     inception as an inline SVG, with inception/peak/current annotations.
@@ -2643,6 +2757,8 @@ def render_dashboard(out_path: Path = Path("docs/index.html")) -> None:
 </table>
 
 {_render_cycle_diagnostics(cycles_recent)}
+
+{_render_research_proposals()}
 
 {_render_equity_curve()}
 
