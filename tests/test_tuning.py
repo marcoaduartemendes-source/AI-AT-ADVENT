@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-import pytest
 
 import run_tuning as rt
 from backtests.runner import BacktestSummary
