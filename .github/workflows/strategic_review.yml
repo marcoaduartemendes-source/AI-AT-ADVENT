@@ -34,7 +34,7 @@ jobs:
       # path list to match between save and restore for the lookup to hit.
 
       - name: Restore orchestrator state (risk + allocator + perf)
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             data/risk_state.db
@@ -44,7 +44,7 @@ jobs:
           restore-keys: orchestrator-state-
 
       - name: Restore signal bus (from scouts workflow)
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             data/signal_bus.db
@@ -55,7 +55,7 @@ jobs:
           restore-keys: orchestrator-state-
 
       - name: Restore review database
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: data/strategic_review.db
           key: strategic-review-readonly-placeholder
@@ -69,7 +69,7 @@ jobs:
         run: python src/run_strategic_review.py
 
       - name: Save review database
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: data/strategic_review.db
           key: strategic-review-${{ github.run_number }}
