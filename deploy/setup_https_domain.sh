@@ -76,8 +76,23 @@ echo "[4/5] Verifying…"
 sleep 2
 nginx -t
 systemctl reload nginx
-echo -n "  local https=200 check: "
-curl -ks -o /dev/null -w '%{http_code}\n' -u marco:cTjo2/lWw+c1E7lxO1xwtuvm "https://${DOMAIN}/" || true
+echo -n "  local https reachability check: "
+# 2026-06-11 security fix: the Basic-auth credential was hardcoded in
+# this committed script (now compromised — ROTATE DASHBOARD_PASS). Read
+# it from the runtime env file instead; fall back to an unauthenticated
+# probe (a 401 still proves the server is up) so no secret is embedded.
+_DASH_ENV="/etc/aaa-dashboard.env"
+if [[ -f "$_DASH_ENV" ]]; then
+    # shellcheck disable=SC1090
+    set -a; . "$_DASH_ENV"; set +a
+fi
+if [[ -n "${DASHBOARD_USER:-}" && -n "${DASHBOARD_PASS:-}" ]]; then
+    curl -ks -o /dev/null -w '%{http_code}\n' \
+        -u "${DASHBOARD_USER}:${DASHBOARD_PASS}" "https://${DOMAIN}/" || true
+else
+    curl -ks -o /dev/null -w '%{http_code} (unauthenticated probe)\n' \
+        "https://${DOMAIN}/" || true
+fi
 
 echo "[5/5] Enabling auto-renewal…"
 systemctl enable --now certbot.timer

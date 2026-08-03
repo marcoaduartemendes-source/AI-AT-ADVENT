@@ -32,6 +32,13 @@ install -d -o "$SERVICE_USER" -g "$SERVICE_USER" \
 # and tolerate a half-deployed state.
 echo "[1/6] Quiescing orchestrator timer"
 systemctl stop orchestrator.timer 2>/dev/null || true
+# 2026-06-11 fix: with `set -euo pipefail`, ANY failure after this stop
+# (git reset, dep install, unit copy) would exit the script with the
+# orchestrator timer STOPPED — trading halted indefinitely and silently,
+# exactly the class of "why did it stop trading" incident this repo has
+# hit repeatedly. A trap guarantees the timer is restarted on EVERY exit
+# path, success or failure. Starting an already-running timer is a no-op.
+trap 'systemctl start orchestrator.timer 2>/dev/null || true' EXIT
 
 echo "[2/6] Fetching latest"
 sudo -u "$SERVICE_USER" git fetch --all --quiet

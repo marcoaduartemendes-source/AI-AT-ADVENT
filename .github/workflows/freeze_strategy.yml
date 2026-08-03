@@ -74,21 +74,38 @@ jobs:
             *) echo "Unknown action $ACTION"; exit 1 ;;
           esac
 
-          # The orchestrator already exposes set_state() on the
-          # registry. We just need to invoke it once on the VPS.
-          REMOTE_CMD=$(cat <<EOF
-          set -a; . /etc/aaa.env; set +a
+          # 2026-06-11 security fix: STRATEGY / REASON / NEW_STATE used to
+          # be interpolated directly into a Python string executed as root
+          # on the VPS — a `strategy` input of `x'); import os; os.system(
+          # 'rm -rf /')#` was remote code execution. Now the values cross
+          # the SSH boundary as ENVIRONMENT VARIABLES and the Python reads
+          # them from os.environ (never concatenated into source). Also
+          # allowlist the strategy name so only [A-Za-z0-9_] reaches the
+          # remote at all.
+          if ! [[ "$STRATEGY" =~ ^[A-Za-z0-9_]+$ ]]; then
+            echo "Invalid strategy name: $STRATEGY"; exit 1
+          fi
+          REMOTE_SCRIPT='set -a; . /etc/aaa.env; set +a
           cd /opt/ai-at-advent
-          /opt/ai-at-advent/.venv/bin/python -c "
+          exec /opt/ai-at-advent/.venv/bin/python -c "
+          import os
           from allocator.lifecycle import StrategyRegistry, StrategyState
           reg = StrategyRegistry()
-          state = StrategyState.${NEW_STATE}
-          reg.set_state('${STRATEGY}', state, reason='${REASON}')
-          print(f'OK: {state.value} → ${STRATEGY}')
-          "
-          EOF
-          )
-          ssh -i ~/.ssh/deploy_key root@$DROPLET_IP "$REMOTE_CMD"
+          state = StrategyState[os.environ[\"AAA_NEW_STATE\"]]
+          reg.set_state(os.environ[\"AAA_STRATEGY\"], state,
+                        reason=os.environ.get(\"AAA_REASON\", \"\"))
+          print(f\"OK: {state.value} -> {os.environ[\\\"AAA_STRATEGY\\\"]}\")
+          "'
+          # SendEnv-free: set the vars in the remote shell via ssh's
+          # command, passing values as positional env assignments that
+          # the remote bash exports before running the script. Values are
+          # single-quote-escaped so they cannot break out.
+          esc() { printf "%s" "$1" | sed "s/'/'\\\\''/g"; }
+          ssh -i ~/.ssh/deploy_key root@"$DROPLET_IP" \
+            "AAA_NEW_STATE='$(esc "$NEW_STATE")' \
+             AAA_STRATEGY='$(esc "$STRATEGY")' \
+             AAA_REASON='$(esc "$REASON")' \
+             bash -s" <<< "$REMOTE_SCRIPT"
 
       - name: Summary
         env:
