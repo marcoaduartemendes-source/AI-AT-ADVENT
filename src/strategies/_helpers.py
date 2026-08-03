@@ -173,6 +173,53 @@ def net_qty_from_ledger(strategy: str, venue: str | None = None
     return {s: q for s, q in out.items() if abs(q) > 1e-9}
 
 
+def entry_time_from_ledger(strategy: str, venue: str | None = None
+                           ) -> dict[str, str]:
+    """Earliest FILLED-BUY timestamp per symbol for a strategy.
+
+    2026-06-11 fix: broker position payloads carry no entry_time, so
+    every time-boxed exit (event sleeves' age-out) and every
+    past_cooldown() throttle was silently dead — positions were held
+    forever and cooldowns were no-ops. The trades ledger is the real
+    source of a position's age; this reconstructs it so the
+    orchestrator can populate PositionView.entry_time.
+
+    Returns {symbol: iso_timestamp}. Only symbols the strategy is
+    currently net-long are meaningful, but we return all buys — the
+    caller intersects with the live position set.
+    """
+    import os
+    import sqlite3
+    from pathlib import Path
+    db_path = os.environ.get(
+        "TRADING_DB_PATH", "data/trading_performance.db")
+    if not Path(db_path).exists():
+        return {}
+    out: dict[str, str] = {}
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            where = ["strategy = ?", "fill_status = 'FILLED'",
+                     "side = 'BUY'"]
+            params: list = [strategy]
+            if venue:
+                where.append("(venue = ? OR venue IS NULL)")
+                params.append(venue)
+            sql = (
+                "SELECT product_id, MIN(timestamp) AS first_buy "
+                "  FROM trades "
+                f" WHERE {' AND '.join(where)} "
+                " GROUP BY product_id"
+            )
+            for row in conn.execute(sql, params).fetchall():
+                sym, ts = row["product_id"], row["first_buy"]
+                if sym and ts:
+                    out[sym] = str(ts)
+    except sqlite3.Error:
+        return {}
+    return out
+
+
 def past_cooldown(pos: dict, cooldown_days: int) -> bool:
     """True if the position's entry_time is older than `cooldown_days`.
     Missing or unparseable entry_time → treated as past cooldown so a

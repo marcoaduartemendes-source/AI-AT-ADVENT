@@ -958,10 +958,42 @@ class Orchestrator:
     # ── Helpers ----------------------------------------------------------
 
     def _is_rebalance_due(self) -> bool:
-        if self._last_rebalance_ts == 0:
-            return True
-        elapsed_hours = (time.time() - self._last_rebalance_ts) / 3600
+        # CRITICAL FIX (2026-06-11 full-system review): production runs a
+        # FRESH process per 5-min tick, so the in-memory _last_rebalance_ts
+        # was always 0 at cycle start → rebalanced EVERY cycle. That made
+        # the allocator's ±5% weekly-delta clamp a ±5%-per-5-min ramp
+        # (0→30% in ~30 min) and thrashed lifecycle transitions. Anchor
+        # to the PERSISTED last allocation timestamp so the 168h cadence
+        # is real across process restarts.
+        ts = self._last_rebalance_ts
+        if ts == 0:
+            ts = self._persisted_last_rebalance_ts()
+        if ts == 0:
+            return True    # genuinely never rebalanced
+        elapsed_hours = (time.time() - ts) / 3600
         return elapsed_hours >= self.cfg.rebalance_cadence_hours
+
+    def _persisted_last_rebalance_ts(self) -> float:
+        """Unix ts of the most recent persisted allocation, or 0.0.
+        The allocator writes an `allocations` row on every rebalance;
+        that table is the durable record of when we last rebalanced."""
+        try:
+            reg = getattr(self.allocator, "registry", None)
+            if reg is None:
+                return 0.0
+            with reg._conn() as c:
+                row = c.execute(
+                    "SELECT MAX(timestamp) AS ts FROM allocations"
+                ).fetchone()
+            if not row or not row["ts"]:
+                return 0.0
+            dt = datetime.fromisoformat(str(row["ts"]))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            return dt.timestamp()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"persisted rebalance-ts read failed: {e}")
+            return 0.0
 
     def _pending_orders_for(self, venue: str) -> dict:
         """Return aggregated pending-order notional per symbol.
@@ -1049,10 +1081,17 @@ class Orchestrator:
         if key in cache:
             return cache[key]
 
-        from strategies._helpers import net_qty_from_ledger
+        from strategies._helpers import (
+            entry_time_from_ledger, net_qty_from_ledger,
+        )
         ledger_failed = False
         try:
             ledger_qty = net_qty_from_ledger(strategy_name, venue)
+            # Per-symbol entry timestamps from the ledger — without these,
+            # broker positions have entry_time=None, which silently
+            # disables every age-out exit and every cooldown throttle
+            # (full-system review 2026-06-11).
+            ledger_entry = entry_time_from_ledger(strategy_name, venue)
         except Exception as e:
             # Promoted from debug→warning so a SQLite lock / schema
             # mismatch surfaces in the orchestrator log instead of
@@ -1060,6 +1099,7 @@ class Orchestrator:
             # made (audit P1, 2026-05-08).
             logger.warning(f"[{strategy_name}] ledger fetch failed: {e}")
             ledger_qty = {}
+            ledger_entry = {}
             ledger_failed = True
 
         venue_positions = self._positions_for(venue)
@@ -1106,7 +1146,9 @@ class Orchestrator:
                 market_price=full.market_price,
                 unrealized_pnl_usd=full.unrealized_pnl_usd
                     * (attributed_qty / max(float(full.quantity or 1), 1e-9)),
-                entry_time=full.entry_time,
+                # Prefer the ledger's earliest-buy timestamp (the real
+                # position age); fall back to the broker's if present.
+                entry_time=ledger_entry.get(symbol) or full.entry_time,
                 asset_class=full.asset_class,
             )
         cache[key] = out

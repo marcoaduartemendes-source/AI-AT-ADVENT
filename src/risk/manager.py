@@ -318,6 +318,27 @@ class EquitySnapshotDB:
             ).fetchone()
         return dict(row) if row else None
 
+    def last_reset_at(self) -> datetime | None:
+        """Timestamp of the most recent manual kill-switch reset, or None.
+
+        The drawdown baseline anchors here so a post-reset book doesn't
+        immediately re-trip KILL against a pre-drawdown all-time peak
+        (2026-06-11 fix). Reset events are recorded with note='manual
+        reset' by reset_kill_switch()."""
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT timestamp FROM kill_switch_events "
+                "WHERE note LIKE 'manual reset%' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not row or not row["timestamp"]:
+            return None
+        try:
+            dt = datetime.fromisoformat(str(row["timestamp"]))
+            return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+        except (ValueError, TypeError):
+            return None
+
     def latch_armed_at(self) -> str | None:
         """Timestamp of the FIRST event in the current contiguous KILL
         run, i.e. when the latch was actually armed.
@@ -393,7 +414,10 @@ class RiskManager:
         """
         if not asset_class:
             return 0.0
-        target = asset_class.upper()
+        # Sum across the whole shared bucket, not just the exact class:
+        # an EQUITY open must see ETF exposure already consuming the
+        # US_BETA budget, and vice versa (full-system review 2026-06-11).
+        target_bucket = self.config.bucket_for(asset_class)
         total = 0.0
         for snap in self._broker_snapshots.values():
             for p in snap.get("positions") or []:
@@ -401,7 +425,7 @@ class RiskManager:
                 # tolerate either enum or string just in case.
                 ac = getattr(p, "asset_class", None)
                 ac_str = (ac.value if hasattr(ac, "value") else ac) or ""
-                if ac_str.upper() != target:
+                if self.config.bucket_for(ac_str) != target_bucket:
                     continue
                 qty = getattr(p, "quantity", 0.0) or 0.0
                 px = getattr(p, "market_price", 0.0) or 0.0
@@ -523,7 +547,14 @@ class RiskManager:
                 )
                 equity_for_risk = fallback
 
-        peak = max(self.db.peak_equity(), equity_for_risk)
+        # Drawdown baseline restarts at the last manual reset (2026-06-11
+        # fix): a genuine 15% DD flattens the book, which then can't
+        # appreciate, so equity stays 15% below the untouched all-time
+        # peak forever — every post-reset cycle re-derived KILL and the
+        # reset was useless. Anchoring the peak to snapshots at/after the
+        # reset means --reset-kill-switch actually re-enables trading.
+        reset_at = self.db.last_reset_at()
+        peak = max(self.db.peak_equity(since=reset_at), equity_for_risk)
         dd_pct = (peak - equity_for_risk) / peak if peak > 0 else 0.0
 
         # Realized vol: annualized stdev of recent returns, assuming 5-min cadence
@@ -698,10 +729,25 @@ class RiskManager:
         cfg = self.config
 
         # ─ Kill switch
-        if st.kill_switch == KillSwitchState.KILL:
+        # CRITICAL FIX (2026-06-11 full-system review): KILL used to
+        # reject EVERY order including closing ones — which made the
+        # emergency-close-all path a NO-OP. When a 15% drawdown latched
+        # KILL and the alert said "closing all positions", every close
+        # was rejected and the fully-exposed (incl. 3x-leveraged) book
+        # rode the drawdown unmanaged. A kill switch must always let you
+        # OUT. KILL now blocks opens but permits closes, same as CRITICAL;
+        # closing orders further skip the min-size/per-order clamps below
+        # so a dust exit can't be throttled while flattening.
+        if st.kill_switch == KillSwitchState.KILL and not is_closing:
             return RiskDecision(
                 Decision.REJECT, 0.0,
                 f"KILL switch active (DD {st.drawdown_pct * 100:.1f}%)", st)
+        if st.kill_switch == KillSwitchState.KILL and is_closing:
+            # Approve the close at full requested size — no scaling, no
+            # min-size floor. Getting flat is non-negotiable.
+            return RiskDecision(
+                Decision.APPROVE, notional_usd,
+                "KILL — closing order approved (flatten)", st)
         if st.kill_switch == KillSwitchState.CRITICAL and not is_closing:
             return RiskDecision(
                 Decision.REJECT, 0.0,
@@ -909,8 +955,10 @@ class RiskManager:
         self.multiplier.set_base(value)
 
     def reset_kill_switch(self) -> None:
-        """Manual restart after a KILL event. Doesn't reset peak — drawdown
-        is computed from the all-time high until equity recovers."""
+        """Manual restart after a KILL event. Re-baselines the drawdown
+        peak to this moment (via last_reset_at()), so a book that KILLed
+        on a genuine 15% drawdown doesn't instantly re-latch against the
+        untouched pre-drawdown all-time high (2026-06-11 fix)."""
         self.db.record_kill_switch(
             KillSwitchState.NORMAL, 0.0, note="manual reset"
         )

@@ -707,3 +707,103 @@ class TestExecutionGradeNoFalseHealth:
                    "proposals_dry": 0} for i in range(5)]
         g, _ = _grade_execution(cycles)
         assert g == 8.0
+
+
+class TestFullSystemReviewFixes:
+    """Regression tests for the 2026-06-11 full-system review — the
+    correctness/safety defects that were silently costing alpha or
+    leaving the book unmanaged. Each test fails against the pre-fix code.
+    """
+
+    def test_alpaca_candles_return_most_recent(self, monkeypatch):
+        """The bars API returns ascending-from-start capped at limit; the
+        old code took the OLDEST num_candles and dropped today. Verify
+        the adapter slices the TAIL so closes[-1] is the latest bar."""
+        from brokers.alpaca import AlpacaAdapter
+        # 300 ascending daily closes; we ask for 100.
+        bars = [{"t": f"2026-01-{(i % 28) + 1:02d}T00:00:00Z",
+                 "o": i, "h": i, "l": i, "c": float(i), "v": 1}
+                for i in range(300)]
+        a = AlpacaAdapter.__new__(AlpacaAdapter)
+        a._get_cached_candles = lambda *x: None
+        a._put_cached_candles = lambda *x: None
+        a._get = lambda *x, **k: {"bars": bars}
+        out = a.get_candles("SPY", "ONE_DAY", num_candles=100)
+        assert len(out) == 100
+        # Tail = most recent: last close must be 299 (newest), not 99.
+        assert out[-1].close == 299.0
+        assert out[0].close == 200.0
+
+    def test_kill_switch_permits_closing_orders(self, tmp_path):
+        """A latched KILL must still approve is_closing orders, or the
+        emergency-close is a no-op and the book rides the drawdown."""
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from risk.policies import RiskConfig, KillSwitchState
+        from risk.manager import Decision
+        from tests.mock_broker import MockBroker
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        db.record_snapshot(100_000, note="peak")
+        rm = RiskManager(brokers={"alpaca": MockBroker(
+            venue="alpaca", cash_usd=80_000, equity_usd=80_000)},
+            config=RiskConfig(), db=db)
+        rm.arm_kill_switch(note="test")
+        st = rm.compute_state(persist=False)
+        assert st.kill_switch == KillSwitchState.KILL
+        close = rm.check_order(
+            notional_usd=5000, symbol="SPY",
+            is_closing=True, state=st)
+        assert close.decision == Decision.APPROVE, (
+            "KILL must let closing orders through to flatten the book")
+        open_ = rm.check_order(
+            notional_usd=5000, symbol="SPY",
+            is_closing=False, state=st)
+        assert open_.decision == Decision.REJECT
+
+    def test_reset_rebaselines_drawdown_peak(self, tmp_path):
+        """After a manual reset, drawdown must be measured from the reset
+        moment — not the untouched pre-drawdown all-time peak — so a
+        genuine-DD KILL doesn't instantly re-latch."""
+        import time
+        from risk.manager import RiskManager, EquitySnapshotDB
+        from risk.policies import RiskConfig, KillSwitchState
+        from tests.mock_broker import MockBroker
+        db = EquitySnapshotDB(str(tmp_path / "risk.db"))
+        # Old peak $100k, book now flat at $85k (15% down).
+        db.record_snapshot(100_000, note="old peak")
+        rm = RiskManager(brokers={"alpaca": MockBroker(
+            venue="alpaca", cash_usd=85_000, equity_usd=85_000)},
+            config=RiskConfig(kill_dd_pct=0.15), db=db)
+        # Reset re-baselines; record a post-reset snapshot at the low.
+        rm.reset_kill_switch()
+        time.sleep(0.01)
+        db.record_snapshot(85_000, note="post-reset")
+        st = rm.compute_state(persist=False)
+        # Drawdown vs the post-reset baseline ($85k) is ~0, NOT 15%.
+        assert st.kill_switch != KillSwitchState.KILL, (
+            "reset must re-baseline the peak so KILL doesn't re-latch")
+
+    def test_equity_and_etf_share_one_cap_bucket(self):
+        """EQUITY and ETF must consume ONE budget, not two independent
+        0.90 caps (which allowed 1.8x correlated beta)."""
+        from risk.policies import RiskConfig
+        cfg = RiskConfig()
+        assert cfg.bucket_for("EQUITY") == cfg.bucket_for("ETF")
+        # The shared cap is the tighter of the two members.
+        assert cfg.cap_for_asset_class("EQUITY") == \
+               cfg.cap_for_asset_class("ETF")
+
+    def test_signal_bus_aggregates_event_rows(self, tmp_path, monkeypatch):
+        """Event scouts publish one row per event under the same
+        signal_type; the bus must deliver ALL of them as a list, not
+        collapse to the newest one."""
+        from scouts.signal_bus import SignalBus
+        bus = SignalBus(db_path=str(tmp_path / "bus.db"))
+        for tic in ("AAA", "BBB", "CCC"):
+            bus.publish(scout="merger_arb", venue="alpaca",
+                        signal_type="merger_arb_deal",
+                        payload={"target": tic, "deal_price": 50.0},
+                        ttl_seconds=3600)
+        got = bus.get_fresh_for_strategy("alpaca")
+        deals = got.get("merger_arb_deal")
+        assert isinstance(deals, list)
+        assert {d["target"] for d in deals} == {"AAA", "BBB", "CCC"}

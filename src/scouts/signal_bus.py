@@ -124,11 +124,35 @@ class SignalBus:
         that apply to every consumer regardless of venue.
         """
         out: dict[str, Any] = {}
+        # Event-stream signal types publish ONE ROW PER EVENT (one per
+        # 13D filing, per M&A deal, per insider cluster, per 8-K). The
+        # old setdefault kept only the newest row per type, so strategies
+        # saw exactly one event and silently discarded the rest — merger
+        # arb could never build its 5-deal book, most 13D/8-K/insider
+        # signals never reached any strategy (full-system review
+        # 2026-06-11). For these types, aggregate all fresh rows into a
+        # LIST (deduped by ticker/accession); the consuming strategies
+        # already normalise dict-or-list.
+        _LIST_TYPES = {
+            "activist_13d_new", "merger_arb_deal",
+            "insider_cluster_buy", "llm_8k_event",
+        }
+        _seen_keys: dict[str, set] = {}
         # Per-venue signals
         for row in self.latest(venue=venue, limit=200):
             if not row.is_fresh():
                 continue
-            out.setdefault(row.signal_type, row.payload)
+            if row.signal_type in _LIST_TYPES:
+                payload = row.payload if isinstance(row.payload, dict) else {}
+                dedup = (payload.get("ticker") or payload.get("target")
+                         or payload.get("accession") or id(row))
+                seen = _seen_keys.setdefault(row.signal_type, set())
+                if dedup in seen:
+                    continue
+                seen.add(dedup)
+                out.setdefault(row.signal_type, []).append(row.payload)
+            else:
+                out.setdefault(row.signal_type, row.payload)
         # Cross-venue feeds: macro (VIX regime, fed funds) + overlay
         # (vol_scaler from vol_managed_overlay). Both apply to every
         # strategy and were previously only broadcast to macro/overlay's

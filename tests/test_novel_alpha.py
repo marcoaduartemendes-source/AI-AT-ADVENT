@@ -189,9 +189,12 @@ class TestLlm8KEventStrategy:
     def test_age_out_after_drift_window(self):
         broker = MagicMock()
         broker.get_candles.return_value = _candles([50, 50.5])
+        # 2026-06-11: age-out reads `entry_time` (the real PositionView
+        # field the orchestrator now populates from the ledger). The old
+        # `opened_at` key never existed, so this exit was dead code.
         opened = (datetime.now(UTC) - timedelta(days=6)).isoformat()
         positions = {"ACME": {"quantity": 5.0, "avg_entry_price": 50.0,
-                              "opened_at": opened}}
+                              "entry_time": opened}}
         s = Llm8KEvent(broker=broker)
         out = s.compute(_ctx({}, open_positions=positions))
         assert any(p.is_closing and p.symbol == "ACME" for p in out)

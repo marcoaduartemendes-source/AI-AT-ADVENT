@@ -192,8 +192,18 @@ class AlpacaAdapter(BrokerAdapter):
         if tf is None:
             raise BrokerError(f"Alpaca granularity not supported: {granularity}")
         # Alpaca v2 historical bars endpoint requires a `start` time. Compute
-        # one based on granularity × num_candles, with a 2× buffer for
+        # one based on granularity × num_candles, with a 3× buffer for
         # non-trading days. Use IEX feed which is free for paper accounts.
+        #
+        # 2026-06-11 CRITICAL FIX (full-system review): Alpaca returns bars
+        # ASCENDING from `start`, capped at `limit`. The old code set
+        # limit=num_candles over a window ~2× that wide, so it returned the
+        # OLDEST num_candles bars and silently dropped the most recent ~40%,
+        # INCLUDING TODAY. Every momentum / trend / SMA-regime signal on the
+        # Alpaca book was computed on stale prices — closes[-1] was weeks
+        # old, not yesterday. Fix: request a limit large enough to span the
+        # whole window (so the tail = the most recent bars), then return the
+        # LAST num_candles bars. `end` defaults to now, so the tail is fresh.
         from datetime import timedelta
         seconds_per_bar = {
             "1Min": 60, "5Min": 300, "15Min": 900, "30Min": 1800,
@@ -201,10 +211,12 @@ class AlpacaAdapter(BrokerAdapter):
             "1Day": 86400, "1Week": 604800,
         }.get(tf, 86400)
         start = (datetime.now(UTC) -
-                  timedelta(seconds=seconds_per_bar * num_candles * 2))
+                  timedelta(seconds=seconds_per_bar * num_candles * 3))
         params = {
             "timeframe": tf,
-            "limit": num_candles,
+            # 3× the ask so the ascending window's tail (most recent bars)
+            # is always included; we slice [-num_candles:] below.
+            "limit": max(num_candles * 3, num_candles + 10),
             "adjustment": "raw",
             "feed": "iex",
             "start": start.isoformat().replace("+00:00", "Z"),
@@ -219,6 +231,9 @@ class AlpacaAdapter(BrokerAdapter):
                 low=float(b["l"]), close=float(b["c"]),
                 volume=float(b.get("v", 0)),
             ))
+        # Bars arrive ascending (oldest→newest). Take the most recent
+        # num_candles so closes[-1] is the latest bar, not an old one.
+        out = out[-num_candles:]
         self._put_cached_candles(symbol, granularity, num_candles, out)
         return out
 

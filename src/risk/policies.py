@@ -221,16 +221,39 @@ class RiskConfig:
             monthly_loss_limit_pct=_envf("MONTHLY_LOSS_LIMIT_PCT", 0.04),
         )
 
+    # Asset classes that share ONE concentration budget because they
+    # carry the same underlying risk. EQUITY (single names) and ETF
+    # (baskets) are both US equity-beta; enforcing them as two
+    # independent 0.90 caps let the book reach 1.80× equity of
+    # correlated beta — exactly the pile-in the cap exists to prevent
+    # (full-system review 2026-06-11). They now share the "US_BETA"
+    # bucket: total EQUITY+ETF exposure is capped at 0.90 combined.
+    BUCKET_ALIASES = {"EQUITY": "US_BETA", "ETF": "US_BETA"}
+
+    def bucket_for(self, asset_class: str) -> str:
+        """Resolve an asset class to its shared concentration bucket."""
+        key = (asset_class or "").upper()
+        return self.BUCKET_ALIASES.get(key, key)
+
     def cap_for_asset_class(self, asset_class: str) -> float | None:
         """Return the max-exposure cap for an asset class, or None
         if no cap is configured (treat as unlimited).
 
-        Lookup is case-insensitive and checks the AssetClass enum's
-        uppercase string form (e.g. "EQUITY", "CRYPTO_SPOT")."""
+        Resolves through the shared-bucket alias first (EQUITY and ETF
+        map to one US_BETA budget), then falls back to the raw class
+        key. Lookup is case-insensitive."""
         if not asset_class:
             return None
-        key = asset_class.upper()
-        return self.max_asset_class_pct.get(key)
+        bucket = self.bucket_for(asset_class)
+        # The cap dict is keyed by raw class (EQUITY/ETF both = 0.90);
+        # for aliased buckets, use the min cap of the members so the
+        # shared budget is the tightest of the two.
+        if bucket == "US_BETA":
+            members = [self.max_asset_class_pct.get(k)
+                       for k in ("EQUITY", "ETF")]
+            members = [m for m in members if m is not None]
+            return min(members) if members else None
+        return self.max_asset_class_pct.get(bucket)
 
     def state_for_drawdown(self, dd_pct: float) -> KillSwitchState:
         """Map a drawdown magnitude (0.05 == 5%) to a state."""

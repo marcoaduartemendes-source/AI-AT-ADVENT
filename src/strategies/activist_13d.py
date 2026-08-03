@@ -99,8 +99,11 @@ class Activist13D(Strategy):
                                f"× {1-STOP_PCT:.0%}")
             else:
                 # Age-out check.
-                opened = (pos.get("opened_at") or pos.get("last_trade_at")
-                          or pos.get("updated_at"))
+                # entry_time is the real position age (ledger-derived by
+                # the orchestrator); the old opened_at/last_trade_at/
+                # updated_at keys never existed on PositionView, so this
+                # age-out was dead code before 2026-06-11.
+                opened = pos.get("entry_time")
                 if opened:
                     try:
                         dt = datetime.fromisoformat(
