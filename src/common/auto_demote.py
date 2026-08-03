@@ -97,23 +97,39 @@ def run_auto_demote(
     val_strats = validation.get("strategies") or {}
     wf_strats = walk_forward.get("strategies") or {}
 
+    # PASS-protected names must never be fully zeroed here (2026-06-11
+    # review): the allocator deliberately caps validation-PASS strategies
+    # at WATCH (0.5×) worst case rather than freezing them, so a proven
+    # edge can't be permanently benched on a rough live stretch. Rules 2
+    # and 3 previously bypassed that guard and set multiplier 0.0. We now
+    # exempt PASS names from those rules (rule 1 — validation FAIL — is
+    # mutually exclusive with PASS, so it needs no exemption).
+    try:
+        from common.strategy_validation import passing_strategies
+        pass_set = passing_strategies()
+    except Exception:  # noqa: BLE001
+        pass_set = set()
+
     overrides: dict[str, dict] = {}
     for name in val_strats:
         reasons: list[str] = []
         vinfo = val_strats[name]
         wfi = wf_strats.get(name) or {}
+        is_pass = name in pass_set
         # Rule 1 — validation FAIL.
         if vinfo.get("verdict") == "FAIL":
             reasons.append(
                 f"validation FAIL: {vinfo.get('reason','')[:80]}")
-        # Rule 2 — walk-forward OVERFIT_SUSPECT.
-        if wfi.get("verdict") == "OVERFIT_SUSPECT":
+        # Rule 2 — walk-forward OVERFIT_SUSPECT. Skip for PASS names.
+        if not is_pass and wfi.get("verdict") == "OVERFIT_SUSPECT":
             reasons.append(
                 f"walk-forward OVERFIT_SUSPECT: "
                 f"{wfi.get('reason','')[:80]}")
-        # Rule 3 — live Sharpe deeply negative with sample size.
+        # Rule 3 — live Sharpe deeply negative with sample size. Skip
+        # for PASS names (the allocator's WATCH de-risking handles them).
         live_s, n_live = _live_sharpe_30d(trades, name)
-        if live_s is not None and live_s < LIVE_BLEED_SHARPE:
+        if (not is_pass and live_s is not None
+                and live_s < LIVE_BLEED_SHARPE):
             reasons.append(
                 f"live 30d Sharpe {live_s:+.2f} < "
                 f"{LIVE_BLEED_SHARPE} ({n_live} trades)")

@@ -121,10 +121,17 @@ class DividendGrowth(Strategy):
     # ── Helpers ───────────────────────────────────────────────────────
 
     def _latest_vix(self, ctx: StrategyContext) -> float | None:
-        """Pull most-recent VIX from scout signals or signal_bus."""
-        sig = ctx.scout_signals.get("vix") if ctx.scout_signals else None
+        """Pull most-recent VIX from scout signals.
+
+        2026-06-11 fix: MacroScout publishes signal_type='vix_regime' on
+        venue='macro' with payload {'vix': ..., 'regime': ...}, delivered
+        to alpaca strategies under the namespaced key 'macro_vix_regime'.
+        The old code read key 'vix' and payload fields value/level/close —
+        all wrong — so _latest_vix always returned None and the VIX>30
+        defensive gate was permanently inert through crashes."""
+        sig = (ctx.scout_signals or {}).get("macro_vix_regime")
         if isinstance(sig, dict):
-            v = sig.get("value") or sig.get("level") or sig.get("close")
+            v = sig.get("vix")
             try:
                 return float(v) if v is not None else None
             except (TypeError, ValueError):

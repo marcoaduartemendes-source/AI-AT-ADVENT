@@ -197,9 +197,14 @@ class TestChampionTier:
         identical baseline but Sharpe=0.5."""
         from allocator.allocator import AllocatorConfig, MetaAllocator
 
+        # 2026-06-11: differentiated max caps so the champion tilt is
+        # observable even after the idle-cash deploy pass (which will
+        # legitimately fund same-cap peers to a common ceiling when
+        # capital is abundant — economically correct, but it masks the
+        # tilt in a degenerate equal-caps 2-strategy book).
         strategies = [
-            ("hot",  0.05, 0.02, 0.20),    # baseline 5%, max 20%
-            ("warm", 0.05, 0.02, 0.20),    # same baseline
+            ("hot",  0.05, 0.02, 0.30),    # baseline 5%, max 30%
+            ("warm", 0.05, 0.02, 0.15),    # same baseline, lower ceiling
         ]
         reg = _make_registry(tmp_path, strategies)
         perf = _stub_perf({

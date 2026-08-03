@@ -42,28 +42,65 @@ def _candles(closes):
 
 
 class TestPreFomcDrift:
-    def test_outside_window_no_proposals(self):
+    # The exit is now time-to-announcement based (2026-06-11 fix), so we
+    # pin "now" relative to a fixed meeting date. Announcement is modeled
+    # at 18:30 UTC on the meeting day.
+    _MEETING = "2026-06-17"
+
+    def _freeze_now(self, monkeypatch, now):
+        import strategies.pre_fomc_drift as mod
+
+        class _FrozenDT(mod.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return now
+        monkeypatch.setattr(mod, "datetime", _FrozenDT)
+
+    def test_outside_window_no_proposals(self, monkeypatch):
+        # 5 days before the meeting → outside the 24h drift window.
+        self._freeze_now(monkeypatch,
+                         datetime(2026, 6, 12, 12, 0, tzinfo=UTC))
         s = PreFomcDrift(broker=MagicMock())
-        # FOMC is 5 days away → outside the 24h drift window.
         out = s.compute(_ctx({"macro_fomc_window": {
-            "next_meeting": "2026-06-10",
+            "next_meeting": self._MEETING,
             "days_to_next": 5, "blackout": False}}))
         assert out == []
 
-    def test_inside_window_proposes_spy_and_qqq(self):
+    def test_inside_window_proposes_spy_and_qqq(self, monkeypatch):
+        # 12h before the 18:30 UTC announcement → in the drift window.
+        self._freeze_now(monkeypatch,
+                         datetime(2026, 6, 17, 6, 30, tzinfo=UTC))
         broker = MagicMock()
         broker.get_candles.return_value = _candles([500, 502])
         s = PreFomcDrift(broker=broker)
         out = s.compute(_ctx({"macro_fomc_window": {
-            "next_meeting": "2026-06-06",
-            "days_to_next": 1, "blackout": True}}))
+            "next_meeting": self._MEETING,
+            "days_to_next": 0, "blackout": True}}))
         syms = {p.symbol for p in out}
         assert syms == {"SPY", "QQQ"}
         for p in out:
             assert p.side == OrderSide.BUY
             assert p.notional_usd > 0
 
-    def test_already_held_no_duplicate_buy(self):
+    def test_holds_through_announcement_is_dead(self, monkeypatch):
+        # 5 min BEFORE the announcement (inside the 15min exit buffer) →
+        # must flatten, never enter. This is the bug the fix closes.
+        self._freeze_now(monkeypatch,
+                         datetime(2026, 6, 17, 18, 25, tzinfo=UTC))
+        broker = MagicMock()
+        broker.get_candles.return_value = _candles([500, 502])
+        positions = {"SPY": {"quantity": 10.0, "avg_entry_price": 495.0}}
+        s = PreFomcDrift(broker=broker)
+        out = s.compute(_ctx(
+            {"macro_fomc_window": {"next_meeting": self._MEETING,
+                                    "days_to_next": 0, "blackout": True}},
+            open_positions=positions))
+        assert all(p.side == OrderSide.SELL for p in out), (
+            "must not hold or enter through the announcement")
+
+    def test_already_held_no_duplicate_buy(self, monkeypatch):
+        self._freeze_now(monkeypatch,
+                         datetime(2026, 6, 17, 6, 30, tzinfo=UTC))
         broker = MagicMock()
         broker.get_candles.return_value = _candles([500, 501])
         positions = {
@@ -72,8 +109,8 @@ class TestPreFomcDrift:
         }
         s = PreFomcDrift(broker=broker)
         out = s.compute(_ctx(
-            {"macro_fomc_window": {"next_meeting": "2026-06-06",
-                                    "days_to_next": 1, "blackout": True}},
+            {"macro_fomc_window": {"next_meeting": self._MEETING,
+                                    "days_to_next": 0, "blackout": True}},
             open_positions=positions))
         # Only QQQ should be proposed; SPY already held.
         buys = [p for p in out if p.side == OrderSide.BUY]

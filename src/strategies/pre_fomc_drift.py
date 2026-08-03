@@ -79,12 +79,30 @@ class PreFomcDrift(Strategy):
             logger.debug(f"[{self.name}] no FOMC signal — flat")
             return self._exit_all_open(ctx)
 
-        # Are we INSIDE the 24h pre-announcement window?
-        # days_to_next == 1 ≈ between 8 and 32 hours away; safe to enter.
-        # days_to_next == 0 means the meeting is TODAY — risk window is
-        # entirely behind us if we wake up after 14:00 ET, but the early
-        # morning slice (until ~13:45 ET) is still pre-announcement.
-        in_window = days_to_next in (0, 1)
+        # Are we INSIDE the pre-announcement window?
+        # 2026-06-11 fix: the old `days_to_next in (0, 1)` treated the
+        # ENTIRE meeting day as tradeable, so the 15:00 ET cycle held (and
+        # even opened) SPY/QQQ straight THROUGH the 14:00 ET announcement —
+        # exactly the post-release volatility Lucca-Moench says to avoid.
+        # Compute time-to-announcement: the edge is the drift into the
+        # release, so we're in-window only from T-24h up to
+        # T-EXIT_BUFFER_MINUTES; at/after that we exit and refuse entries.
+        in_window = False
+        past_exit = False
+        try:
+            meet_dt = datetime.fromisoformat(str(next_meeting)[:10])
+            # FOMC statement releases at 14:00 America/New_York (18:00 or
+            # 19:00 UTC depending on DST). Use 18:30 UTC as a safe mid-
+            # point so we exit before the release under either offset.
+            announce = meet_dt.replace(hour=18, minute=30, tzinfo=UTC)
+            now = datetime.now(UTC)
+            secs_to = (announce - now).total_seconds()
+            buffer_s = EXIT_BUFFER_MINUTES * 60
+            in_window = buffer_s < secs_to <= 24 * 3600
+            past_exit = -6 * 3600 <= secs_to <= buffer_s
+        except (ValueError, TypeError):
+            # Fall back to the coarse calendar gate on parse failure.
+            in_window = days_to_next in (0, 1)
 
         proposals: list[TradeProposal] = []
         open_pos = ctx.open_positions or {}
@@ -137,8 +155,13 @@ class PreFomcDrift(Strategy):
                               "as_of": datetime.now(UTC).isoformat()},
                 ))
         else:
-            # Outside the window — exit any residuals.
+            # Outside the window (including the T-15min→announcement exit
+            # zone) — flatten any residual so we never hold through the
+            # release.
             proposals.extend(self._exit_all_open(ctx))
+            if past_exit:
+                logger.debug(f"[{self.name}] T-{EXIT_BUFFER_MINUTES}min "
+                             f"exit fired — flat through announcement")
 
         return proposals
 

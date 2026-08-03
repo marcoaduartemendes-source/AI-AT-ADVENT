@@ -807,3 +807,68 @@ class TestFullSystemReviewFixes:
         deals = got.get("merger_arb_deal")
         assert isinstance(deals, list)
         assert {d["target"] for d in deals} == {"AAA", "BBB", "CCC"}
+
+
+class TestIRRReviewBatch2:
+    """Regression tests for the 2026-06-11 IRR-focused fixes."""
+
+    def test_autodemote_exempts_pass_from_live_bleed(self, tmp_path,
+                                                     monkeypatch):
+        """A validation-PASS strategy with a rough live stretch must NOT
+        be zeroed by the live-bleed/overfit rules — the allocator's WATCH
+        de-risking owns that case; full zeroing permanently benches a
+        proven edge."""
+        import json as _json
+        import common.auto_demote as ad
+        # PASS set includes our strategy.
+        monkeypatch.setattr(
+            "common.strategy_validation.passing_strategies",
+            lambda *a, **k: {"good_pass"})
+        # Validation: PASS; walk-forward: OVERFIT_SUSPECT (would trip
+        # rule 2 if not exempt). No FAIL.
+        (tmp_path / "docs").mkdir()
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "docs" / "validation.json").write_text(_json.dumps({
+            "strategies": {"good_pass": {"verdict": "PASS", "reason": "ok"}}}))
+        (tmp_path / "docs" / "walk_forward.json").write_text(_json.dumps({
+            "strategies": {"good_pass": {"verdict": "OVERFIT_SUSPECT",
+                                          "reason": "x"}}}))
+        (tmp_path / "docs" / "trades_recent.json").write_text("[]")
+        overrides = ad.run_auto_demote(
+            out_path=str(tmp_path / 'docs' / 'auto_overrides.json'))
+        assert "good_pass" not in overrides, (
+            "PASS strategy must be exempt from overfit/live-bleed zeroing")
+
+    def test_vix_filter_reads_namespaced_key(self):
+        """dividend_growth's VIX>30 gate must read macro_vix_regime.vix
+        (the real published shape), not the phantom 'vix' key."""
+        from unittest.mock import MagicMock
+        from strategies.dividend_growth import DividendGrowth
+        s = DividendGrowth(broker=MagicMock())
+        ctx = type("C", (), {"scout_signals":
+                              {"macro_vix_regime": {"vix": 35.0}}})()
+        assert s._latest_vix(ctx) == 35.0
+        ctx2 = type("C", (), {"scout_signals": {"vix": {"value": 35.0}}})()
+        assert s._latest_vix(ctx2) is None   # old shape ignored
+
+    def test_deploy_pass_reduces_cash_drag(self, tmp_path):
+        """The allocator must deploy idle cash upward toward the target
+        instead of leaving 20-30% fallow — while preserving max caps."""
+        from allocator.allocator import AllocatorConfig, MetaAllocator
+        from allocator.lifecycle import StrategyRegistry, StrategyMeta
+        from allocator.metrics import StrategyPerformance
+        reg = StrategyRegistry(str(tmp_path / "alloc.db"))
+        for nm in ("a", "b"):
+            reg.register(StrategyMeta(
+                name=nm, asset_classes=["ETF"], venue="alpaca",
+                target_alloc_pct=0.10, min_alloc_pct=0.0,
+                max_alloc_pct=0.40))
+        perf = StrategyPerformance(str(tmp_path / "perf.db"))
+        alloc = MetaAllocator(reg, perf, AllocatorConfig())
+        result = alloc.rebalance(100_000)
+        total = sum(d.target_pct for d in result.decisions)
+        # Cold sleeves would sit near ~0.10 (0.5×0.10×2) without the
+        # deploy pass; with it, materially more capital is deployed.
+        assert total > 0.20, f"cash drag not reduced: total={total:.3f}"
+        for d in result.decisions:
+            assert d.target_pct <= 0.40 + 1e-9   # caps respected

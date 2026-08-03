@@ -122,9 +122,12 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="risk_parity_etf",
         asset_classes=["ETF"], venue="alpaca",
-        # CIO 2026-06-05: 22→20% — trim by 2pp to fund underweight
-        # dual_momentum / internationals_rotation / bollinger_breakout.
-        target_alloc_pct=0.20, max_alloc_pct=0.30, min_alloc_pct=0.12,
+        # RETURN-BASED REWEIGHT (2026-06-11 IRR review): 20→12% (floor).
+        # High Sharpe (11.6) but low absolute return (~6%/yr, +$169 1y) —
+        # over-weighting it caps the book near ~9%. Trim 8pp and redeploy
+        # to higher return-on-capital sleeves (bollinger 22%/yr,
+        # commodity_carry ~18%/yr) to lift portfolio expectation past 10%.
+        target_alloc_pct=0.12, max_alloc_pct=0.30, min_alloc_pct=0.10,
         description="Inverse-vol ETF book (SPY/TLT/IEF/GLD/DBC) (P1)",
         group="DEFENSIVE",
     ),
@@ -134,19 +137,21 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="tsmom_etf",
         asset_classes=["ETF"], venue="alpaca",
-        # CIO Tier-3: walk-forward WEAK (overfit risk). Halve allocation
-        # 16→8% and monitor — was also the #1 victim of the ETF cap
-        # (93% rejection); now unblocked by the 60→90% cap raise.
-        target_alloc_pct=0.08, max_alloc_pct=0.18, min_alloc_pct=0.03,
+        # IRR review 2026-06-11: 8→3% (min). UNPROVEN (13 trades/5y,
+        # 3.2%/yr, -$65 2y) — the weakest sleeve per return-on-capital.
+        # Redeploy 5pp to dual_momentum (8.8%/yr PASS 3/3).
+        target_alloc_pct=0.03, max_alloc_pct=0.18, min_alloc_pct=0.0,
         description="12-1m time-series momentum on 7-ETF basket (P2)",
         group="TREND",
     ),
     StrategyMeta(
         name="commodity_carry",
         asset_classes=["COMMODITY_FUTURE"], venue="coinbase",
-        # CIO Tier-1: Sharpe 1.28 modest but ROBUST — trim 6→3% to
-        # right-size relative to the much-higher-Sharpe core sleeves.
-        target_alloc_pct=0.03, max_alloc_pct=0.10, min_alloc_pct=0.01,
+        # IRR review 2026-06-11: 3→6%. ~18%/yr, PASS 3/3 windows, and the
+        # book's ONLY non-US-beta PASS diversifier — it sits outside the
+        # crowded 90% US_BETA bucket, so its return is additive risk, not
+        # correlated. (Live only once the Coinbase wallet is funded.)
+        target_alloc_pct=0.06, max_alloc_pct=0.12, min_alloc_pct=0.01,
         description="Top-N backwardated commodity futures (P2)",
         group="CARRY",
     ),
@@ -265,10 +270,10 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="dual_momentum",
         asset_classes=["ETF"], venue="alpaca",
-        # CIO Tier-1: Sharpe 10.15 (#2 in the book), ROBUST, Antonacci
-        # documented strategy. 3→8% — massively underweighted; this is
-        # the diversifying engine of the book.
-        target_alloc_pct=0.08, max_alloc_pct=0.18, min_alloc_pct=0.03,
+        # IRR review 2026-06-11: 8→13%. Sharpe 10.15, ROBUST 3/3, 8.8%/yr
+        # with crisis-alpha (rotates to IEF risk-off). Absorbs the 5pp
+        # freed from UNPROVEN tsmom_etf — same trend exposure, proven.
+        target_alloc_pct=0.13, max_alloc_pct=0.20, min_alloc_pct=0.04,
         description="Dual momentum (top-3 risk ETFs / IEF risk-off) diversifier",
         group="TREND",
     ),
@@ -293,9 +298,11 @@ ALL_STRATEGIES = [
     StrategyMeta(
         name="bollinger_breakout",
         asset_classes=["EQUITY"], venue="alpaca",
-        # CIO Tier-1: Sharpe 3.41 ROBUST. Underfunded at 0.5%; bump to
-        # 3% to put real capital behind a cleanly-documented signal.
-        target_alloc_pct=0.03, max_alloc_pct=0.08, min_alloc_pct=0.01,
+        # IRR review 2026-06-11: 3→8% (max). The single highest
+        # return-on-capital PASS sleeve: Sharpe 3.41 ROBUST 3/3, 22.3%/yr,
+        # 184 trades/5y, +$5,978 1y. The +5pp here is the biggest single
+        # lever toward the 10% mandate (+~1.1%/yr expected).
+        target_alloc_pct=0.08, max_alloc_pct=0.12, min_alloc_pct=0.02,
         description="Momentum continuation on 20d Bollinger upper-band breaks (P4)",
         group="TREND",
     ),

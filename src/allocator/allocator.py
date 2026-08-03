@@ -237,6 +237,40 @@ class MetaAllocator:
             scale = 1.0 / total
             weights = {k: v * scale for k, v in weights.items()}
 
+        # 4b) Upward pass — deploy idle cash (2026-06-11 IRR review).
+        # Cold sleeves (0.5× baseline) + WATCH halving + downward-only
+        # normalization structurally left ~20-30% of the book in cash
+        # earning 0% — a direct drag on IRR. When the total sits below a
+        # deploy target, scale the ACTIVE weights up MULTIPLICATIVELY
+        # (proportional to current weight), each bounded by max_alloc_pct.
+        # Multiplicative — not flat headroom-fill — so the Sharpe-tilt /
+        # champion ordering is PRESERVED: a higher-conviction sleeve keeps
+        # its larger share of the redeployed cash. Iterated because
+        # clamping some to their ceiling frees the rest to absorb more.
+        # Close HALF the idle gap toward a 97% deploy target each
+        # rebalance rather than all of it — gradual so a single weekly
+        # rebalance can't steamroll the Sharpe-tilt ordering (a
+        # champion sleeve stays proportionally ahead), and it converges
+        # to fully deployed over a few rebalances.
+        _DEPLOY_TARGET = 0.97
+        for _ in range(6):
+            total = sum(weights.values())
+            gap = _DEPLOY_TARGET - total
+            if gap <= 1e-9 or total <= 1e-9:
+                break
+            uncapped = {
+                n: w for n, w in weights.items()
+                if self.registry.meta(n)
+                and w < self.registry.meta(n).max_alloc_pct - 1e-9
+            }
+            if not uncapped:
+                break   # everything at ceiling — residual stays as cash
+            step_target = total + gap * 0.5
+            scale = step_target / total
+            for n, w in uncapped.items():
+                cap = self.registry.meta(n).max_alloc_pct
+                weights[n] = min(cap, w * scale)
+
         # 4) Build decisions including FROZEN/RETIRED (target = 0)
         total_active_pct = 0.0
         for n in names:
