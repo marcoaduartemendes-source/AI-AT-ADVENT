@@ -30,6 +30,18 @@ class _Lot:
     price: float
 
 
+def _has_fees_column(conn: sqlite3.Connection) -> bool:
+    """True if trades.fees_usd exists (migration 003). Lets the FIFO
+    recompute net fees where available and degrade cleanly on a
+    pre-migration DB (e.g. a test fixture that skips migrations)."""
+    try:
+        cols = conn.execute("PRAGMA table_info(trades)").fetchall()
+        return any((c[1] if not hasattr(c, "keys") else c["name"])
+                   == "fees_usd" for c in cols)
+    except sqlite3.Error:
+        return False
+
+
 def recompute_realized_pnl_fifo(
     db_path: str,
 ) -> tuple[float, float, dict[str, float]]:
@@ -56,10 +68,13 @@ def recompute_realized_pnl_fifo(
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        _fee_col = _has_fees_column(conn)
+        _fee_sel = "COALESCE(fees_usd, 0) AS fees_usd" if _fee_col \
+            else "0 AS fees_usd"
         rows = conn.execute(
-            """
+            f"""
             SELECT timestamp, strategy, product_id, side, quantity,
-                   price, pnl_usd
+                   price, pnl_usd, {_fee_sel}
               FROM trades
              WHERE price IS NOT NULL AND price > 0
              ORDER BY timestamp ASC, id ASC
@@ -82,8 +97,13 @@ def recompute_realized_pnl_fifo(
         if qty <= 0 or px <= 0:
             continue
         side = r["side"]
+        fee = float(r["fees_usd"] or 0)
         if side == "BUY":
-            books[key].append(_Lot(qty=qty, price=px))
+            # Fold the BUY fee into the lot's effective cost basis
+            # (per-unit) so realized P&L nets it on the eventual SELL
+            # (2026-06-11 review). Matches the poller's net convention.
+            eff_px = px + (fee / qty if qty > 0 else 0.0)
+            books[key].append(_Lot(qty=qty, price=eff_px))
             continue
         # SELL — match against the FIFO queue
         remaining = qty
@@ -95,6 +115,8 @@ def recompute_realized_pnl_fifo(
             remaining -= matched
             if lot.qty <= 1e-12:
                 books[key].popleft()
+        # SELL fee reduces proceeds — subtract once per SELL row.
+        realized[r["strategy"]] -= fee
         # If `remaining` > 0 here, this is an orphan SELL — no matching
         # BUY in the ledger. Don't add to realized; the drift will show
         # up vs. the DB total which DID record a (possibly bogus) PnL.
@@ -138,9 +160,13 @@ def fifo_realized_events(db_path: str) -> dict[str, list[dict]]:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
+        _fee_col = _has_fees_column(conn)
+        _fee_sel = "COALESCE(fees_usd, 0) AS fees_usd" if _fee_col \
+            else "0 AS fees_usd"
         rows = conn.execute(
-            """
-            SELECT timestamp, strategy, product_id, side, quantity, price
+            f"""
+            SELECT timestamp, strategy, product_id, side, quantity, price,
+                   {_fee_sel}
               FROM trades
              WHERE price IS NOT NULL AND price > 0
              ORDER BY timestamp ASC, id ASC
@@ -157,8 +183,11 @@ def fifo_realized_events(db_path: str) -> dict[str, list[dict]]:
         px = float(r["price"] or 0)
         if qty <= 0 or px <= 0:
             continue
+        fee = float(r["fees_usd"] or 0)
         if r["side"] == "BUY":
-            books[key].append(_Lot(qty=qty, price=px))
+            # BUY fee folds into effective cost basis (net convention).
+            eff_px = px + (fee / qty if qty > 0 else 0.0)
+            books[key].append(_Lot(qty=qty, price=eff_px))
             continue
         # SELL — FIFO match.
         remaining = qty
@@ -171,6 +200,7 @@ def fifo_realized_events(db_path: str) -> dict[str, list[dict]]:
             remaining -= matched
             if lot.qty <= 1e-12:
                 books[key].popleft()
+        realized -= fee    # SELL fee reduces proceeds
         if remaining < qty:   # matched at least part of a real round trip
             events[r["strategy"]].append({
                 "timestamp": r["timestamp"],

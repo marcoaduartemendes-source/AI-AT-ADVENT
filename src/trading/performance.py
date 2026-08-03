@@ -264,7 +264,7 @@ class PerformanceTracker:
     def update_trade_fill(
         self, trade_id: int, price: float, quantity: float,
         amount_usd: float, pnl_usd: float | None,
-        fill_status: str = "FILLED",
+        fill_status: str = "FILLED", fees_usd: float = 0.0,
     ) -> None:
         """Backfill a trade row with real fill data once the broker
         reports the order as filled.
@@ -293,18 +293,37 @@ class PerformanceTracker:
             ).fetchone()
             if row:
                 order_id = row["order_id"]
-            conn.execute(
-                """
-                UPDATE trades
-                   SET price       = ?,
-                       quantity    = ?,
-                       amount_usd  = ?,
-                       pnl_usd     = ?,
-                       fill_status = ?
-                 WHERE id = ?
-                """,
-                (price, quantity, amount_usd, pnl_usd, fill_status, trade_id),
-            )
+            # fees_usd column exists after migration 003; guard so a
+            # pre-migration DB doesn't error on the write.
+            try:
+                conn.execute(
+                    """
+                    UPDATE trades
+                       SET price       = ?,
+                           quantity    = ?,
+                           amount_usd  = ?,
+                           pnl_usd     = ?,
+                           fill_status = ?,
+                           fees_usd    = ?
+                     WHERE id = ?
+                    """,
+                    (price, quantity, amount_usd, pnl_usd, fill_status,
+                     fees_usd, trade_id),
+                )
+            except sqlite3.OperationalError:
+                conn.execute(
+                    """
+                    UPDATE trades
+                       SET price       = ?,
+                           quantity    = ?,
+                           amount_usd  = ?,
+                           pnl_usd     = ?,
+                           fill_status = ?
+                     WHERE id = ?
+                    """,
+                    (price, quantity, amount_usd, pnl_usd, fill_status,
+                     trade_id),
+                )
         # Dual-write the backfill to Supabase by order_id
         if self._supabase is not None and order_id and order_id != "unknown":
             self._supabase.update_trade_fill(

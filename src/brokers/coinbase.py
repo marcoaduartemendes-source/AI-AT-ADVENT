@@ -19,6 +19,17 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, UTC
 
 from trading.coinbase_client import CoinbaseClient
+
+
+def _to_float(v, default: float = 0.0) -> float:
+    """Parse a possibly-None/str numeric field, defaulting on failure.
+    Coinbase returns fees as strings ('total_fees': '1.23')."""
+    if v is None:
+        return default
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 from trading.market_data import (
     GRANULARITY_SECONDS,
     fetch_candles,
@@ -325,6 +336,10 @@ class CoinbaseAdapter(BrokerAdapter):
             filled_quantity=float(d.get("filled_size") or 0),
             filled_avg_price=float(d["average_filled_price"]) if d.get("average_filled_price") else None,
             submitted_at=None,
+            # Coinbase reports cumulative taker fees on total_fees (2026-
+            # 06-11 review — previously dropped, overstating realized
+            # P&L ~1.2%/round trip).
+            fee_usd=_to_float(d.get("total_fees")),
             raw=d,
         )
 

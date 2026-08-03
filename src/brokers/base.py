@@ -151,6 +151,12 @@ class Order:
     filled_quantity: float = 0.0
     filled_avg_price: float | None = None
     submitted_at: datetime | None = None
+    # Total trading fee charged on this fill, in USD (2026-06-11 review).
+    # Coinbase market-IOC is taker-priced (~0.6%/side); Kalshi charges a
+    # per-contract taker fee. Both were dropped, overstating realized
+    # P&L by ~1.2% of notional per round trip and feeding the allocator
+    # / self-grade gross numbers. 0.0 when the venue reports no fee.
+    fee_usd: float = 0.0
     raw: dict = field(default_factory=dict)
 
 

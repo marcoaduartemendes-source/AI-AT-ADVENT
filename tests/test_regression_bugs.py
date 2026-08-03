@@ -872,3 +872,54 @@ class TestIRRReviewBatch2:
         assert total > 0.20, f"cash drag not reduced: total={total:.3f}"
         for d in result.decisions:
             assert d.target_pct <= 0.40 + 1e-9   # caps respected
+
+
+class TestFeeAccounting:
+    """2026-06-11 review: Coinbase/Kalshi fees were dropped everywhere,
+    overstating realized P&L ~1.2%/round trip and feeding the allocator
+    gross numbers. FIFO recompute must now net BUY+SELL fees."""
+
+    def _seed(self, db_path, rows):
+        import sqlite3
+        with sqlite3.connect(db_path) as c:
+            c.execute("""CREATE TABLE trades (
+                id INTEGER PRIMARY KEY, timestamp TEXT, strategy TEXT,
+                product_id TEXT, side TEXT, quantity REAL, price REAL,
+                pnl_usd REAL, fees_usd REAL DEFAULT 0)""")
+            for i, r in enumerate(rows):
+                c.execute(
+                    "INSERT INTO trades (timestamp, strategy, product_id, "
+                    "side, quantity, price, pnl_usd, fees_usd) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (f"2026-06-0{i+1}T00:00:00Z", "s", "BTC-USD",
+                     r[0], r[1], r[2], None, r[3]))
+
+    def test_fifo_realized_nets_both_fees(self, tmp_path):
+        from trading.recompute import fifo_realized_by_strategy
+        db = str(tmp_path / "t.db")
+        # BUY 1 @ $100 (fee $1), SELL 1 @ $110 (fee $2).
+        # Gross round trip = +$10; net = 10 - 1 - 2 = +$7.
+        self._seed(db, [("BUY", 1.0, 100.0, 1.0),
+                        ("SELL", 1.0, 110.0, 2.0)])
+        realized = fifo_realized_by_strategy(db)
+        assert abs(realized["s"] - 7.0) < 1e-6, realized
+
+    def test_fifo_degrades_without_fees_column(self, tmp_path):
+        import sqlite3
+        from trading.recompute import fifo_realized_by_strategy
+        db = str(tmp_path / "t2.db")
+        # Pre-migration table: no fees_usd column.
+        with sqlite3.connect(db) as c:
+            c.execute("""CREATE TABLE trades (
+                id INTEGER PRIMARY KEY, timestamp TEXT, strategy TEXT,
+                product_id TEXT, side TEXT, quantity REAL, price REAL,
+                pnl_usd REAL)""")
+            c.execute("INSERT INTO trades (timestamp,strategy,product_id,"
+                      "side,quantity,price,pnl_usd) VALUES "
+                      "('2026-06-01','s','BTC-USD','BUY',1,100,NULL)")
+            c.execute("INSERT INTO trades (timestamp,strategy,product_id,"
+                      "side,quantity,price,pnl_usd) VALUES "
+                      "('2026-06-02','s','BTC-USD','SELL',1,110,NULL)")
+        # No fees column → gross $10, no crash.
+        realized = fifo_realized_by_strategy(db)
+        assert abs(realized["s"] - 10.0) < 1e-6

@@ -305,5 +305,8 @@ def _parse_order(d: dict, venue: str, *,
         filled_quantity=float(d.get("filled_count") or 0),
         filled_avg_price=(float(d["yes_price"]) / 100.0) if d.get("yes_price") and status == OrderStatus.FILLED else None,
         submitted_at=None,
+        # Kalshi reports taker fees in CENTS on `taker_fees` (2026-06-11
+        # review — previously dropped). Convert to USD.
+        fee_usd=(float(d.get("taker_fees") or 0) / 100.0),
         raw=d,
     )

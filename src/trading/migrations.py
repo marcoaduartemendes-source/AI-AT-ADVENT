@@ -92,6 +92,21 @@ def _migration_002_add_entry_price_venue(conn: sqlite3.Connection) -> int:
     return touched
 
 
+def _migration_003_add_fees_usd(conn: sqlite3.Connection) -> int:
+    """Persist per-fill trading fees so realized P&L is net, not gross.
+
+    Coinbase market-IOC (taker ~0.6%/side) and Kalshi per-contract fees
+    were dropped everywhere in the P&L pipeline, overstating realized
+    P&L by ~1.2% of notional per Coinbase round trip and feeding the
+    allocator / self-grade gross numbers (full-system review 2026-06-11).
+    This adds the column; the poller and FIFO recompute subtract it.
+    Existing rows default to 0.0 (unknown historical fee — not
+    back-filled, so historical P&L stays as recorded)."""
+    if _add_column_if_missing(conn, "trades", "fees_usd", "REAL DEFAULT 0"):
+        return 1
+    return 0
+
+
 # Append-only registry. Once a migration ships, do not rename or delete
 # its entry — we'd break replay consistency for VPSes that ran an
 # older version. Add new ones below with a higher index in the name.
@@ -103,6 +118,10 @@ MIGRATIONS: list[Migration] = [
     Migration(
         name="002_add_entry_price_venue",
         apply=_migration_002_add_entry_price_venue,
+    ),
+    Migration(
+        name="003_add_fees_usd",
+        apply=_migration_003_add_fees_usd,
     ),
 ]
 

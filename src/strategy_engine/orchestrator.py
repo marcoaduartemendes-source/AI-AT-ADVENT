@@ -1616,6 +1616,7 @@ class Orchestrator:
             status = ord_obj.status
             fill_qty = float(ord_obj.filled_quantity or 0)
             fill_px = float(ord_obj.filled_avg_price or 0)
+            fee_usd = float(getattr(ord_obj, "fee_usd", 0.0) or 0.0)
 
             if status in (OrderStatus.CANCELED, OrderStatus.REJECTED) and fill_qty == 0:
                 # Audit fix #2: explicit fill_status='CANCELED' rather
@@ -1660,6 +1661,11 @@ class Orchestrator:
                                 and pos.avg_entry_price > 0):
                             pnl_usd = (fill_px - pos.avg_entry_price) * fill_qty
                             break
+                # Realized P&L must be NET of the SELL-leg fee (2026-06-11
+                # review). The BUY-leg fee is captured on its own row and
+                # nets out in the FIFO recompute's cost-basis handling.
+                if pnl_usd is not None and fee_usd:
+                    pnl_usd -= fee_usd
 
             self._tracker.update_trade_fill(
                 trade_id=row["id"],
@@ -1668,6 +1674,7 @@ class Orchestrator:
                 amount_usd=fill_qty * fill_px,
                 pnl_usd=pnl_usd,
                 fill_status=new_status,
+                fees_usd=fee_usd,
             )
             if new_status == "PARTIALLY_FILLED":
                 n_partial += 1
