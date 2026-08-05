@@ -29,9 +29,9 @@ import pytest
 from brokers.base import Order, OrderSide, OrderStatus, OrderType, Position, AssetClass
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #1 — phantom -$5,746 PnL from price=0 record
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 
 class TestRecordTradeWithZeroPriceDoesNotComputePnL:
     """When the broker hasn't reported a fill yet (filled_avg_price is
@@ -104,9 +104,9 @@ class TestRecordTradeWithZeroPriceDoesNotComputePnL:
         )
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #2 — intra-cycle wash trade
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 
 class TestIntraCycleWashTrade:
     """When two strategies in one cycle place opposite-side orders on
@@ -150,9 +150,9 @@ class TestIntraCycleWashTrade:
         assert entry["buy_notional_usd"] == pytest.approx(3829.66)
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #3 — Coinbase MARKET SELL needs qty (basis trade)
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 
 class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
     """The basis trade's entry creates two opposite-side proposals
@@ -220,9 +220,9 @@ class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
             )
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #4 — dashboard summary excluded unrealized PnL
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 
 # Removed: TestDashboardSummaryIncludesUnrealizedPnL — exercised the
 # old 2120-line dashboard's _summarize / load_live_data internals.
@@ -230,9 +230,9 @@ class TestCryptoBasisTradeUsesQtyForCoinbaseSells:
 # realized-P&L SQL aggregate; coverage now lives in tests/test_dashboard.py.
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bonus: independent FIFO recompute
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 
 class TestFIFORecompute:
     """Sanity-check the second-brain that catches the next
@@ -315,13 +315,13 @@ class TestFIFORecompute:
         assert drift["tsmom_etf"] == pytest.approx(100.0)
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #5 — headline Realized P&L silently trusted a drifted ledger.
 # On the droplet the stored pnl_usd summed to $+2.26 while a clean FIFO
 # walk gave $+720.64 (a $718 drift), but the dashboard only ever showed
 # the stored number — the recompute was logged where nobody looked. The
 # dashboard must now flag a diverging headline instead of trusting it.
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 class TestRealizedPnLDriftSurfacedOnDashboard:
     """The dashboard helper that cross-checks stored P&L against the
     FIFO recompute must (a) report no divergence for a clean ledger and
@@ -382,7 +382,7 @@ class TestRealizedPnLDriftSurfacedOnDashboard:
         assert bd._realized_pnl_drift(str(tmp_path / "nope.db")) is None
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #6 — self-grade's alpha-vs-SPY axis was pinned to a fake 5.0.
 # _grade_alpha_vs_benchmark() read flat fields (bot_return_pct_ann, …)
 # that build_benchmark never writes. The real file nests returns under
@@ -390,7 +390,7 @@ class TestRealizedPnLDriftSurfacedOnDashboard:
 # the "lacks comparable fields → 5.0" placeholder — inflating the grade
 # and hiding a real -6pp/30d underperformance vs SPY. The user mandate
 # is HONEST grading, so a flattering placeholder is itself the bug.
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 class TestAlphaVsSpyReadsRealBenchmarkShape:
     def test_underperformance_scores_low(self, tmp_path, monkeypatch):
         import json
@@ -427,13 +427,13 @@ class TestAlphaVsSpyReadsRealBenchmarkShape:
         assert g == 5.0
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #7 — walk_forward read a non-existent "equity" key from the
 # backtest equity_curve (points are {"t","pnl_cumulative"}), so every
 # bar delta was 0, every Sharpe was None, and ALL strategies came back
 # NO_DATA — pinning self-grade's overfit_resistance axis to 0 forever
 # (observed 2026-05-22: "0 ROBUST / 0 OVERFIT_SUSPECT / 18 NO_DATA").
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 class TestWalkForwardReadsCumulativePnL:
     def test_split_sharpe_uses_pnl_cumulative(self):
         from common.walk_forward import _split_sharpe, _verdict
@@ -462,13 +462,13 @@ class TestWalkForwardReadsCumulativePnL:
         assert is_t > 0 and oos_t > 0
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #8 — Kalshi backtests read m["yes_close"], a field the API never
 # returns, so yes_close_price was 0 for every market and all 1000
 # settled candidates were rejected ("no_yes_close") — the Kalshi
 # strategies could never validate or trade. The live adapter reads
 # "last_price" (cents); the history parser must too.
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 class TestKalshiSettledMarketParsing:
     def test_last_price_is_read_as_yes_close(self):
         from backtests.data.kalshi_history import _parse_yes_close
@@ -488,14 +488,14 @@ class TestKalshiSettledMarketParsing:
         assert _parse_settlement({}) == 0.5   # unknown → void → skipped
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #9 — realized P&L was sourced from the stored pnl_usd column, which
 # is computed at fill time from a single avg-cost entry and drifts on
 # partial fills / stale broker cost-basis / orphan SELLs / phantom
 # price=0 (the $718 droplet drift, and the corrupt allocator metrics that
 # spuriously froze risk_parity_etf at "60d Sharpe=-5.62, DD=57758%").
 # FIFO over the raw fill ledger is the canonical, auditable source.
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 class TestFifoCanonicalRealized:
     def _db(self, tmp_path, rows):
         db = tmp_path / "t.db"
@@ -539,14 +539,14 @@ class TestFifoCanonicalRealized:
         assert m.total_pnl_usd == pytest.approx(10.0)   # FIFO, not 5000
 
 
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 # Bug #10 — "<unattributed>" unrealized P&L. The dashboard matched a live
 # broker position to the ledger by EXACT (venue, symbol) against the most
 # recent BUY, so it dumped P&L into "<unattributed>" on symbol-format
 # drift (Coinbase "BTC" vs ledger "BTC-USD"), multi-strategy symbols, or
 # a wiped local DB. Fixed with FIFO open-lot attribution + symbol
 # normalization + proportional split.
-# ─────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 class TestUnattributedPnLFixed:
     def _db(self, tmp_path, rows):
         db = tmp_path / "t.db"
@@ -923,3 +923,43 @@ class TestFeeAccounting:
         # No fees column → gross $10, no crash.
         realized = fifo_realized_by_strategy(db)
         assert abs(realized["s"] - 10.0) < 1e-6
+
+
+class TestAuditBookCut:
+    """2026-06-11 audit: the book carried 22 strategies, 7 of which held
+    32% of target weight with NO validation verdict at all, and the whole
+    thing had produced $0.50 of realized P&L. Only PASS + walk-forward
+    ROBUST sleeves may hold capital. See docs/AUDIT_INCEPTION.md."""
+
+    def test_core_is_small_and_evidence_backed(self):
+        import json
+        from run_orchestrator import CORE_STRATEGIES
+        assert len(CORE_STRATEGIES) <= 6, "the cut must stay narrow"
+        v = json.load(open("docs/validation.json"))["strategies"]
+        wf = json.load(open("docs/walk_forward.json"))
+        wf = wf.get("strategies", wf)
+        for name in CORE_STRATEGIES:
+            assert v.get(name, {}).get("verdict") == "PASS", (
+                f"{name} holds capital without a PASS verdict")
+            w = wf.get(name, {})
+            verdict = w.get("verdict") or w.get("robust") if isinstance(w, dict) else None
+            assert verdict == "ROBUST", (
+                f"{name} holds capital without walk-forward ROBUST "
+                f"(got {verdict})")
+
+    def test_unverified_sleeves_are_dormant(self):
+        """Every strategy I added in the last two weeks had zero
+        validation evidence. None may hold capital."""
+        from run_orchestrator import CORE_STRATEGIES
+        unverified = {"high_vol_trend", "merger_arb", "activist_13d",
+                      "leveraged_top4", "pre_fomc_drift",
+                      "insider_cluster", "llm_8k_event"}
+        assert not (CORE_STRATEGIES & unverified), (
+            f"unverified sleeves funded: {CORE_STRATEGIES & unverified}")
+
+    def test_filter_defaults_on_and_is_escapable(self, monkeypatch):
+        import run_orchestrator as ro
+        monkeypatch.delenv("AAA_ALL_STRATEGIES", raising=False)
+        assert ro._core_filter_enabled() is True
+        monkeypatch.setenv("AAA_ALL_STRATEGIES", "1")
+        assert ro._core_filter_enabled() is False

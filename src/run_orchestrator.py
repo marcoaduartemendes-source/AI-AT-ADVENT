@@ -111,7 +111,63 @@ def _per_broker_flag(envvar: str) -> bool | None:
     return v.lower() != "false"
 
 
-# ─── Strategy wiring ──────────────────────────────────────────────────────
+# ─── The book ────────────────────────────────────────────────────
+#
+# 2026-06-11 AUDIT CUT (docs/AUDIT_INCEPTION.md).
+#
+# The audit found a 22-strategy book that had produced $0.50 of realized
+# P&L across 10 filled trades, while 32% of target weight sat in sleeves
+# with NO validation verdict whatsoever. Breadth was not diversification;
+# it was unverified surface area, and it made every failure harder to see.
+#
+# ONLY the strategies below receive capital. The bar is deliberately
+# narrow and evidence-based — validation PASS **and** walk-forward ROBUST
+# **and** enough backtested trades to make the verdict mean something:
+#
+#   risk_parity_etf     Sharpe 11.55 / 34 trades — defensive anchor,
+#                       internally diversified (SPY/TLT/IEF/GLD/DBC)
+#   dual_momentum       Sharpe 10.15 / 47 — crisis alpha, rotates to
+#                       bonds risk-off; the book's drawdown shock absorber
+#   multifactor_equity  Sharpe  5.92 / 49 — flagship; the ONLY strategy
+#                       with a clean live submit record (3/3)
+#   bollinger_breakout  Sharpe  3.41 / 184 — best statistical support of
+#                       the high-return sleeves (~22%/yr)
+#   earnings_momentum   Sharpe  2.28 / 146 — event-driven; genuinely
+#                       uncorrelated with the four trend/factor sleeves
+#
+# Everything else is DORMANT, not deleted: still registered, still
+# backtested every night, still visible on the dashboard — but funded at
+# zero until it earns a place. Re-admission requires PASS + ROBUST + 30
+# days of live fills with positive attribution. Add the name here; that
+# is the whole ceremony.
+#
+# Signal-only overlays are retained regardless of their own verdict
+# because they trade nothing (0% allocation) and other sleeves consume
+# their vol_scaler output.
+#
+# Escape hatch: AAA_ALL_STRATEGIES=1 restores the full roster for
+# backtesting/experiment runs. It is NOT set in production.
+CORE_STRATEGIES: set[str] = {
+    "risk_parity_etf",
+    "dual_momentum",
+    "multifactor_equity",
+    "bollinger_breakout",
+    "earnings_momentum",
+}
+
+# Trade nothing; publish scalers other strategies read. Always active.
+SIGNAL_ONLY_STRATEGIES: set[str] = {
+    "vol_managed_overlay",
+    "crypto_vol_regime_overlay",
+}
+
+
+def _core_filter_enabled() -> bool:
+    return os.environ.get(
+        "AAA_ALL_STRATEGIES", "").strip().lower() not in ("1", "true", "yes")
+
+
+# ─── Strategy wiring ────────────────────────────────────────────
 
 
 ALL_STRATEGIES = [
@@ -528,10 +584,24 @@ def build_strategies(brokers):
     # size meaningfully, cross-venue arb is a latency game retail can't
     # win. Re-wire when a viable Kalshi sleeve emerges. The adapter
     # itself remains in build_brokers() for read-only book inspection.
+
+    # ── 2026-06-11 audit cut ────────────────────────────────────
+    # Narrow the live book to CORE_STRATEGIES (+ signal-only overlays).
+    # Dormant sleeves stay registered in ALL_STRATEGIES so they keep
+    # getting backtested and stay visible — they simply don't trade.
+    if _core_filter_enabled():
+        keep = CORE_STRATEGIES | SIGNAL_ONLY_STRATEGIES
+        dormant = sorted(set(instances) - keep)
+        instances = {k: v for k, v in instances.items() if k in keep}
+        if dormant:
+            logger.info(
+                f"audit cut: {len(instances)} live "
+                f"({', '.join(sorted(instances))}); "
+                f"{len(dormant)} dormant ({', '.join(dormant)})")
     return instances
 
 
-# ─── Step summary writer ──────────────────────────────────────────────────
+# ─── Step summary writer ─────────────────────────────────────────
 
 
 def write_step_summary(report, allocator_alloc, risk_state):
@@ -584,7 +654,7 @@ def write_step_summary(report, allocator_alloc, risk_state):
         logger.warning(f"Could not write step summary: {exc}")
 
 
-# ─── Main ────────────────────────────────────────────────────────────────
+# ─── Main ─────────────────────────────────────────────────────
 
 
 def main():
