@@ -42,12 +42,38 @@ def _read(path: str):
         return None
 
 
+# A Sharpe computed on fewer than this many CLOSED round trips is noise
+# reported as fact. The 2026-06-11 audit found alpha_track scoring 10.0/10
+# on 5 observations totalling $0.50 — see docs/AUDIT_INCEPTION.md §4.
+MIN_CLOSED_TRADES_FOR_SHARPE = 20
+
+
 def _grade_alpha(trades: list[dict] | None) -> tuple[float, str]:
-    """0–10 by live 30d Sharpe across ALL strategies (book-level)."""
+    """0–10 by live 30d Sharpe across ALL strategies (book-level).
+
+    2026-06-11 AUDIT FIX. This grader previously produced a perfect
+    10.0/10 for a book that had earned $0.50, via three compounding
+    defects:
+
+      1. `float(t.get("pnl_usd") or 0.0)` turned every CANCELED and
+         PENDING order into a 0.0 P&L OBSERVATION. 38 canceled + 2
+         pending + 10 filled = 50 "returns", 45 of them synthetic zeros.
+         A tight cluster of zeros collapses the stdev, and a small
+         positive mean over that tiny stdev produced Sharpe +3.39.
+         The metric literally rewarded failing to trade.
+      2. A 5-observation minimum — statistically meaningless.
+      3. sqrt(252) annualisation applied to a PER-TRADE series, which
+         silently assumes exactly one trade per day.
+
+    Now: only FILLED rows with a real (non-NULL) pnl_usd count — i.e.
+    actual closed round trips; a 20-trip minimum; and annualisation
+    scaled by the OBSERVED trip frequency rather than assumed-daily.
+    """
     if not trades:
-        return 0.0, "no trades in last 30d → 0/10"
+        return 0.0, "no closed round trips in last 30d → 0/10"
     cutoff = datetime.now(UTC) - timedelta(days=30)
     pnls: list[float] = []
+    n_seen = 0
     for t in trades:
         try:
             dt = datetime.fromisoformat(
@@ -56,16 +82,30 @@ def _grade_alpha(trades: list[dict] | None) -> tuple[float, str]:
             continue
         if dt < cutoff:
             continue
-        pnls.append(float(t.get("pnl_usd") or 0.0))
-    if len(pnls) < 5:
-        return 1.0, f"only {len(pnls)} trades in 30d (sample too small) → 1/10"
+        n_seen += 1
+        # Only genuine closed round trips are returns. An unfilled or
+        # canceled order is the ABSENCE of a return, not a zero one.
+        if (t.get("fill_status") or "").upper() != "FILLED":
+            continue
+        raw = t.get("pnl_usd")
+        if raw is None:
+            continue
+        pnls.append(float(raw))
+    if len(pnls) < MIN_CLOSED_TRADES_FOR_SHARPE:
+        return 0.0, (
+            f"only {len(pnls)} closed round trips in 30d "
+            f"(of {n_seen} order rows) — need "
+            f"{MIN_CLOSED_TRADES_FOR_SHARPE} for a meaningful Sharpe → 0/10")
     try:
         sd = pstdev(pnls)
         if sd < 1e-9:
             return 2.0, "live P&L has zero variance → 2/10"
-        sharpe = fmean(pnls) / sd * math.sqrt(252)
+        # Annualise by the OBSERVED trip rate over the 30d window, not by
+        # assuming one trade per trading day.
+        trips_per_year = len(pnls) * (365.0 / 30.0)
+        sharpe = fmean(pnls) / sd * math.sqrt(max(trips_per_year, 1.0))
     except Exception:
-        return 1.0, "could not compute live Sharpe → 1/10"
+        return 0.0, "could not compute live Sharpe → 0/10"
     # Sharpe → grade. 0 = 5/10 (random), 1 = 7, 2 = 9, ≥3 = 10.
     if sharpe < -1:   g = 0.0
     elif sharpe < 0:  g = max(0.0, 4.0 + sharpe * 2)
@@ -73,8 +113,9 @@ def _grade_alpha(trades: list[dict] | None) -> tuple[float, str]:
     elif sharpe < 2:  g = 7.0 + (sharpe - 1) * 2.0
     elif sharpe < 3:  g = 9.0 + (sharpe - 2)
     else:             g = 10.0
-    return g, (f"live 30d Sharpe {sharpe:+.2f} across {len(pnls)} "
-                f"trades → {g:.1f}/10")
+    total = sum(pnls)
+    return g, (f"live 30d Sharpe {sharpe:+.2f} across {len(pnls)} closed "
+                f"round trips (net ${total:+,.2f}) → {g:.1f}/10")
 
 
 def _grade_fee_discipline(trades, validation) -> tuple[float, str]:

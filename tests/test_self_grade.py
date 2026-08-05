@@ -52,3 +52,65 @@ class TestEconomicLeverage:
         import build_dashboard as bd
         assert bd._LEVERAGED_ETF_FACTOR["TQQQ"] == 3.0
         assert bd._LEVERAGED_ETF_FACTOR.get("SPY", 1.0) == 1.0
+
+
+class TestAlphaTrackAuditFix:
+    """2026-06-11 audit: alpha_track scored 10.0/10 on a book that had
+    earned $0.50, because canceled/pending orders were counted as 0.0
+    P&L observations. Replays the exact May-2026 ledger shape from
+    docs/AUDIT_INCEPTION.md §4 and pins that it can never score high
+    again."""
+
+    def _historical_ledger(self):
+        """The real shape: 50 rows = 38 CANCELED + 2 PENDING + 10 FILLED,
+        of which only 5 carry P&L, totalling $0.50."""
+        from datetime import UTC, datetime, timedelta
+        now = datetime.now(UTC)
+        rows = []
+        for _i in range(38):
+            rows.append({"timestamp": (now - timedelta(days=1)).isoformat(),
+                         "fill_status": "CANCELED", "pnl_usd": None})
+        for _i in range(2):
+            rows.append({"timestamp": (now - timedelta(days=1)).isoformat(),
+                         "fill_status": "PENDING", "pnl_usd": None})
+        # 10 filled; only 5 have realized P&L, summing to $0.50
+        for _i in range(5):
+            rows.append({"timestamp": (now - timedelta(days=2)).isoformat(),
+                         "fill_status": "FILLED", "pnl_usd": 0.10})
+        for _i in range(5):
+            rows.append({"timestamp": (now - timedelta(days=2)).isoformat(),
+                         "fill_status": "FILLED", "pnl_usd": None})
+        return rows
+
+    def test_historical_fifty_cents_cannot_score_high(self):
+        from common.self_grade import _grade_alpha
+        g, reason = _grade_alpha(self._historical_ledger())
+        assert g == 0.0, (
+            f"a $0.50 book with 5 closed trips must not score {g}: {reason}")
+        assert "closed round trips" in reason
+
+    def test_canceled_orders_are_not_zero_returns(self):
+        """The core defect: an unfilled order is the ABSENCE of a return,
+        not a zero one. 100 canceled rows must not manufacture a sample."""
+        from datetime import UTC, datetime, timedelta
+        from common.self_grade import _grade_alpha
+        now = datetime.now(UTC)
+        rows = [{"timestamp": (now - timedelta(days=1)).isoformat(),
+                 "fill_status": "CANCELED", "pnl_usd": None}
+                for _ in range(100)]
+        g, reason = _grade_alpha(rows)
+        assert g == 0.0
+        assert "0 closed round trips" in reason
+
+    def test_real_track_record_still_scores(self):
+        """A genuine record — 30 closed round trips, consistently
+        profitable — must still grade well, or the fix is too blunt."""
+        from datetime import UTC, datetime, timedelta
+        from common.self_grade import _grade_alpha
+        now = datetime.now(UTC)
+        rows = [{"timestamp": (now - timedelta(days=3)).isoformat(),
+                 "fill_status": "FILLED",
+                 "pnl_usd": 100.0 + (i % 5) * 10}
+                for i in range(30)]
+        g, reason = _grade_alpha(rows)
+        assert g >= 7.0, f"genuine record should grade well, got {g}: {reason}"
