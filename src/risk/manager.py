@@ -811,6 +811,25 @@ class RiskManager:
         if not is_closing and existing_position_usd + approved > max_position:
             approved = max(0.0, max_position - existing_position_usd)
 
+        # ─ Liquidity participation cap (2026-08-05 capital-scale review).
+        # The only cap in this whole chain that is a property of the
+        # INSTRUMENT rather than of our equity. Without it every limit
+        # above scales linearly with the account: at $1M, max_position_pct
+        # alone authorises $300k in a name that may trade $2M/day. The
+        # backtest that justified the trade multiplied a signal by a close
+        # price and assumed the fill was free; this keeps live orders
+        # inside the size range where that is approximately true.
+        # Closing orders bypass — a liquidity limit must never trap us in
+        # a position we are trying to exit.
+        if not is_closing:
+            liq_cap = self._liquidity_cap(symbol, venue)
+            if liq_cap is not None and approved > liq_cap:
+                logger.info(
+                    f"[risk] {strategy_name or '?'} {symbol}: "
+                    f"${approved:,.0f} → ${liq_cap:,.0f} (ADV participation "
+                    f"cap {cfg.max_adv_participation_pct * 100:.0f}%)")
+                approved = liq_cap
+
         # ─ Per-asset-class concentration cap (audit fix #5).
         # Sum exposure of every position whose asset_class matches,
         # across all brokers, then ensure approved + existing
@@ -854,6 +873,36 @@ class RiskManager:
                 f"scaled from ${notional_usd:.2f} to ${approved:.2f}", st)
 
         return RiskDecision(Decision.APPROVE, approved, "ok", st)
+
+    def _liquidity_cap(self, symbol: str, venue: str | None) -> float | None:
+        """Largest order in `symbol` that stays inside the configured
+        share of a normal day's dollar volume, or None if no cap applies.
+
+        Resolving the broker from `venue` is what makes this measurable —
+        callers that omit venue (unit tests, ad-hoc checks) land in the
+        unmeasurable branch and get `adv_unknown_max_usd`, which is the
+        conservative answer rather than the convenient one.
+        """
+        cfg = self.config
+        if cfg.max_adv_participation_pct <= 0:
+            return None
+        broker = self.brokers.get(venue) if venue else None
+        if broker is None:
+            # Cannot identify the instrument's venue → cannot measure it.
+            return cfg.adv_unknown_max_usd or None
+        try:
+            from risk.liquidity import participation_cap_usd
+            return participation_cap_usd(
+                broker, symbol,
+                participation_pct=cfg.max_adv_participation_pct,
+                lookback_days=cfg.adv_lookback_days,
+                unknown_max_usd=cfg.adv_unknown_max_usd,
+            )
+        except Exception as e:
+            # Never let the liquidity probe break order flow — degrade to
+            # the unknown-cap, which is still safer than no cap at all.
+            logger.warning(f"_liquidity_cap({venue}:{symbol}) failed: {e}")
+            return cfg.adv_unknown_max_usd or None
 
     # ── Per-strategy daily notional bookkeeping ────────────────────────
 

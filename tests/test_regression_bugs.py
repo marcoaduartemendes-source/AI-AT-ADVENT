@@ -963,3 +963,155 @@ class TestAuditBookCut:
         assert ro._core_filter_enabled() is True
         monkeypatch.setenv("AAA_ALL_STRATEGIES", "1")
         assert ro._core_filter_enabled() is False
+
+
+class TestLiquidityParticipationCap:
+    """2026-08-05 capital-scale review. Every sizing cap in RiskConfig was
+    a fraction of EQUITY, so every cap grew linearly with the account
+    while the market on the other side did not. At $1M with
+    max_position_pct=0.30 the risk layer would authorise a $300,000 order
+    in a name that trades $2M/day — ~15% of a session. The backtest that
+    justified that trade multiplied a signal by a close price and assumed
+    the fill was free.
+
+    Failing these tests (a $1M book sizing without reference to volume)
+    communicates the bug; passing communicates the invariant: order size
+    is bounded by the INSTRUMENT's liquidity, not only by our equity.
+    """
+
+    def _broker(self, *, volume=None, close=100.0, venue="alpaca",
+                raises=False, equity=1_000_000.0):
+        """Stub exposing the surface adv_usd() and compute_state() touch.
+
+        get_account/get_positions matter: without them the equity read
+        fails, every equity-derived cap collapses to $0, and the order is
+        rejected for a reason that has nothing to do with liquidity.
+        """
+        from brokers.base import Account, Candle
+        from datetime import datetime, UTC
+
+        class _B:
+            def __init__(self):
+                self.venue = venue
+
+            def get_account(self):
+                return Account(venue=venue, cash_usd=equity,
+                               buying_power_usd=equity, equity_usd=equity,
+                               is_paper=True)
+
+            def get_positions(self):
+                return []
+
+            def get_candles(self, symbol, granularity, num_candles=100):
+                if raises:
+                    raise RuntimeError("broker down")
+                if volume is None:
+                    return []
+                vols = (volume if isinstance(volume, list)
+                        else [volume] * num_candles)
+                now = datetime.now(UTC)
+                return [Candle(timestamp=now, open=close, high=close,
+                               low=close, close=close, volume=v)
+                        for v in vols]
+        return _B()
+
+    def _rm(self, broker, *, equity=1_000_000.0, **cfg_kw):
+        """RiskManager on a $1M book with the per-order dollar ceiling
+        lifted — the configuration a real large account must run."""
+        from risk.manager import EquitySnapshotDB, RiskManager
+        from risk.policies import RiskConfig
+        from risk.liquidity import clear_adv_cache
+        import os
+        import tempfile
+        clear_adv_cache()
+        db = EquitySnapshotDB(os.path.join(tempfile.mkdtemp(), "risk.db"))
+        db.record_snapshot(equity, note="baseline")
+        cfg = RiskConfig(max_trade_usd=10_000_000.0, **cfg_kw)
+        return RiskManager(brokers={"alpaca": broker}, config=cfg, db=db)
+
+    def test_thin_name_cannot_take_a_300k_order(self):
+        """The headline case. $2M/day ADV, 10% participation → $200k max,
+        NOT the $300k that max_position_pct alone would allow."""
+        from risk.manager import Decision
+        # 20,000 shares/day x $100 = $2M ADV
+        rm = self._rm(self._broker(volume=20_000, close=100.0))
+        st = rm.compute_state(persist=False)
+        d = rm.check_order(notional_usd=300_000, symbol="THIN",
+                           venue="alpaca", state=st)
+        assert d.decision == Decision.SCALE
+        assert d.approved_notional_usd == pytest.approx(200_000.0)
+
+    def test_liquid_name_is_not_penalised(self):
+        """SPY-scale volume must clear a large order untouched, or the
+        cap is just a tax on the strategies that work."""
+        from risk.manager import Decision
+        # 80M shares x $600 = $48B ADV → 10% is $4.8B, nowhere near
+        rm = self._rm(self._broker(volume=80_000_000, close=600.0))
+        st = rm.compute_state(persist=False)
+        d = rm.check_order(notional_usd=250_000, symbol="SPY",
+                           venue="alpaca", state=st)
+        assert d.decision == Decision.APPROVE
+        assert d.approved_notional_usd == pytest.approx(250_000.0)
+
+    def test_closing_orders_bypass_the_cap(self):
+        """A liquidity limit must never trap us in a position we are
+        trying to exit — the May-4 lesson, applied to a new constraint."""
+        from risk.manager import Decision
+        rm = self._rm(self._broker(volume=1_000, close=10.0))   # $10k ADV
+        st = rm.compute_state(persist=False)
+        d = rm.check_order(notional_usd=300_000, symbol="THIN",
+                           venue="alpaca", is_closing=True, state=st)
+        assert d.decision == Decision.APPROVE
+        assert d.approved_notional_usd == pytest.approx(300_000.0)
+
+    def test_unmeasurable_volume_clamps_rather_than_waves_through(self):
+        """Venue reports no volume (Kalshi) → we cannot certify the name
+        is liquid, so we permit only a small order. 'Unknown' must never
+        be treated as 'unlimited' — that conflation is what scored a
+        $0.50 book 10/10 on alpha."""
+        from risk.manager import Decision
+        rm = self._rm(self._broker(volume=None))    # no candles at all
+        st = rm.compute_state(persist=False)
+        d = rm.check_order(notional_usd=300_000, symbol="MYSTERY",
+                           venue="alpaca", state=st)
+        assert d.decision == Decision.SCALE
+        assert d.approved_notional_usd == pytest.approx(25_000.0)
+
+    def test_broker_error_degrades_to_unknown_cap_not_a_freeze(self):
+        """A broker hiccup must not block order flow entirely — that is
+        precisely how the May-4 $0.00 equity read froze the book."""
+        from risk.manager import Decision
+        rm = self._rm(self._broker(raises=True))
+        st = rm.compute_state(persist=False)
+        d = rm.check_order(notional_usd=300_000, symbol="ANY",
+                           venue="alpaca", state=st)
+        assert d.decision == Decision.SCALE
+        assert d.approved_notional_usd == pytest.approx(25_000.0)
+
+    def test_one_volume_spike_does_not_license_size(self):
+        """Median, not mean. An earnings-day print 50x normal must not
+        authorise a month of oversized orders."""
+        from risk.liquidity import adv_usd, clear_adv_cache
+        clear_adv_cache()
+        vols = [10_000] * 24 + [500_000]      # one 50x spike day
+        adv = adv_usd(self._broker(volume=vols, close=100.0),
+                      "SPIKY", lookback_days=20)
+        # Median of the window is the normal day ($1M), not the mean
+        # (which the spike would drag well above it).
+        assert adv == pytest.approx(1_000_000.0)
+
+    def test_cap_can_be_disabled_explicitly(self):
+        """Escape hatch for backtest/experiment runs — but off by
+        default, so production cannot silently lose the protection."""
+        from risk.manager import Decision
+        rm = self._rm(self._broker(volume=1_000, close=10.0),
+                      max_adv_participation_pct=0.0)
+        st = rm.compute_state(persist=False)
+        d = rm.check_order(notional_usd=300_000, symbol="THIN",
+                           venue="alpaca", state=st)
+        assert d.decision == Decision.APPROVE
+
+    def test_default_config_has_the_cap_on(self):
+        from risk.policies import RiskConfig
+        assert RiskConfig().max_adv_participation_pct == 0.10
+        assert RiskConfig().adv_unknown_max_usd > 0

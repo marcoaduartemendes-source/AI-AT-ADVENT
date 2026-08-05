@@ -148,7 +148,16 @@ class RiskConfig:
 
     max_trade_usd: float = 5000.0
     """Per-order ceiling; prevents one bad signal from blowing up the book.
-    Scales with equity automatically — see RiskManager.compute_state()."""
+
+    2026-08-05: this is a FLAT dollar amount. It does NOT scale with
+    equity — an earlier docstring claimed it did, and nothing in
+    compute_state() ever touched it. The claim mattered: at $1M equity
+    the effective per-order cap is min($5,000, 0.30 x equity) = $5,000,
+    so the book physically cannot deploy a large account (24 orders per
+    strategy per day x $5k). Raising this via MAX_TRADE_USD_GLOBAL is
+    therefore mandatory at scale — and the moment it is raised, the only
+    remaining bound is max_position_pct x equity, which is why the ADV
+    participation cap below exists."""
 
     # Per-broker overrides (None = use max_trade_usd above).
     # Used to cap small live tests on one venue (e.g. $50 on Coinbase)
@@ -156,6 +165,33 @@ class RiskConfig:
     max_trade_usd_coinbase: float | None = None
     max_trade_usd_alpaca: float | None = None
     max_trade_usd_kalshi: float | None = None
+
+    # ── Liquidity participation cap (2026-08-05 capital-scale review) ──
+    # Every other cap in this config is a fraction of EQUITY, so every
+    # cap grows with the account while the market does not. At $1M and
+    # max_position_pct=0.30 the risk layer would authorise a $300,000
+    # order in a name that trades $2M/day — ~15% of a session, which
+    # moves the price against itself and makes the fill unlike anything
+    # the backtest measured. Backtests here assume infinite liquidity
+    # (signal x close price); this cap is what keeps live sizing inside
+    # the range where that assumption is roughly true.
+    max_adv_participation_pct: float = 0.10
+    """Max order notional as a fraction of the symbol's median daily
+    dollar volume. 10% is the conventional ceiling above which market
+    impact stops being a rounding error. 0 disables the check entirely.
+    Closing orders always bypass — getting flat is non-negotiable."""
+
+    adv_lookback_days: int = 20
+    """Daily bars used for the median-ADV estimate (~1 trading month)."""
+
+    adv_unknown_max_usd: float = 25_000.0
+    """Cap applied when ADV cannot be measured (venue reports no volume,
+    broker error, new listing). Deliberately a small positive number
+    rather than 0 or infinity: rejecting outright would freeze the book
+    on a data hiccup — the exact May-4 failure where a bad broker read
+    latched KILL and stopped even the exits — while allowing an
+    unmeasured name at full size is the defect this cap exists to close.
+    Set 0 to skip unmeasurable symbols instead of clamping them."""
 
     def cap_for_venue(self, venue: str) -> float:
         per_venue = {
@@ -214,6 +250,9 @@ class RiskConfig:
             multiplier_default=_envf("RISK_MULTIPLIER", 1.0),
             min_trade_usd=_envf("MIN_TRADE_USD", 50.0),
             max_trade_usd=_envf("MAX_TRADE_USD_GLOBAL", 5000.0),
+            max_adv_participation_pct=_envf("ADV_PARTICIPATION_PCT", 0.10),
+            adv_lookback_days=_envi("ADV_LOOKBACK_DAYS", 20),
+            adv_unknown_max_usd=_envf("ADV_UNKNOWN_MAX_USD", 25_000.0),
             max_trade_usd_coinbase=_opt_envf("MAX_TRADE_USD_COINBASE"),
             max_trade_usd_alpaca=_opt_envf("MAX_TRADE_USD_ALPACA"),
             max_trade_usd_kalshi=_opt_envf("MAX_TRADE_USD_KALSHI"),
