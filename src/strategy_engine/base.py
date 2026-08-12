@@ -123,6 +123,22 @@ class Strategy(ABC):
     name: str                            # e.g. "crypto_funding_carry"
     venue: str                           # primary broker the strategy trades on
 
+    # Does this strategy deliberately open SHORT positions?
+    #
+    # 2026-08-05 long/short upgrade. Default False, and the orchestrator
+    # enforces it: an opening SELL (side=SELL, is_closing=False) from a
+    # strategy holding no inventory in that symbol is rejected unless
+    # this is True. The guard exists because the FIFO ledger is now
+    # SIGNED — a stray SELL no longer bounces off as an "orphan", it
+    # silently opens a short and the book carries a position nobody
+    # intended. A mislabeled `is_closing` used to be a harmless no-op;
+    # it would now be a real, unintended short.
+    #
+    # Setting this True is a declaration that the strategy sizes,
+    # stops, and exits shorts on purpose — unbounded loss on the upside
+    # is not the same risk as a long.
+    can_short: bool = False
+
     def __init__(self, broker: BrokerAdapter):
         self.broker = broker
 

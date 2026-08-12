@@ -1261,6 +1261,42 @@ class Orchestrator:
             proposal, state,
         )
 
+        # Phantom-short guard (2026-08-05 long/short upgrade).
+        #
+        # The FIFO ledger is now SIGNED, so a SELL with no inventory
+        # behind it OPENS A SHORT instead of bouncing off as an "orphan".
+        # That closed a real accounting hole — short round trips used to
+        # book $0.00 — but it also means a mislabeled `is_closing`, which
+        # was previously a harmless no-op, would now put on a position
+        # nobody asked for, with unbounded loss on the upside.
+        #
+        # So opening a short requires an explicit declaration from the
+        # strategy AND a venue that supports it. `existing_usd > 0` means
+        # the strategy does hold inventory here, so the SELL is a
+        # reduction that merely forgot its is_closing flag — allow it,
+        # the sell-quantity clamp downstream bounds it to what's held.
+        if (proposal.side == OrderSide.SELL and not proposal.is_closing
+                and existing_usd <= 0):
+            strat_obj = self.strategies.get(proposal.strategy)
+            adapter = self.brokers.get(proposal.venue)
+            can_short = bool(getattr(strat_obj, "can_short", False))
+            venue_ok = bool(adapter is not None and BrokerCapability
+                            .SHORT_SELLING in getattr(
+                                adapter, "capabilities", frozenset()))
+            if not (can_short and venue_ok):
+                why = ("strategy not declared short-capable"
+                       if not can_short
+                       else f"venue {proposal.venue} cannot short")
+                logger.warning(
+                    f"[{proposal.strategy}] BLOCKED opening SELL "
+                    f"{proposal.symbol}: no position to reduce and "
+                    f"{why}. This would have opened an unintended short."
+                )
+                report.proposals_rejected += 1
+                self._cycle_reject_reasons.setdefault(
+                    proposal.strategy, []).append(f"phantom_short ({why})")
+                return
+
         decision = self._gate_through_risk(
             proposal, notional, existing_usd, asset_class, state, report,
         )

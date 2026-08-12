@@ -366,11 +366,28 @@ def _live_unrealized_by_strategy() -> dict[str, float]:
                 continue
             weights = open_lots.get(normalize_symbol(p.symbol))
             if weights:
+                # Open quantities are SIGNED since the 2026-08-05
+                # long/short upgrade — negative for a strategy holding a
+                # short. The broker reports the NET position, so a signed
+                # share of the net is the economically correct split: a
+                # short holder's share of a net-long position's gain is
+                # negative, and the shares still sum to 1.
+                #
+                # The old `if total_qty > 0` guard would have silently
+                # dropped the entire position's P&L whenever the net was
+                # short (total < 0) — a new "<unattributed>"-class hole.
                 total_qty = sum(weights.values())
-                # Split this position's unrealized across the strategies
-                # that hold it, proportional to open quantity.
+                gross_qty = sum(abs(q) for q in weights.values())
                 for strat, qty in weights.items():
-                    share = (qty / total_qty) if total_qty > 0 else 0.0
+                    if abs(total_qty) > 1e-9:
+                        share = qty / total_qty
+                    elif gross_qty > 1e-9:
+                        # Strategies perfectly hedge each other (net ~0)
+                        # so proportional-to-net is undefined. Split by
+                        # gross exposure rather than discarding the P&L.
+                        share = abs(qty) / gross_qty
+                    else:
+                        share = 0.0
                     out[strat] = out.get(strat, 0.0) + unrealized * share
             else:
                 out["<unattributed: no ledger entry>"] = (

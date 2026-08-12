@@ -1115,3 +1115,167 @@ class TestLiquidityParticipationCap:
         from risk.policies import RiskConfig
         assert RiskConfig().max_adv_participation_pct == 0.10
         assert RiskConfig().adv_unknown_max_usd > 0
+
+
+class TestSignedFifoShortAccounting:
+    """2026-08-05 long/short upgrade. The FIFO walk was long-only: BUY
+    pushed a lot, SELL popped lots, and a SELL with no matching BUY was
+    discarded as an 'orphan'. A short entry IS an opening SELL with no
+    prior BUY — so every short entry vanished from the books and the
+    covering BUY was recorded as a NEW LONG LOT.
+
+    Failing these tests (a completed short round trip booking $0.00 and
+    leaving a phantom long) communicates the bug; passing communicates
+    the invariant: realized P&L is lot.sign x (exit - entry) x qty, which
+    is correct for both directions.
+    """
+
+    def _db(self, tmp_path, rows, *, fees=False):
+        db = tmp_path / "sfifo.db"
+        conn = sqlite3.connect(db)
+        fee_col = ", fees_usd REAL DEFAULT 0" if fees else ""
+        conn.execute(
+            "CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "timestamp TEXT, strategy TEXT, product_id TEXT, side TEXT, "
+            f"quantity REAL, price REAL, pnl_usd REAL, fill_status TEXT"
+            f"{fee_col})")
+        cols = ("timestamp,strategy,product_id,side,quantity,price,"
+                "pnl_usd,fill_status" + (",fees_usd" if fees else ""))
+        marks = ",".join("?" * (9 if fees else 8))
+        conn.executemany(
+            f"INSERT INTO trades ({cols}) VALUES ({marks})", rows)
+        conn.commit()
+        conn.close()
+        return str(db)
+
+    def test_profitable_short_books_real_pnl(self):
+        """THE headline case. Short at $110, cover at $100 → +$10. The
+        long-only walk booked $0.00 for this and left a phantom long."""
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import fifo_realized_by_strategy
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "ls", "AAA", "SELL", 10, 110, None, "FILLED"),
+            ("2026-07-05T10:00", "ls", "AAA", "BUY", 10, 100, None, "FILLED"),
+        ])
+        assert fifo_realized_by_strategy(db) == {"ls": 100.0}
+
+    def test_losing_short_books_a_loss_not_a_gain(self):
+        """Short at $100, cover at $130 → -$300. Sign errors here would
+        report a loss as a profit, which is the worst possible failure."""
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import fifo_realized_by_strategy
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "ls", "BBB", "SELL", 10, 100, None, "FILLED"),
+            ("2026-07-05T10:00", "ls", "BBB", "BUY", 10, 130, None, "FILLED"),
+        ])
+        assert fifo_realized_by_strategy(db) == {"ls": -300.0}
+
+    def test_short_leaves_signed_open_position(self):
+        """An uncovered short must show as NEGATIVE open inventory, not
+        as absent (old behaviour) and not as long."""
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import fifo_open_positions
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "ls", "CCC", "SELL", 4, 50, None, "FILLED"),
+        ])
+        assert fifo_open_positions(db) == {"CCC": {"ls": -4.0}}
+
+    def test_cover_flattens_the_book(self):
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import fifo_open_positions
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "ls", "DDD", "SELL", 4, 50, None, "FILLED"),
+            ("2026-07-02T10:00", "ls", "DDD", "BUY", 4, 45, None, "FILLED"),
+        ])
+        assert "DDD" not in fifo_open_positions(db)
+
+    def test_overshoot_flips_long_to_short(self):
+        """Selling more than held closes the long and opens a short with
+        the remainder — one fill, both effects, correctly split."""
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import (fifo_open_positions,
+                                       fifo_realized_by_strategy)
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "ls", "EEE", "BUY", 5, 100, None, "FILLED"),
+            ("2026-07-02T10:00", "ls", "EEE", "SELL", 8, 110, None, "FILLED"),
+        ])
+        # Closed 5 @ +$10 = +$50; 3 remain SHORT at $110.
+        assert fifo_realized_by_strategy(db) == {"ls": 50.0}
+        assert fifo_open_positions(db) == {"EEE": {"ls": -3.0}}
+
+    def test_short_fees_reduce_pnl_on_both_legs(self):
+        """Fee convention must generalise: a short RECEIVES less at entry
+        (entry - fee) and pays at cover, so both legs cut the profit."""
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import fifo_realized_by_strategy
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "ls", "FFF", "SELL", 1, 110, None,
+             "FILLED", 1.0),
+            ("2026-07-05T10:00", "ls", "FFF", "BUY", 1, 100, None,
+             "FILLED", 2.0),
+        ], fees=True)
+        # Gross +10; entry effective 109 (received less), cover fee 2
+        # → (109 - 100) - 2 = +7.
+        assert fifo_realized_by_strategy(db) == {"ls": 7.0}
+
+    def test_long_only_behaviour_is_unchanged(self):
+        """The signed walk must reduce exactly to the old one for a
+        long-only ledger, or every historical number silently moves."""
+        import tempfile
+        from pathlib import Path
+        from trading.recompute import fifo_realized_by_strategy
+        tmp = Path(tempfile.mkdtemp())
+        db = self._db(tmp, [
+            ("2026-07-01T10:00", "lo", "GGG", "BUY", 1, 100, None, "FILLED"),
+            ("2026-07-01T11:00", "lo", "GGG", "BUY", 1, 105, None, "FILLED"),
+            ("2026-07-02T10:00", "lo", "GGG", "SELL", 2, 110, None, "FILLED"),
+        ])
+        assert fifo_realized_by_strategy(db) == {"lo": 15.0}
+
+
+class TestPhantomShortGuard:
+    """Signing the FIFO means a stray SELL no longer bounces off as an
+    orphan — it opens a real short with unbounded upside loss. A
+    mislabeled is_closing flag used to be a harmless no-op; it is now a
+    position nobody intended. The orchestrator must refuse to open a
+    short unless the strategy declares it."""
+
+    def test_strategies_default_to_no_shorting(self):
+        from strategy_engine.base import Strategy
+        assert Strategy.can_short is False
+
+    def test_live_book_declares_no_shorts(self):
+        """None of the five funded sleeves shorts. If one starts to, that
+        is a deliberate act that has to show up in this diff."""
+        import run_orchestrator as ro
+        from strategies import (BollingerBreakout, DualMomentum,
+                                EarningsMomentum, MultiFactorEquity,
+                                RiskParityETF)
+        live = {"risk_parity_etf": RiskParityETF,
+                "dual_momentum": DualMomentum,
+                "multifactor_equity": MultiFactorEquity,
+                "bollinger_breakout": BollingerBreakout,
+                "earnings_momentum": EarningsMomentum}
+        assert set(live) == ro.CORE_STRATEGIES
+        for name, cls in live.items():
+            assert getattr(cls, "can_short", False) is False, (
+                f"{name} would be permitted to short without review")
+
+    def test_alpaca_declares_the_capability(self):
+        """The guard needs both halves — strategy intent AND venue
+        support. Alpaca supplies the venue half."""
+        from brokers.alpaca import AlpacaAdapter
+        from brokers.base import BrokerCapability
+        assert BrokerCapability.SHORT_SELLING in AlpacaAdapter.capabilities
