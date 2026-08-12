@@ -166,6 +166,32 @@ class RiskConfig:
     max_trade_usd_alpaca: float | None = None
     max_trade_usd_kalshi: float | None = None
 
+    # ── Short-side limits (2026-08-05 long/short upgrade) ──────────────
+    # A long's loss is bounded by its notional: buy $100k, worst case is
+    # -$100k. A SHORT's loss is unbounded — a name that triples costs
+    # 200% of the notional, and the position GROWS as it moves against
+    # you, which is the opposite of a long's self-limiting behaviour.
+    # max_position_pct is therefore the wrong control for a short, and
+    # reusing it would silently apply a long's risk budget to an exposure
+    # with a fundamentally different loss distribution.
+    max_short_position_pct: float = 0.05
+    """Per-name cap on SHORT notional as a fraction of equity. Six times
+    tighter than the 0.30 long cap, because the tail is unbounded and a
+    short squeeze is a correlated, fast event. At $1M that is $50k per
+    name."""
+
+    max_gross_short_pct: float = 0.30
+    """Book-level cap on TOTAL short notional as a fraction of equity.
+    Bounds the squeeze scenario where many shorts move against us at
+    once — the failure mode that ends short books, rather than any single
+    name. Long exposure is separately bounded by max_asset_class_pct;
+    both roll up into leverage_cap, which already counts shorts gross."""
+
+    short_stop_loss_pct: float = 0.25
+    """Force-cover threshold: a short down this much from its entry must
+    be closed. 25% against a 5%-of-equity position is a 1.25% book hit —
+    survivable — whereas letting it ride has no natural floor."""
+
     # ── Liquidity participation cap (2026-08-05 capital-scale review) ──
     # Every other cap in this config is a fraction of EQUITY, so every
     # cap grows with the account while the market does not. At $1M and
@@ -250,6 +276,9 @@ class RiskConfig:
             multiplier_default=_envf("RISK_MULTIPLIER", 1.0),
             min_trade_usd=_envf("MIN_TRADE_USD", 50.0),
             max_trade_usd=_envf("MAX_TRADE_USD_GLOBAL", 5000.0),
+            max_short_position_pct=_envf("MAX_SHORT_POSITION_PCT", 0.05),
+            max_gross_short_pct=_envf("MAX_GROSS_SHORT_PCT", 0.30),
+            short_stop_loss_pct=_envf("SHORT_STOP_LOSS_PCT", 0.25),
             max_adv_participation_pct=_envf("ADV_PARTICIPATION_PCT", 0.10),
             adv_lookback_days=_envi("ADV_LOOKBACK_DAYS", 20),
             adv_unknown_max_usd=_envf("ADV_UNKNOWN_MAX_USD", 25_000.0),

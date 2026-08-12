@@ -1279,3 +1279,138 @@ class TestPhantomShortGuard:
         from brokers.alpaca import AlpacaAdapter
         from brokers.base import BrokerCapability
         assert BrokerCapability.SHORT_SELLING in AlpacaAdapter.capabilities
+
+
+class TestShortSideRiskLimits:
+    """2026-08-05 long/short upgrade, risk layer.
+
+    A long's loss is bounded by its notional — buy $100k, worst case is
+    -$100k, and the position SHRINKS as it loses. A short's loss has no
+    floor and the position GROWS as it moves against you. Reusing
+    max_position_pct for shorts would apply a long's risk budget to an
+    exposure with a fundamentally different loss distribution.
+
+    Failing these (a short sized like a long, or an unbounded book of
+    them) communicates the bug; passing communicates the invariant:
+    shorts have their own, tighter budget at the name AND book level, and
+    a short that has already moved against us is detected.
+    """
+
+    def _pos(self, symbol, qty, entry, price, venue="alpaca"):
+        from brokers.base import AssetClass, Position
+        return Position(venue=venue, symbol=symbol,
+                        asset_class=AssetClass.EQUITY, quantity=qty,
+                        avg_entry_price=entry, market_price=price,
+                        unrealized_pnl_usd=(entry - price) * abs(qty))
+
+    def _rm(self, positions=(), *, equity=1_000_000.0, **cfg_kw):
+        """Returns (risk_manager, state).
+
+        Drives a real broker stub rather than hand-installing snapshots:
+        compute_state() REBUILDS _broker_snapshots from the registry, so
+        anything installed beforehand is discarded and equity reads $0,
+        which collapses every equity-derived cap to zero for reasons
+        unrelated to shorting.
+        """
+        import os
+        import tempfile
+        from brokers.base import Account
+        from risk.manager import EquitySnapshotDB, RiskManager
+        from risk.policies import RiskConfig
+
+        pos = list(positions)
+
+        class _B:
+            venue = "alpaca"
+            is_paper = True
+            capabilities = frozenset()
+
+            def get_account(self):
+                return Account(venue="alpaca", cash_usd=equity,
+                               buying_power_usd=equity, equity_usd=equity,
+                               is_paper=True)
+
+            def get_positions(self):
+                return pos
+
+        db = EquitySnapshotDB(os.path.join(tempfile.mkdtemp(), "risk.db"))
+        db.record_snapshot(equity, note="baseline")
+        cfg = RiskConfig(max_trade_usd=10_000_000.0,
+                         max_adv_participation_pct=0.0,   # isolate short caps
+                         **cfg_kw)
+        rm = RiskManager(brokers={"alpaca": _B()}, config=cfg, db=db)
+        return rm, rm.compute_state(persist=False)
+
+    def test_short_uses_the_tight_per_name_cap_not_the_long_one(self):
+        """$1M book: a long may take $300k (0.30), a short only $50k
+        (0.05). Same order, same symbol — the direction is what differs."""
+        from risk.manager import Decision
+        rm, st = self._rm()
+        short = rm.check_order(notional_usd=300_000, symbol="XYZ",
+                               venue="alpaca", is_short_open=True, state=st)
+        assert short.decision == Decision.SCALE
+        assert short.approved_notional_usd == pytest.approx(50_000.0)
+        long_ = rm.check_order(notional_usd=300_000, symbol="XYZ",
+                               venue="alpaca", state=st)
+        assert long_.approved_notional_usd == pytest.approx(300_000.0)
+
+    def test_gross_short_cap_bounds_the_squeeze_scenario(self):
+        """Many shorts moving against us at once is what ends short
+        books. Existing shorts must consume the book-level budget."""
+        from risk.manager import Decision
+        # $280k already short against a $300k (30%) gross budget.
+        rm, st = self._rm([self._pos("AAA", -2_800, 100.0, 100.0)])
+        d = rm.check_order(notional_usd=50_000, symbol="BBB",
+                           venue="alpaca", is_short_open=True, state=st)
+        assert d.decision == Decision.SCALE
+        assert d.approved_notional_usd == pytest.approx(20_000.0)
+
+    def test_gross_short_cap_rejects_when_exhausted(self):
+        from risk.manager import Decision
+        rm, st = self._rm([self._pos("AAA", -3_000, 100.0, 100.0)])   # $300k
+        d = rm.check_order(notional_usd=50_000, symbol="BBB",
+                           venue="alpaca", is_short_open=True, state=st)
+        assert d.decision == Decision.REJECT
+        assert "gross short" in d.reason
+
+    def test_long_exposure_does_not_consume_the_short_budget(self):
+        """The two budgets are separate. A big long book must not block
+        a small short — that would defeat the point of market-neutral."""
+        from risk.manager import Decision
+        rm, st = self._rm([self._pos("LONG", +5_000, 100.0, 100.0)])  # $500k long
+        d = rm.check_order(notional_usd=50_000, symbol="BBB",
+                           venue="alpaca", is_short_open=True, state=st)
+        assert d.decision == Decision.APPROVE
+
+    def test_covering_a_short_is_never_blocked_by_short_caps(self):
+        """A cover is a closing order. If the caps could block it, the
+        book could not exit a losing short — the May-4 lesson again."""
+        from risk.manager import Decision
+        rm, st = self._rm([self._pos("AAA", -3_000, 100.0, 140.0)])   # maxed out
+        d = rm.check_order(notional_usd=420_000, symbol="AAA",
+                           venue="alpaca", is_closing=True, state=st)
+        assert d.decision == Decision.APPROVE
+
+    def test_stop_detector_flags_a_short_that_moved_against_us(self):
+        """Entry $100, now $130 → 30% against, past the 25% stop."""
+        rm, _st = self._rm([self._pos("SQZ", -1_000, 100.0, 130.0)])
+        breaches = rm.shorts_breaching_stop()
+        assert len(breaches) == 1
+        assert breaches[0]["symbol"] == "SQZ"
+        assert breaches[0]["loss_pct"] == pytest.approx(0.30)
+
+    def test_stop_detector_ignores_profitable_shorts_and_longs(self):
+        """A short DOWN in price is winning; a losing long is the long
+        stop's business, not this one."""
+        rm, _st = self._rm([
+            self._pos("WIN", -1_000, 100.0, 70.0),    # short, +30% for us
+            self._pos("LOSS", +1_000, 100.0, 40.0),   # long, -60% but long
+        ])
+        assert rm.shorts_breaching_stop() == []
+
+    def test_short_defaults_are_tighter_than_long_defaults(self):
+        from risk.policies import RiskConfig
+        cfg = RiskConfig()
+        assert cfg.max_short_position_pct < cfg.max_position_pct
+        assert cfg.max_gross_short_pct > 0
+        assert cfg.short_stop_loss_pct > 0

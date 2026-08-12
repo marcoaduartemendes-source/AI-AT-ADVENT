@@ -1275,8 +1275,10 @@ class Orchestrator:
         # the strategy does hold inventory here, so the SELL is a
         # reduction that merely forgot its is_closing flag — allow it,
         # the sell-quantity clamp downstream bounds it to what's held.
-        if (proposal.side == OrderSide.SELL and not proposal.is_closing
-                and existing_usd <= 0):
+        is_short_open = bool(
+            proposal.side == OrderSide.SELL and not proposal.is_closing
+            and existing_usd <= 0)
+        if is_short_open:
             strat_obj = self.strategies.get(proposal.strategy)
             adapter = self.brokers.get(proposal.venue)
             can_short = bool(getattr(strat_obj, "can_short", False))
@@ -1299,6 +1301,7 @@ class Orchestrator:
 
         decision = self._gate_through_risk(
             proposal, notional, existing_usd, asset_class, state, report,
+            is_short_open=is_short_open,
         )
         if decision is None:
             return    # rejected by risk
@@ -1344,6 +1347,7 @@ class Orchestrator:
         asset_class: str | None,
         state: RiskState,
         report: CycleReport,
+        is_short_open: bool = False,
     ):
         """Call risk.check_order and apply REJECT / SCALE side effects.
         Returns the RiskDecision when the proposal should continue, or
@@ -1354,6 +1358,7 @@ class Orchestrator:
             is_closing=proposal.is_closing,
             strategy_name=proposal.strategy,
             existing_position_usd=existing_usd,
+            is_short_open=is_short_open,
             state=state,
             venue=proposal.venue,
             asset_class=asset_class,

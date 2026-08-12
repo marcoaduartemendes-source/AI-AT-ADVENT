@@ -432,6 +432,64 @@ class RiskManager:
                 total += abs(qty * px)
         return total
 
+    def _gross_short_exposure(self) -> float:
+        """Total absolute notional of every SHORT position across venues.
+
+        Reads the same per-cycle cached snapshot as _asset_class_exposure,
+        so it costs no extra broker calls. A short is a position with
+        negative quantity — the convention every adapter reports.
+        """
+        total = 0.0
+        for snap in self._broker_snapshots.values():
+            for p in snap.get("positions") or []:
+                qty = getattr(p, "quantity", 0.0) or 0.0
+                if qty >= 0:
+                    continue
+                px = getattr(p, "market_price", 0.0) or 0.0
+                total += abs(qty * px)
+        return total
+
+    def shorts_breaching_stop(self) -> list[dict]:
+        """Short positions that have moved against us past
+        `short_stop_loss_pct` and must be covered.
+
+        Returns [{venue, symbol, quantity, entry, price, loss_pct}, …].
+
+        This is a DETECTOR, not an actuator — it reports, the caller
+        decides. It exists because a short has no natural floor: a long
+        that goes to zero stops losing, while a short that triples has
+        cost 200% of notional and is still open. The per-name and gross
+        caps bound the position at ENTRY; this is the only control that
+        bounds it after the market has moved.
+
+        Loss is measured on the short convention: we are down when the
+        price rises above our entry.
+        """
+        cfg = self.config
+        if cfg.short_stop_loss_pct <= 0:
+            return []
+        out: list[dict] = []
+        for venue, snap in self._broker_snapshots.items():
+            for p in snap.get("positions") or []:
+                qty = getattr(p, "quantity", 0.0) or 0.0
+                if qty >= 0:
+                    continue
+                entry = getattr(p, "avg_entry_price", 0.0) or 0.0
+                px = getattr(p, "market_price", 0.0) or 0.0
+                if entry <= 0 or px <= 0:
+                    continue
+                loss_pct = (px - entry) / entry     # >0 means losing
+                if loss_pct >= cfg.short_stop_loss_pct:
+                    out.append({
+                        "venue": venue,
+                        "symbol": getattr(p, "symbol", "?"),
+                        "quantity": qty,
+                        "entry": entry,
+                        "price": px,
+                        "loss_pct": loss_pct,
+                    })
+        return out
+
     def _month_to_date_loss_pct(self, current_equity: float) -> float | None:
         """Return MTD loss as a positive fraction (0.04 = 4% down).
         None if insufficient history.
@@ -710,6 +768,7 @@ class RiskManager:
         state: RiskState | None = None,
         venue: str | None = None,
         asset_class: str | None = None,
+        is_short_open: bool = False,
     ) -> RiskDecision:
         """Approve, scale, or reject a candidate order.
 
@@ -724,6 +783,13 @@ class RiskManager:
             venue: broker name for per-broker cap resolution.
             asset_class: AssetClass enum value (string) for the
                 per-asset-class concentration cap (audit fix #5).
+            is_short_open: True when this order OPENS a short (an
+                entry-side SELL with no inventory behind it). Routes the
+                order through the short-side caps instead of the long
+                ones — a short's loss is unbounded and grows as it moves
+                against us, so it cannot share a long's risk budget
+                (2026-08-05 long/short upgrade). Covers are ordinary
+                closing orders and must pass is_closing, not this.
         """
         st = state or self._cached_state or self.compute_state()
         cfg = self.config
@@ -800,16 +866,56 @@ class RiskManager:
                 )
 
         # ─ Per-order ceiling (scales with equity); per-venue override wins
-        venue_cap = cfg.cap_for_venue(venue) if venue else cfg.max_trade_usd
-        per_order_cap = min(venue_cap,
-                            cfg.max_position_pct * st.equity_usd)
-        if approved > per_order_cap:
-            approved = per_order_cap
+        #
+        # 2026-08-05: closing orders are EXEMPT. This ceiling exists to
+        # stop one bad signal opening too much risk; a close reduces
+        # risk, so throttling it inverts the intent. The KILL branch
+        # above already exempted closes for exactly this reason — the
+        # exemption simply never covered normal operation, so a cover
+        # larger than max_position_pct × equity was silently scaled down
+        # and left a residual position behind.
+        #
+        # It matters most for shorts. A long you failed to fully exit
+        # keeps shrinking as it falls; a short you failed to fully exit
+        # keeps GROWING as it rises, and it is the position that has run
+        # against you — the one whose exit is largest — that this clamp
+        # would have bitten hardest.
+        if not is_closing:
+            venue_cap = (cfg.cap_for_venue(venue) if venue
+                         else cfg.max_trade_usd)
+            per_order_cap = min(venue_cap,
+                                cfg.max_position_pct * st.equity_usd)
+            if approved > per_order_cap:
+                approved = per_order_cap
 
         # ─ Per-position cap (incl. existing exposure)
-        max_position = cfg.max_position_pct * st.equity_usd
+        # Shorts get their own, much tighter budget: a long's worst case
+        # is -100% of notional, a short's has no floor and the position
+        # grows as it loses. Same reason the two never share a cap.
+        position_cap_pct = (cfg.max_short_position_pct if is_short_open
+                            else cfg.max_position_pct)
+        max_position = position_cap_pct * st.equity_usd
         if not is_closing and existing_position_usd + approved > max_position:
             approved = max(0.0, max_position - existing_position_usd)
+
+        # ─ Book-level gross-short cap.
+        # Bounds the squeeze scenario — many shorts moving against us at
+        # once — which is what actually ends short books, rather than any
+        # single name. Checked against live short exposure so it holds
+        # across strategies, not just within one.
+        if is_short_open and not is_closing and st.equity_usd > 0:
+            gross_short = self._gross_short_exposure()
+            max_gross_short = cfg.max_gross_short_pct * st.equity_usd
+            short_headroom = max(0.0, max_gross_short - gross_short)
+            if approved > short_headroom:
+                if short_headroom <= cfg.min_trade_usd:
+                    return RiskDecision(
+                        Decision.REJECT, 0.0,
+                        f"gross short ${gross_short:,.0f} ≥ "
+                        f"{cfg.max_gross_short_pct * 100:.0f}% cap "
+                        f"(${max_gross_short:,.0f}) — no headroom for "
+                        f"new shorts", st)
+                approved = short_headroom
 
         # ─ Liquidity participation cap (2026-08-05 capital-scale review).
         # The only cap in this whole chain that is a property of the
